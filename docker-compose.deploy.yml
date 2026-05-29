@@ -1,0 +1,169 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: inventre-deploy-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: inventre
+      POSTGRES_PASSWORD: inventre_prod
+      POSTGRES_DB: inventre
+    ports:
+      - "55433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U inventre -d inventre"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  pgbouncer:
+    image: edoburu/pgbouncer:latest
+    container_name: inventre-deploy-pgbouncer
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DB_USER: inventre
+      DB_PASSWORD: inventre_prod
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: inventre
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: 1000
+      # 50 server-side connections to Postgres (was 25). The app bumped
+      # its client pool 10 → 30 (db/client.ts) after the 2026-05-26
+      # webhook-burst incident — pgbouncer at 25 would be the next
+      # bottleneck for a multi-app-worker future. Postgres 16 default
+      # max_connections is 100, so 50 leaves room for psql / admin /
+      # migration sessions alongside.
+      DEFAULT_POOL_SIZE: 50
+      ADMIN_USERS: inventre
+      AUTH_TYPE: scram-sha-256
+    ports:
+      - "6433:5432"
+
+  redis:
+    image: redis:7-alpine
+    container_name: inventre-deploy-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6390:6379"
+    volumes:
+      - redisdata:/data
+
+  minio:
+    image: minio/minio:latest
+    container_name: inventre-deploy-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: inventre
+      MINIO_ROOT_PASSWORD: inventre_prod_secret
+    ports:
+      - "9010:9000"
+      - "9011:9001"
+    volumes:
+      - miniodata:/data
+    # MinIO's healthcheck was permanently failing with
+    #   "OCI runtime exec failed: SetSSB requires libseccomp ≥ 2.5.0 and
+    #    API level ≥ 4 (current version: 2.5.5, API level: 1)"
+    # — a Docker-host seccomp profile mismatch, not a MinIO problem. The
+    # container itself is healthy (serves /minio/health/live on port 9000
+    # just fine when curled from outside). We don't use MinIO in production
+    # (storage is on Cloudflare R2) so a missing healthcheck has zero
+    # operational impact. Disable to stop logging spam and clean up
+    # `docker ps` output.
+    healthcheck:
+      disable: true
+
+  minio-init:
+    image: minio/mc:latest
+    container_name: inventre-deploy-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 inventre inventre_prod_secret;
+      mc mb --ignore-existing local/inventre;
+      mc anonymous set download local/inventre;
+      echo 'MinIO bucket ready';
+      "
+    restart: "no"
+
+  app:
+    # Production build: image is baked from the repo Dockerfile (multi-stage
+    # alpine + Next.js standalone + bundled migrate.js). Versioned per commit
+    # so rollback = `docker run inventre-app:<sha>`.
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: inventre-app:latest
+    container_name: inventre-deploy-app
+    restart: unless-stopped
+    # Give Next.js time to finish in-flight requests before SIGKILL. Default
+    # docker stop is 10s — under load, requests that take >10s get torn down
+    # mid-flight which surfaces as nginx "upstream prematurely closed" 502s
+    # to the user. 25s covers the slowest legitimate request (CCAvenue
+    # callback) with margin for a clean drain.
+    stop_grace_period: 25s
+    stop_signal: SIGTERM
+    working_dir: /app
+    # CMD is set in the Dockerfile (./start.sh); no override needed.
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # env_file supplies CRON_KEY / ERP_* etc. The explicit `environment:`
+    # block below takes precedence, so the in-network DB/Redis/S3 URLs win.
+    env_file:
+      - .env.deploy
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      HOSTNAME: "0.0.0.0"
+      DATABASE_URL: postgres://inventre:inventre_prod@pgbouncer:5432/inventre
+      DATABASE_DIRECT_URL: postgres://inventre:inventre_prod@postgres:5432/inventre
+      REDIS_URL: redis://redis:6379
+      SMS_API_URL: "https://control.arihantglobal.in/fe/api/v1/send"
+      SMS_API_USERNAME: "inventreedu.trans"
+      SMS_API_PASSWORD: "InventreAPI@2026"
+      NEXT_PUBLIC_APP_URL: https://inventre.in
+      NEXT_TELEMETRY_DISABLED: "1"
+      MSG91_SENDER_ID: ""  # legacy — not used, kept to avoid startup warnings
+      # AUTH_SECRET / JWT_SECRET / CRON_* / S3_* / SMTP_* etc. come from
+      # env_file (.env.deploy). They are intentionally NOT listed here.
+    ports:
+      - "3010:3000"
+    # Self-heal if the app ever gets fully stuck (e.g. wedged ioredis
+    # connection pool — symptom we hit on 2026-05-26, where Redis was
+    # alive but the app's connection pool was timing out indefinitely).
+    # /api/health hits the DB + Redis lightly, so a 503 from it is a
+    # solid liveness signal. `restart: unless-stopped` (above) then
+    # bounces the container automatically.
+    healthcheck:
+      # Explicit 127.0.0.1 (not "localhost") — Alpine's resolver returns
+      # IPv6 ::1 first, but Next.js only binds 0.0.0.0:3000 (IPv4), so
+      # `localhost` gets connection-refused even when the app is healthy.
+      test: ["CMD-SHELL", "wget -qO- --timeout=5 http://127.0.0.1:3000/api/health > /dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 8s
+      retries: 4
+      start_period: 60s
+    networks:
+      - default
+      - erp-staging
+      # Future: switch to `erp-new` for prod by re-pointing this network.
+
+volumes:
+  pgdata:
+  redisdata:
+  miniodata:
+
+networks:
+  default:
+  erp-staging:
+    external: true
+    name: erp-staging_default

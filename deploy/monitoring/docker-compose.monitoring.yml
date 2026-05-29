@@ -1,0 +1,174 @@
+# Inventre monitoring stack — Prometheus + Grafana + node/postgres/redis exporters.
+#
+# Run on the SAME host as the Inventre app:
+#   cd /root/Inventre
+#   docker compose -f deploy/monitoring/docker-compose.monitoring.yml --env-file .env.deploy up -d
+#
+# Grafana opens on http://<host>:3030. Default admin password set via env.
+# All exporters bind only to localhost (or to the docker network) so the
+# scrape surface is not internet-exposed; Prometheus + Grafana sit behind
+# the host firewall — see the README for nginx-proxy snippet if you want
+# to expose Grafana publicly with basic auth.
+#
+# The stack joins `inventre-deploy_default` so it can reach postgres,
+# redis, etc. by service name.
+
+services:
+  prometheus:
+    image: prom/prometheus:v2.55.0
+    container_name: inventre-prometheus
+    restart: unless-stopped
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prom_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=30d"
+      - "--web.enable-lifecycle"
+    ports:
+      - "127.0.0.1:9090:9090"   # localhost-only — reach via SSH tunnel
+    networks:
+      - default
+      - inventre
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    container_name: inventre-grafana
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-inventre-grafana-change-me}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      # Auto-install community panel plugins on first start.
+      GF_INSTALL_PLUGINS: "grafana-polystat-panel"
+      # ─── SMTP for alert notifications ──────────────────────────────
+      # Re-uses the same Office 365 mailbox the app uses for OTP recovery
+      # emails (Support@inventre.in). Provisioning/alerting/contactpoints.yml
+      # references this as the default email contact.
+      GF_SMTP_ENABLED: "true"
+      GF_SMTP_HOST: "${SMTP_HOST:-smtp.office365.com}:${SMTP_PORT:-587}"
+      GF_SMTP_USER: ${SMTP_USER:-Support@inventre.in}
+      GF_SMTP_PASSWORD: ${SMTP_PASS}
+      GF_SMTP_FROM_ADDRESS: ${SMTP_USER:-Support@inventre.in}
+      GF_SMTP_FROM_NAME: "Inventre Alerts"
+      GF_SMTP_STARTTLS_POLICY: "MandatoryStartTLS"
+      # Avoid the "send-as denied" gotcha on M365 — the FROM must match
+      # the authenticated SMTP user. We re-use the same mailbox.
+      GF_SMTP_SKIP_VERIFY: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana-provisioning:/etc/grafana/provisioning:ro
+    ports:
+      - "3030:3000"
+    networks:
+      - default
+      - inventre
+
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    container_name: inventre-node-exporter
+    restart: unless-stopped
+    pid: host           # see host processes
+    # Was network_mode: host — but then prometheus (in a docker network)
+    # couldn't reach it via UFW's INPUT DROP policy. Joining the same
+    # docker network means scrape goes container→container; /proc and
+    # /sys are bind-mounted read-only so host-level metrics still work.
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - "--path.procfs=/host/proc"
+      - "--path.sysfs=/host/sys"
+      - "--path.rootfs=/rootfs"
+      - "--web.listen-address=:9100"
+      - "--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc|rootfs)($$|/)"
+    networks:
+      - default
+      - inventre
+
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.15.0
+    container_name: inventre-postgres-exporter
+    restart: unless-stopped
+    environment:
+      # Direct postgres (not pgbouncer) so we can query pg_stat_statements
+      # and per-database stats correctly. transaction-pool mode on bouncer
+      # confuses session-scoped queries the exporter does.
+      DATA_SOURCE_NAME: "postgresql://inventre:inventre_prod@postgres:5432/inventre?sslmode=disable"
+      PG_EXPORTER_INCLUDE_DATABASES: "inventre"
+    networks:
+      - inventre
+
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.62.0
+    container_name: inventre-redis-exporter
+    restart: unless-stopped
+    environment:
+      REDIS_ADDR: "redis://redis:6379"
+    networks:
+      - inventre
+
+  pgbouncer-exporter:
+    image: prometheuscommunity/pgbouncer-exporter:v0.10.2
+    container_name: inventre-pgbouncer-exporter
+    restart: unless-stopped
+    command:
+      - "--pgBouncer.connectionString=postgres://inventre:inventre_prod@pgbouncer:5432/pgbouncer?sslmode=disable"
+    networks:
+      - inventre
+
+  cadvisor:
+    # v0.52.1 supports Docker API ≥1.44 (Docker 25+ requires it).
+    # v0.49.1 silently failed to register the docker factory on this host
+    # and fell back to systemd cgroup discovery — that's why panels using
+    # `{name=~".+"}` saw no data (the name label is only populated when
+    # cAdvisor can talk to the Docker daemon).
+    image: gcr.io/cadvisor/cadvisor:v0.52.1
+    container_name: inventre-cadvisor
+    restart: unless-stopped
+    privileged: true
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    # --docker_only: emit metrics ONLY for containers, not every host cgroup.
+    # --store_container_labels=false + whitelist: keep cardinality low by
+    #   only including useful container labels on series.
+    # --housekeeping_interval=10s: don't burn CPU on the default 1s sample.
+    command:
+      - "--docker_only=true"
+      - "--store_container_labels=true"
+      - "--housekeeping_interval=10s"
+    networks:
+      - default
+
+  # Blackbox exporter — synthetic uptime probes for the public site.
+  # Powers the "blackbox-exporter" Grafana dashboard. Probes HTTPS endpoints
+  # from the same network as the app so a regional outage shows up as
+  # `probe_success == 0` and `probe_duration_seconds` spikes.
+  blackbox-exporter:
+    image: prom/blackbox-exporter:v0.25.0
+    container_name: inventre-blackbox-exporter
+    restart: unless-stopped
+    volumes:
+      - ./blackbox.yml:/etc/blackbox_exporter/config.yml:ro
+    command:
+      - "--config.file=/etc/blackbox_exporter/config.yml"
+    networks:
+      - default
+
+volumes:
+  prom_data:
+  grafana_data:
+
+networks:
+  default:
+  inventre:
+    external: true
+    name: inventre-deploy_default

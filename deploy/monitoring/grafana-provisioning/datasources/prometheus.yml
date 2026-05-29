@@ -1,0 +1,12 @@
+apiVersion: 1
+datasources:
+  - name: Prometheus
+    # Pin the UID so alert rule YAML can reference it deterministically
+    # (without this, Grafana auto-generates a UID on first import and
+    # the alerting/rules.yml below has to be updated to match).
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false

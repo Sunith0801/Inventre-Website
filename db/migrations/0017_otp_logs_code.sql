@@ -1,0 +1,1 @@
+ALTER TABLE otp_logs ADD COLUMN IF NOT EXISTS otp_code VARCHAR(6);

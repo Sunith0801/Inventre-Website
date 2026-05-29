@@ -1,0 +1,19 @@
+# Build context exclusions — keep the Docker context small & builds fast.
+# (Without this, node_modules + backups/*.sql get shipped to the daemon,
+#  which stalls/OOM-kills the build.)
+node_modules
+.git
+.next
+backups
+*.sql
+*.sql.gz
+*.dump
+npm-debug.log
+.env*
+!.env.example
+Dockerfile
+.dockerignore
+.DS_Store
+coverage
+.vscode
+.idea

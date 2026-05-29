@@ -1,0 +1,19 @@
+Guardian links: resolve guardian_erp_name on sibling-roster copy
+
+When a new sibling is added (via /admin/data/students/.../guardians or
+.../sibling-student), the route copies the source sibling's
+student_guardian_links rows verbatim. Legacy/orphan links from earlier
+code paths carry guardian_erp_name = NULL, and copying them verbatim
+propagates the NULL forever. /admin/guardians joins linked students by
+erp_name, so every NULL-linked sibling is silently invisible — that's
+why a guardian with 6 linked students was showing only 2.
+
+Fix: COALESCE the source's guardian_erp_name with a phone-match lookup
+into guardians.mobile_number on copy. If a guardian master exists for
+that phone, the new link gets its erp_name and surfaces correctly; if
+no master exists, the NULL passes through (no master to attach to).
+
+Idempotent — re-runs of the heal SQL or this route never write a
+worse value.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>

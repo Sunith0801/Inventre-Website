@@ -1,0 +1,50 @@
+apiVersion: 1
+
+# Where alert notifications get sent.
+#
+# IMPORTANT: Grafana's YAML provisioner does NOT expand shell-style
+# ${VAR} or ${VAR:-default} placeholders — using them crashes Grafana
+# at startup with "could not find addresses in settings". Always
+# hardcode recipient addresses below; if you need to vary by env, set
+# the Grafana container env and use the supported $__env{VAR} syntax.
+#
+# To add Telegram: create a bot via @BotFather on Telegram, get the chat_id
+# by sending /start to the bot then visiting
+# https://api.telegram.org/bot<TOKEN>/getUpdates — then add a second
+# entry below with type=telegram and the bot token + chat id.
+
+contactPoints:
+  - orgId: 1
+    name: email-ops
+    receivers:
+      - uid: email-ops-1
+        type: email
+        settings:
+          # Recipient addresses (comma-separated). Grafana does NOT expand
+          # ${VAR} in provisioning YAML by default — to add more
+          # recipients, edit this list and `docker compose up -d --force-recreate
+          # grafana` (or use the Grafana UI under Alerting → Contact points).
+          addresses: it@inventre.in
+          singleEmail: false
+          subject: '[Inventre] {{ template "default.title" . }}'
+          message: |
+            {{ range .Alerts -}}
+            Status: {{ .Status }}
+            {{ if .Labels.severity }}Severity: {{ .Labels.severity }}{{ end }}
+            Alert: {{ .Annotations.summary }}
+            Detail: {{ .Annotations.description }}
+            Started: {{ .StartsAt }}
+            {{ if .GeneratorURL }}Source: {{ .GeneratorURL }}{{ end }}
+
+            {{ end }}
+
+  # Optional: a webhook contact (useful if you later wire Telegram via
+  # a webhook bridge, Discord, Slack, etc.). Disabled by default.
+  # - orgId: 1
+  #   name: webhook
+  #   receivers:
+  #     - uid: webhook-1
+  #       type: webhook
+  #       settings:
+  #         url: https://hooks.example.com/grafana
+  #         httpMethod: POST

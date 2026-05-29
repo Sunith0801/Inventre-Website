@@ -1,0 +1,398 @@
+apiVersion: 1
+
+# Production alert rules.
+#
+# Each rule has TWO data-source nodes:
+#   - "A"  the actual Prometheus query
+#   - "B"  a threshold reducer that turns the time-series into a single
+#          value the alert engine compares against the condition.
+#
+# Why both? Grafana 9+ alerting is multi-stage: the query produces a
+# series, the reducer collapses it to a number, and the condition fires
+# on that number. Keeping them as separate stages lets you tune
+# thresholds without rewriting the underlying PromQL.
+
+groups:
+  - orgId: 1
+    name: inventre-site
+    folder: Inventre
+    interval: 1m
+    rules:
+
+      # ── #1 — Redis connection leak (catches a regression of the
+      #         2026-05-26 singleton bug). Steady state should be 2-10.
+      - uid: alert_redis_clients
+        title: Redis client leak
+        condition: B
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: redis_connected_clients
+              instant: true
+              refId: A
+          - refId: B
+            relativeTimeRange: { from: 0, to: 0 }
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              refId: B
+              expression: A
+              conditions:
+                - evaluator: { params: [50], type: gt }
+                  operator: { type: and }
+                  query: { params: [B] }
+                  reducer: { type: last }
+                  type: query
+        for: 2m
+        labels:
+          severity: critical
+          area: cache
+        annotations:
+          summary: "Redis connected_clients = {{ $values.B }} (>50)"
+          description: |
+            Redis client count is above 50. Steady state is 2-10.
+            This is the canary for the prod-only singleton-cache leak
+            (lib/redis.ts, fixed 2026-05-26). If it climbs to ~10K,
+            Redis will start rejecting connections with EPIPE.
+            Restart the app container to clear leaked sockets, then
+            investigate which code path is creating fresh Redis
+            clients per request.
+
+      # ── #2 — Postgres pool pressure
+      - uid: alert_pg_active
+        title: Postgres active connections high
+        condition: B
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: sum(pg_stat_activity_count{state="active"})
+              instant: true
+              refId: A
+          - refId: B
+            relativeTimeRange: { from: 0, to: 0 }
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              refId: B
+              expression: A
+              conditions:
+                - evaluator: { params: [25], type: gt }
+                  operator: { type: and }
+                  query: { params: [B] }
+                  reducer: { type: last }
+                  type: query
+        for: 3m
+        labels:
+          severity: warning
+          area: database
+        annotations:
+          summary: "Postgres active connections = {{ $values.B }} (>25)"
+          description: |
+            Sustained active query count above 25. Indicates either a
+            slow-query pile-up or a burst that's saturating the pool.
+            App client pool is 30 connections; if active hits 30 the
+            next request will queue. Check pg_stat_statements for
+            outliers and pg_stat_activity for long-running queries.
+
+      # ── #3 — Public site down (synthetic uptime via blackbox)
+      - uid: alert_site_down
+        title: Inventre.in is DOWN
+        condition: B
+        data:
+          - refId: A
+            relativeTimeRange: { from: 180, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: probe_success{instance="https://inventre.in/api/health"}
+              instant: true
+              refId: A
+          - refId: B
+            relativeTimeRange: { from: 0, to: 0 }
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              refId: B
+              expression: A
+              conditions:
+                - evaluator: { params: [1], type: lt }
+                  operator: { type: and }
+                  query: { params: [B] }
+                  reducer: { type: last }
+                  type: query
+        for: 1m
+        labels:
+          severity: critical
+          area: site
+        annotations:
+          summary: "inventre.in /api/health is not returning 200"
+          description: |
+            Blackbox-exporter probe of https://inventre.in/api/health
+            failed for 1+ minute. Check the app container
+            (docker ps | grep inventre-deploy-app), nginx
+            (systemctl status nginx), and the cert validity.
+
+      # ── #4 — Site is reachable but slow
+      - uid: alert_site_slow
+        title: Inventre.in is SLOW
+        condition: B
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: probe_duration_seconds{instance="https://inventre.in/api/health"}
+              instant: true
+              refId: A
+          - refId: B
+            relativeTimeRange: { from: 0, to: 0 }
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              refId: B
+              expression: A
+              conditions:
+                - evaluator: { params: [3], type: gt }
+                  operator: { type: and }
+                  query: { params: [B] }
+                  reducer: { type: last }
+                  type: query
+        for: 5m
+        labels:
+          severity: warning
+          area: site
+        annotations:
+          summary: "/api/health p95 latency = {{ $values.B }}s (>3s)"
+          description: |
+            Sustained slow responses. Top suspects (in order): Redis
+            connection leak (check the Redis alert), Postgres pool
+            saturation (check pg active connections), CPU saturation,
+            or an in-flight deploy.
+
+      # ── #5 — Disk filling up
+      - uid: alert_disk_warning
+        title: Root filesystem usage > 80%
+        condition: B
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: |
+                100 * (1 - (
+                  node_filesystem_avail_bytes{mountpoint="/",fstype!~"tmpfs|overlay"} /
+                  node_filesystem_size_bytes{mountpoint="/",fstype!~"tmpfs|overlay"}
+                ))
+              instant: true
+              refId: A
+          - refId: B
+            relativeTimeRange: { from: 0, to: 0 }
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              refId: B
+              expression: A
+              conditions:
+                - evaluator: { params: [80], type: gt }
+                  operator: { type: and }
+                  query: { params: [B] }
+                  reducer: { type: last }
+                  type: query
+        for: 10m
+        labels:
+          severity: warning
+          area: host
+        annotations:
+          summary: "Disk {{ $labels.mountpoint }} at {{ $values.B }}%"
+          description: |
+            Root filesystem >80% full. Check `du -sh /root/Inventre/backups`,
+            `/var/lib/docker`, and `/var/log/inventre-*.log`. logrotate
+            should be keeping the logs in check; backups need manual
+            pruning.
+
+      # ── #6 — Disk almost full (critical)
+      - uid: alert_disk_critical
+        title: Root filesystem usage > 90% (critical)
+        condition: B
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: |
+                100 * (1 - (
+                  node_filesystem_avail_bytes{mountpoint="/",fstype!~"tmpfs|overlay"} /
+                  node_filesystem_size_bytes{mountpoint="/",fstype!~"tmpfs|overlay"}
+                ))
+              instant: true
+              refId: A
+          - refId: B
+            relativeTimeRange: { from: 0, to: 0 }
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              refId: B
+              expression: A
+              conditions:
+                - evaluator: { params: [90], type: gt }
+                  operator: { type: and }
+                  query: { params: [B] }
+                  reducer: { type: last }
+                  type: query
+        for: 5m
+        labels:
+          severity: critical
+          area: host
+        annotations:
+          summary: "Disk at {{ $values.B }}% — IMMEDIATE action"
+          description: |
+            Disk has crossed 90%. Postgres WAL + Docker writes will fail
+            soon, taking the app down. Free space NOW: prune Docker
+            (`docker system prune -a`), trim `/var/log/inventre-*.log`,
+            remove old DB dumps from /root/Inventre/backups/.
+
+      # ── #7 — Postgres is reachable
+      - uid: alert_pg_down
+        title: Postgres is unreachable
+        condition: B
+        data:
+          - refId: A
+            relativeTimeRange: { from: 180, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: pg_up
+              instant: true
+              refId: A
+          - refId: B
+            relativeTimeRange: { from: 0, to: 0 }
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              refId: B
+              expression: A
+              conditions:
+                - evaluator: { params: [1], type: lt }
+                  operator: { type: and }
+                  query: { params: [B] }
+                  reducer: { type: last }
+                  type: query
+        for: 1m
+        labels:
+          severity: critical
+          area: database
+        annotations:
+          summary: "postgres-exporter cannot reach Postgres"
+          description: |
+            Either Postgres container died or pgbouncer is choking the
+            exporter. `docker ps | grep postgres`. App is almost
+            certainly returning 5xx if this fires.
+
+      # ── #8 — Redis is reachable
+      - uid: alert_redis_down
+        title: Redis is unreachable
+        condition: B
+        data:
+          - refId: A
+            relativeTimeRange: { from: 180, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: redis_up
+              instant: true
+              refId: A
+          - refId: B
+            relativeTimeRange: { from: 0, to: 0 }
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              refId: B
+              expression: A
+              conditions:
+                - evaluator: { params: [1], type: lt }
+                  operator: { type: and }
+                  query: { params: [B] }
+                  reducer: { type: last }
+                  type: query
+        for: 1m
+        labels:
+          severity: critical
+          area: cache
+        annotations:
+          summary: "Redis is down"
+          description: |
+            App will degrade fast — cart, OTPs, sessions, rate limits
+            all use Redis. `docker restart inventre-deploy-redis`.
+
+      # ── #9 — Sustained high CPU load
+      - uid: alert_load_high
+        title: Host load average > nproc
+        condition: B
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: node_load5 / count(node_cpu_seconds_total{mode="idle"})
+              instant: true
+              refId: A
+          - refId: B
+            relativeTimeRange: { from: 0, to: 0 }
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              refId: B
+              expression: A
+              conditions:
+                - evaluator: { params: [1.5], type: gt }
+                  operator: { type: and }
+                  query: { params: [B] }
+                  reducer: { type: last }
+                  type: query
+        for: 10m
+        labels:
+          severity: warning
+          area: host
+        annotations:
+          summary: "5-min load average = {{ $values.B }}× cores"
+          description: |
+            Sustained CPU pressure. Either real traffic spike or a
+            runaway process. `top` to identify the consumer.
+
+      # ── #10 — Memory pressure
+      - uid: alert_mem_low
+        title: Available memory < 10%
+        condition: B
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: |
+                100 * node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes
+              instant: true
+              refId: A
+          - refId: B
+            relativeTimeRange: { from: 0, to: 0 }
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              refId: B
+              expression: A
+              conditions:
+                - evaluator: { params: [10], type: lt }
+                  operator: { type: and }
+                  query: { params: [B] }
+                  reducer: { type: last }
+                  type: query
+        for: 5m
+        labels:
+          severity: warning
+          area: host
+        annotations:
+          summary: "Available memory = {{ $values.B }}%"
+          description: |
+            Memory pressure approaching swap territory. Check container
+            memory usage (`docker stats`). The 8GB swapfile is the
+            cushion but sustained swapping = slow site.

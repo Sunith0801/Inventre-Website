@@ -1,0 +1,47 @@
+import { NextResponse } from "next/server";
+import { parseBody } from "@/lib/parse-body";
+import { z } from "zod";
+import { db } from "@/db/client";
+import { hsnCodes } from "@/db/schema";
+import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { eq } from "drizzle-orm";
+
+const Body = z.object({
+  code: z.string().min(1),
+  description: z.string().min(1),
+  defaultGstRate: z.number().min(0).max(50).optional(),
+  category: z.string().optional(),
+});
+
+export async function GET() {
+  const guard = await requireAdmin("super", "ops");
+  if (isResponse(guard)) return guard;
+  return NextResponse.json({ hsnCodes: await db.select().from(hsnCodes) });
+}
+
+export async function POST(req: Request) {
+  const guard = await requireAdmin("super");
+  if (isResponse(guard)) return guard;
+  const parsed = await parseBody(req, Body);
+  if (parsed instanceof NextResponse) return parsed;
+  const body = parsed;
+  await db
+    .insert(hsnCodes)
+    .values({
+      code: body.code,
+      description: body.description,
+      defaultGstRate:
+        body.defaultGstRate != null ? body.defaultGstRate.toString() : null,
+      category: body.category ?? null,
+    })
+    .onConflictDoUpdate({
+      target: hsnCodes.code,
+      set: {
+        description: body.description,
+        defaultGstRate:
+          body.defaultGstRate != null ? body.defaultGstRate.toString() : null,
+        category: body.category ?? null,
+      },
+    });
+  return NextResponse.json({ ok: true });
+}

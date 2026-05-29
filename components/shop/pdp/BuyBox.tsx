@@ -1,0 +1,692 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
+import { useRouter, useSearchParams } from "next/navigation";
+import { AnimatePresence, motion } from "framer-motion";
+import { Heart, ShoppingBag, Check, Star, Truck, RotateCw, Shield, Award, Ruler, X } from "lucide-react";
+import { Product } from "@/lib/products";
+import { useCart } from "@/lib/cart";
+import { QtyStepper } from "./QtyStepper";
+import { parseBookkitLangs, type LangPair } from "@/lib/bookkit-langs";
+import { MultiAttributePicker } from "./MultiAttributePicker";
+import { buildAttributeKey } from "@/lib/attribute-key";
+
+const trust = [
+  { icon: Award, label: "Branded for your school" },
+  { icon: RotateCw, label: "Free 7-day returns" },
+  { icon: Truck, label: "Try before you buy" },
+  { icon: Shield, label: "Quality-tested" },
+];
+
+/**
+ * Some categories don't need a size chart even when admin set one in the
+ * database — bookkits, caps, shoes, bags, ties, belts. The check is
+ * name/category-based (not just `kind`) because some bookkits are
+ * mis-classified as `uniform` in admin and `kind` alone misses them.
+ */
+const NO_SIZE_CHART_RE =
+  /\b(book[\s-]?kit|book[\s-]?set|bookset|bookkit|cap|caps|shoe|shoes|bag|bags|tie|ties|belt|belts)\b/i;
+function isNoSizeChartCategory(product: Product): boolean {
+  if (product.kind === "kit" || product.kind === "set") return true;
+  if (NO_SIZE_CHART_RE.test(product.name)) return true;
+  if (product.categoryPath?.some((seg) => NO_SIZE_CHART_RE.test(seg)))
+    return true;
+  return false;
+}
+
+export function BuyBox({
+  product,
+  onSizeGuide,
+}: {
+  product: Product;
+  onSizeGuide: () => void;
+}) {
+  const { add, addByVariantId } = useCart();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const studentQuery = searchParams?.get("studentId")
+    ? `?studentId=${encodeURIComponent(searchParams.get("studentId") as string)}`
+    : "";
+
+  // Template-level variants (language / stream pickers). When present,
+  // a click navigates to that variant's own PDP — each variant has its
+  // own price + size SKUs.
+  const tplVariants = product.templateVariants ?? [];
+  const hasTplVariants = tplVariants.length > 0;
+
+  // Multi-axis Item-Variant template (e.g. SMS Grade 11 Bookkit with
+  // Mandate × Core × Elective). Activates for kits AND for any product
+  // whose `sizes` array carries concatenated SKU strings (e.g.
+  // "SAS Suchitra Book Set Grade 12Grade 12 MandateCommerceApplied
+  // Mathematics") — those products are bookkits mis-classified as
+  // `uniform` in admin and the legacy size picker would otherwise show
+  // the garbled SKUs as size pills.
+  const multiAxisGroups = product.attributeGroups ?? [];
+  const variantMap = product.variantsByAttributeKey ?? {};
+  const productNameLower = product.name.toLowerCase();
+  const sizesLookLikeSkus = (product.sizes ?? []).some((s) => {
+    if (!s) return false;
+    if (s.length > 22) return true;
+    if (
+      productNameLower &&
+      s.toLowerCase().startsWith(productNameLower.slice(0, 12))
+    )
+      return true;
+    // After the 2026-05-26 duplicate-size dedup pass, multi-axis uniforms
+    // (T-shirts, bags, sports kit) carry their full ERPNext SKU as the
+    // size value so variantPrices/variantIds key uniquely. These SKUs use
+    // the "$$" marker as a terminator (e.g. "SAMYU PP BAGSBM$$$",
+    // "SAS KS Sports T-shirt34$$A"), so detecting the marker is enough
+    // to flip MultiAttributePicker on for shorter SKU strings that don't
+    // hit the 22-char threshold.
+    if (s.includes("$$")) return true;
+    return false;
+  });
+  const useMultiAxisPicker =
+    !hasTplVariants &&
+    multiAxisGroups.length >= 2 &&
+    Object.keys(variantMap).length > 1 &&
+    (product.kind === "kit" || product.isKit === true || sizesLookLikeSkus);
+  const [resolvedVariantId, setResolvedVariantId] = useState<string | null>(null);
+
+  // default to a middle size if many options, else the first.
+  // Falls back to "" when no sizes exist (admin retired all variants);
+  // the Add button is disabled below when this is empty so we never
+  // call `add()` with an undefined size.
+  const [size, setSize] = useState<string>(
+    product.sizes.length > 6
+      ? product.sizes[Math.floor(product.sizes.length / 2)] ?? ""
+      : product.sizes[0] ?? ""
+  );
+  // Non-size attribute selections (Colour, House, etc.). Default each axis
+  // to its first value so a parent who never clicks still has a valid pick.
+  // Lifted out of AttributeGroupPicker because the picker's earlier
+  // component-local state was never read by add-to-cart — that bug shipped
+  // the wrong colour variant for every uniform with a colour axis.
+  const nonSizeAttrGroups = useMemo(
+    () => (product.attributeGroups ?? []).filter((g) => !/size|sizes/i.test(g.name)),
+    [product.attributeGroups]
+  );
+  const [attrSel, setAttrSel] = useState<Record<string, string>>(() => {
+    const init: Record<string, string> = {};
+    for (const g of nonSizeAttrGroups) {
+      if (g.values[0]) init[g.name] = g.values[0];
+    }
+    return init;
+  });
+  const [qty, setQty] = useState(1);
+  const [liked, setLiked] = useState(false);
+  const [added, setAdded] = useState(false);
+  const [addBusy, setAddBusy] = useState(false);
+  const [addError, setAddError] = useState<string | null>(null);
+  // Inline size-chart enlarge state. Click the compact card below the
+  // price to open a centred modal with the full chart.
+  const [chartOpen, setChartOpen] = useState(false);
+  // Portal target gate — `document` doesn't exist on the SSR pass, so we
+  // flip this to true after first client paint to enable createPortal.
+  const [portalReady, setPortalReady] = useState(false);
+  useEffect(() => {
+    setPortalReady(true);
+  }, []);
+
+  const noSizesAvailable = product.sizes.length === 0;
+  // Per ops directive (2026-05-26): never block add-to-cart on stock. Stock
+  // is no longer synced from ERP — keep variantStock around for admin
+  // diagnostics but always treat the variant as available to the customer.
+  const variantStock = size ? product.variantStocks?.[size] : undefined;
+  void variantStock;
+  const sizeOutOfStock = false;
+  const canAdd = useMultiAxisPicker
+    ? Boolean(resolvedVariantId) && product.inStock
+    : !noSizesAvailable && size && product.inStock && !sizeOutOfStock;
+
+  // When the product has a non-size attribute (Colour, House, …), resolve
+  // the variantId on the client using `variantsByAttributeKey`. The legacy
+  // by-size-only lookup at /api/shop/variant returns the first row matching
+  // the size and ignores colour, which is what produced the wrong-colour-
+  // in-cart bug. Find the variant whose attributes match every current
+  // selection across all axes (size + non-size).
+  const sizeAxisName = useMemo(() => {
+    const g = (product.attributeGroups ?? []).find((g) => /size|sizes/i.test(g.name));
+    return g?.name ?? null;
+  }, [product.attributeGroups]);
+  const resolvedAttrVariantId = useMemo<string | null>(() => {
+    if (nonSizeAttrGroups.length === 0) return null;
+    const map = product.variantsByAttributeKey ?? {};
+    if (Object.keys(map).length === 0) return null;
+    const sel: Record<string, string> = { ...attrSel };
+    if (sizeAxisName && size) {
+      // size pills store with a single-letter prefix (e.g. "V28") but
+      // product_attribute_values.value carries the clean form. Mirror the
+      // strip logic the picker uses for display.
+      const stripped = /^[A-Z][A-Z0-9-]/i.test(size) ? size.slice(1) : size;
+      sel[sizeAxisName] = stripped;
+    }
+    const key = buildAttributeKey(sel);
+    return map[key] ?? null;
+  }, [nonSizeAttrGroups.length, attrSel, size, sizeAxisName, product.variantsByAttributeKey]);
+
+  const handleAdd = async () => {
+    if (!canAdd || addBusy) return;
+    setAddBusy(true);
+    setAddError(null);
+    const adder =
+      useMultiAxisPicker && resolvedVariantId
+        ? () => addByVariantId(resolvedVariantId, 1)
+        : resolvedAttrVariantId
+          ? () => addByVariantId(resolvedAttrVariantId, 1)
+          : () => add(product, size);
+    const results = await Promise.all(Array.from({ length: qty }, adder));
+    setAddBusy(false);
+    const failed = results.find((r) => !r.ok);
+    if (failed) {
+      setAddError(failed.error ?? "Could not add to cart");
+      return;
+    }
+    setAdded(true);
+    setTimeout(() => setAdded(false), 1600);
+  };
+
+  // When the multi-axis picker has resolved a variant, the displayed
+  // price + MRP need to track THAT variant — not the legacy `size`
+  // state (which is `""` for kit-like products). `variantPrices` is
+  // keyed by the variant's `size` column, and `variantIds` maps size
+  // → variantId; reverse that map to look up the size for the resolved
+  // variant. Without this, every combination of subjects shows the
+  // template-level fallback price (e.g. ₹6,735) instead of its own.
+  const resolvedSize =
+    useMultiAxisPicker && resolvedVariantId
+      ? Object.entries(product.variantIds ?? {}).find(
+          ([, vid]) => vid === resolvedVariantId
+        )?.[0]
+      : null;
+  const priceKey = resolvedSize ?? size;
+  const activePrice =
+    (priceKey ? product.variantPrices?.[priceKey]?.price : undefined) ??
+    product.price;
+  const activeMrp =
+    (priceKey ? product.variantPrices?.[priceKey]?.mrp : undefined) ??
+    product.mrp;
+
+  const off = activeMrp
+    ? Math.round((1 - activePrice / activeMrp) * 100)
+    : 0;
+
+  return (
+    <div className="lg:sticky lg:top-28 lg:self-start">
+      {/* eyebrow — use a category-aware label so misclassified bookkits
+          don't show "Uniform" as the eyebrow. */}
+      <p className="text-[11px] font-semibold tracking-[0.18em] uppercase text-brand">
+        {product.kind === "kit" ||
+        product.kind === "set" ||
+        /book[\s-]?(kit|set)|bookset|bookkit/i.test(product.name)
+          ? "Book Kit"
+          : product.categoryPath[product.categoryPath.length - 2] ?? "Uniform"}
+      </p>
+
+      {/* name */}
+      <h1 className="mt-2 font-display text-[28px] sm:text-[34px] lg:text-[40px] font-extrabold tracking-tight text-ink-900 leading-[1.05]">
+        {product.name}
+      </h1>
+
+      {/* rating */}
+      {product.rating && (
+        <div className="mt-3 flex items-center gap-2 text-[13px]">
+          <span className="inline-flex items-center gap-1 text-ink-900 font-semibold">
+            <Star className="h-3.5 w-3.5 fill-brand text-brand" />
+            {product.rating.score.toFixed(1)}
+          </span>
+          <span className="text-ink-300">·</span>
+          <a
+            href="#reviews"
+            className="text-ink-500 hover:text-ink-900 transition-colors"
+          >
+            {product.rating.count} reviews
+          </a>
+          <span className="text-ink-300">·</span>
+          {sizeOutOfStock ? (
+            <span className="inline-flex items-center gap-1 text-red-600 font-medium">
+              <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
+              Size {size} sold out
+            </span>
+          ) : variantStock !== undefined && variantStock <= 5 ? (
+            <span className="inline-flex items-center gap-1 text-amber-600 font-medium">
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+              Only {variantStock} left in {size}
+            </span>
+          ) : variantStock !== undefined && variantStock <= 10 ? (
+            <span className="inline-flex items-center gap-1 text-emerald-600 font-medium">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+              {variantStock} in stock
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1 text-emerald-600 font-medium">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+              In stock
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* tagline */}
+      {product.tagline && (
+        <p className="mt-4 text-[15px] leading-relaxed text-ink-600 max-w-prose">
+          {product.tagline}
+        </p>
+      )}
+
+      {/* price */}
+      <div className="mt-6 flex items-baseline gap-3">
+        <span className="font-display text-[34px] font-extrabold tracking-tight text-ink-900">
+          ₹{activePrice.toLocaleString()}
+        </span>
+        {activeMrp && (
+          <>
+            <span className="text-[16px] line-through text-ink-400">
+              ₹{activeMrp.toLocaleString()}
+            </span>
+            <span className="rounded-full bg-brand-50 border border-brand-100 px-2 py-0.5 text-[11px] font-bold text-brand">
+              {off}% OFF
+            </span>
+          </>
+        )}
+      </div>
+      <p className="mt-1 text-[12px] text-ink-500">
+        Inclusive of all taxes · Free shipping over ₹999
+      </p>
+
+      {/* Inline size-chart card. Visible directly below the price so parents
+          can compare measurements before they pick a size, without scrolling
+          to the bottom-of-page accordion. Click to enlarge. Hidden when no
+          chart is configured (accessories, kits, bookkits) OR when the
+          product is a category that doesn't need a size chart even if one
+          was set in admin (bookkits, caps, shoes, bags, ties, belts). */}
+      {product.sizeChartUrl && !isNoSizeChartCategory(product) && (
+        <button
+          type="button"
+          onClick={() => setChartOpen(true)}
+          className="mt-4 w-full text-left rounded-2xl border border-ink-100 bg-white p-3 flex items-center gap-3 hover:border-ink-900 transition-colors group"
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={product.sizeChartUrl}
+            alt={`${product.name} size guide`}
+            className="h-20 w-20 sm:h-24 sm:w-24 object-contain rounded-lg bg-cream-50 shrink-0"
+          />
+          <div className="flex-1 min-w-0">
+            <p className="inline-flex items-center gap-1.5 text-[13px] font-bold text-ink-900">
+              <Ruler className="h-3.5 w-3.5 text-brand" />
+              Size guide
+            </p>
+            <p className="mt-1 text-[12px] text-ink-500 leading-snug">
+              Measure your child at home — tap to enlarge.
+            </p>
+          </div>
+          <span className="text-[11px] font-semibold text-brand group-hover:underline shrink-0">
+            View →
+          </span>
+        </button>
+      )}
+
+      {/* Item-Variant template picker (e.g. SMS Grade 11 Bookkit).
+          Owns every axis and resolves to a single variant via the map. */}
+      {useMultiAxisPicker && (
+        <MultiAttributePicker
+          groups={multiAxisGroups}
+          variantsByAttributeKey={variantMap}
+          onResolve={setResolvedVariantId}
+        />
+      )}
+
+      {/* Legacy multi-attribute selectors (Uniform Colors + Shirt Size,
+          etc.) — kept for products whose variants don't have a complete
+          attribute lookup map yet. */}
+      {!useMultiAxisPicker && (product.attributeGroups ?? []).map((group) => (
+        <AttributeGroupPicker
+          key={group.name}
+          name={group.name}
+          values={group.values}
+          isSize={/size|sizes/i.test(group.name)}
+          selectedSize={size}
+          onSelectSize={setSize}
+          attrValue={attrSel[group.name] ?? group.values[0] ?? ""}
+          onAttrChange={(v) => setAttrSel((s) => ({ ...s, [group.name]: v }))}
+        />
+      ))}
+
+      {/* language / stream selector (template variants) */}
+      {hasTplVariants && (() => {
+        // Convert template variants to the shape parseBookkitLangs expects.
+        const asVariants = tplVariants.map((v) => ({
+          id: v.id,
+          size: v.attributeValue ?? v.name,
+        }));
+        const langPairs = parseBookkitLangs(asVariants);
+
+        if (langPairs) {
+          // Find the variant that matches the current slug (this PDP is one of the variants).
+          const activePair = langPairs.find((p) =>
+            tplVariants.find((v) => v.id === p.variantId)?.slug === product.slug
+          ) ?? null;
+          const secondLangs = [...new Set(langPairs.map((p) => p.secondLang))].sort();
+
+          return (
+            <div className="mt-7 space-y-4">
+              <div>
+                <p className="text-[11px] font-semibold tracking-[0.16em] uppercase text-ink-500 mb-2">
+                  2nd Language
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {secondLangs.map((lang) => {
+                    const pair = langPairs.find((p) => p.secondLang === lang)!;
+                    const tv = tplVariants.find((v) => v.id === pair.variantId)!;
+                    const active = activePair?.secondLang === lang;
+                    return (
+                      <button
+                        key={lang}
+                        type="button"
+                        onClick={() => router.push(`/shop/${tv.slug}${studentQuery}`)}
+                        className={
+                          "rounded-lg border px-4 py-2 text-[14px] transition " +
+                          (active
+                            ? "border-brand bg-brand text-white font-bold shadow-sm"
+                            : "border-ink-200 text-ink-700 font-medium hover:border-ink-900")
+                        }
+                      >
+                        {lang}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              {activePair && (
+                <div>
+                  <p className="text-[11px] font-semibold tracking-[0.16em] uppercase text-ink-500 mb-2">
+                    3rd Language
+                  </p>
+                  <div className="flex flex-wrap gap-2 items-center">
+                    <span className="rounded-lg border border-brand bg-brand/10 text-brand-700 font-bold px-4 py-2 text-[14px]">
+                      {activePair.thirdLang}
+                    </span>
+                    <span className="text-[11px] text-ink-400">auto-selected</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        }
+
+        // Generic flat-list fallback for non-language template variants.
+        return (
+          <div className="mt-7">
+            <p className="text-[11px] font-semibold tracking-[0.18em] uppercase text-ink-900">
+              {tplVariants[0].attributeName ?? "Select option"}
+            </p>
+            <div className="mt-3 flex flex-col gap-2">
+              {tplVariants.map((v) => (
+                <button
+                  key={v.id}
+                  type="button"
+                  onClick={() => router.push(`/shop/${v.slug}${studentQuery}`)}
+                  className="group flex items-center justify-between rounded-xl border border-ink-200 bg-white px-4 py-3 text-left hover:border-ink-900 transition-colors"
+                >
+                  <span className="flex items-center gap-3">
+                    <span className="grid h-4 w-4 place-items-center rounded-full border border-ink-300 group-hover:border-ink-900">
+                      <span className="h-1.5 w-1.5 rounded-full" />
+                    </span>
+                    <span className="text-[14px] font-medium text-ink-800">
+                      {v.attributeValue ?? v.name}
+                    </span>
+                  </span>
+                  <span className="text-[13px] font-semibold text-ink-900">
+                    ₹{v.price.toLocaleString()}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* size selector (only when this product has size SKUs — Bookkits skip).
+          Suppressed if attribute_groups already rendered the size picker
+          or if the multi-axis Item-Variant picker is active. */}
+      {!hasTplVariants && !useMultiAxisPicker && (product.attributeGroups ?? []).every((g) => !/size|sizes/i.test(g.name)) && (
+      <div className="mt-7">
+        <div className="flex items-center justify-between">
+          <p className="text-[13px] font-semibold text-ink-900">
+            Size <span className="text-ink-500 font-normal">· {size}</span>
+          </p>
+        </div>
+        <div className="mt-2.5 flex flex-wrap gap-2">
+          {product.sizes.map((s) => {
+            const active = s === size;
+            const stock = product.variantStocks?.[s];
+            const oos = stock !== undefined && stock <= 0;
+            const low = stock !== undefined && stock > 0 && stock <= 5;
+            return (
+              <button
+                key={s}
+                type="button"
+                onClick={() => setSize(s)}
+                disabled={oos}
+                title={
+                  oos
+                    ? "Sold out"
+                    : stock !== undefined
+                    ? `${stock} left`
+                    : undefined
+                }
+                className={
+                  "relative h-11 min-w-11 px-4 rounded-md border text-[14px] font-semibold transition-all " +
+                  (oos
+                    ? "bg-cream-50 text-ink-300 border-ink-100 line-through cursor-not-allowed"
+                    : active
+                    ? "bg-ink-900 text-white border-ink-900"
+                    : "bg-white text-ink-800 border-ink-200 hover:border-ink-900")
+                }
+              >
+                {s}
+                {low && !active && (
+                  <span className="absolute -top-1.5 -right-1.5 grid h-4 min-w-4 px-1 place-items-center rounded-full bg-amber-500 text-[9px] font-bold text-white">
+                    {stock}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+      )}
+
+      {noSizesAvailable && !hasTplVariants ? (
+        <div className="mt-7 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] text-amber-900">
+          This product currently has no available sizes.
+        </div>
+      ) : null}
+
+      {/* qty + buttons */}
+      <div className="mt-7 flex flex-col sm:flex-row gap-3">
+        <QtyStepper value={qty} onChange={setQty} />
+        <button
+          type="button"
+          onClick={handleAdd}
+          disabled={!canAdd || addBusy}
+          className="flex-1 inline-flex items-center justify-center gap-2 rounded-full bg-brand text-white px-6 h-12 text-[14px] font-bold hover:bg-brand-600 active:scale-[0.99] transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-[inset_0_1px_0_rgba(255,255,255,0.25)]"
+        >
+          <AnimatePresence mode="wait">
+            {added ? (
+              <motion.span
+                key="ok"
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -6 }}
+                className="inline-flex items-center gap-2"
+              >
+                <Check className="h-4 w-4" /> Added to cart
+              </motion.span>
+            ) : (
+              <motion.span
+                key="add"
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -6 }}
+                className="inline-flex items-center gap-2"
+              >
+                <ShoppingBag className="h-4 w-4" />
+                Add to cart · ₹{(activePrice * qty).toLocaleString()}
+              </motion.span>
+            )}
+          </AnimatePresence>
+        </button>
+      </div>
+
+      {addError && (
+        <p className="mt-2 text-[15px] font-semibold text-red-600 text-center leading-snug">{addError}</p>
+      )}
+
+      <button
+        type="button"
+        onClick={() => setLiked(!liked)}
+        className={
+          "mt-3 w-full inline-flex items-center justify-center gap-2 rounded-full border h-11 text-[13px] font-semibold transition-all " +
+          (liked
+            ? "border-brand text-brand bg-brand-50"
+            : "border-ink-200 text-ink-800 hover:border-ink-900 bg-white")
+        }
+      >
+        <Heart
+          className={`h-4 w-4 transition-all ${liked ? "fill-brand" : ""}`}
+        />
+        {liked ? "Saved to wishlist" : "Save for later"}
+      </button>
+
+      {/* trust strip */}
+      <ul className="mt-7 grid grid-cols-2 gap-x-4 gap-y-3 pt-6 border-t border-ink-100">
+        {trust.map((t) => (
+          <li key={t.label} className="flex items-start gap-2.5">
+            <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-brand-50 border border-brand-100 text-brand">
+              <t.icon className="h-3.5 w-3.5" />
+            </span>
+            <span className="text-[12.5px] font-medium text-ink-700 leading-snug">
+              {t.label}
+            </span>
+          </li>
+        ))}
+      </ul>
+
+      {/* Enlarge-on-click size-chart modal. Rendered via createPortal to
+          document.body so any transformed / will-change ancestor (Gallery's
+          hover scale, sticky BuyBox column, framer-motion wrappers) can't
+          trap the fixed-position overlay and let the product image bleed
+          through underneath. */}
+      {chartOpen && product.sizeChartUrl && portalReady &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm grid place-items-center px-4"
+            onClick={() => setChartOpen(false)}
+          >
+            <div
+              className="bg-white rounded-2xl shadow-xl max-w-3xl w-full max-h-[90vh] overflow-auto"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-start justify-between gap-4 p-4 sm:p-5 border-b border-ink-100 sticky top-0 bg-white">
+                <div className="flex items-center gap-2.5">
+                  <span className="grid h-9 w-9 place-items-center rounded-full bg-brand-50 border border-brand-100 text-brand">
+                    <Ruler className="h-4 w-4" />
+                  </span>
+                  <div>
+                    <p className="font-display text-[16px] font-bold text-ink-900">
+                      Size guide
+                    </p>
+                    <p className="text-[12px] text-ink-500">{product.name}</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setChartOpen(false)}
+                  aria-label="Close"
+                  className="grid h-8 w-8 place-items-center rounded-full text-ink-500 hover:bg-cream-100"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <div className="p-4 sm:p-6">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={product.sizeChartUrl}
+                  alt={`${product.name} size chart`}
+                  className="w-full h-auto object-contain rounded-xl border border-ink-100"
+                />
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
+    </div>
+  );
+}
+
+function AttributeGroupPicker({
+  name,
+  values,
+  isSize,
+  selectedSize,
+  onSelectSize,
+  attrValue,
+  onAttrChange,
+}: {
+  name: string;
+  values: string[];
+  /** True when this group is a size group — its clicks set the cart size. */
+  isSize: boolean;
+  selectedSize: string;
+  onSelectSize: (s: string) => void;
+  /** Non-size attribute current value, controlled by BuyBox so add-to-cart
+   *  can read it. Required when isSize is false. */
+  attrValue?: string;
+  onAttrChange?: (v: string) => void;
+}) {
+  const value = isSize ? selectedSize : attrValue ?? values[0] ?? "";
+  const setValue = isSize ? onSelectSize : (onAttrChange ?? (() => {}));
+  return (
+    <div className="mt-7">
+      <p className="text-[11px] font-semibold tracking-[0.18em] uppercase text-ink-900">
+        {name}
+      </p>
+      <div className="mt-2.5 flex flex-wrap gap-2">
+        {values.map((v) => {
+          // Sizes are displayed clean (e.g. "28", "2XL", "34-22") but
+          // stored prefixed in product_variants ("V28", "L2XL", "Q34-22").
+          // Tolerate any single-letter prefix on read; on click re-add
+          // whichever prefix the existing selection uses.
+          const stripped = (s: string) =>
+            /^[A-Z][A-Z0-9-]/i.test(s) ? s.slice(1) : s;
+          const active =
+            value === v ||
+            stripped(value) === v ||
+            value?.slice(1) === v ||
+            value?.startsWith(v) === false && stripped(value) === v;
+          const prefix =
+            /^[A-Z][A-Z0-9-]/i.test(selectedSize) ? selectedSize[0] : "";
+          return (
+            <button
+              key={v}
+              type="button"
+              onClick={() => setValue(isSize ? `${prefix}${v}` : v)}
+              className={
+                "h-11 min-w-11 px-4 rounded-md border text-[13px] font-semibold transition-all " +
+                (active
+                  ? "bg-ink-900 text-white border-ink-900"
+                  : "bg-white text-ink-800 border-ink-200 hover:border-ink-900")
+              }
+            >
+              {v}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}

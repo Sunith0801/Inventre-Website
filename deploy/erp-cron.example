@@ -1,0 +1,24 @@
+# ─────────────────────────────────────────────────────────────────────
+# Host crontab snippet for the ERP bridge.
+#
+# Install:
+#   sudo cp deploy/erp-cron.example /etc/cron.d/inventre-erp
+#   sudo chmod 644 /etc/cron.d/inventre-erp
+#   # then `crontab -l` for root should show these picked up
+#
+# Required env vars (read from /etc/cron.d so they need to be inline
+# or sourced by the wrapper; the simplest is to inline CRON_TOKEN here):
+#   CRON_TOKEN=<the long random string also set in app .env>
+# ─────────────────────────────────────────────────────────────────────
+
+CRON_TOKEN=REPLACE_ME
+
+# Drainer — pushes buffered order events to ERP every ~30s.
+# Cron's minimum granularity is 1 minute, so run twice (now + 30s).
+*/1 * * * * root  curl -fsS -m 30 -X POST -H "Authorization: Bearer $CRON_TOKEN" http://127.0.0.1:3000/api/cron/erp-drain >> /var/log/inventre-erp-drain.log 2>&1
+*/1 * * * * root  sleep 30; curl -fsS -m 30 -X POST -H "Authorization: Bearer $CRON_TOKEN" http://127.0.0.1:3000/api/cron/erp-drain >> /var/log/inventre-erp-drain.log 2>&1
+
+# Poller — pulls ERP status updates every 60s.
+*/1 * * * * root  curl -fsS -m 60 -X POST -H "Authorization: Bearer $CRON_TOKEN" http://127.0.0.1:3000/api/cron/erp-poll  >> /var/log/inventre-erp-poll.log  2>&1
+
+# Optional: nightly logrotate is recommended for the two log files above.

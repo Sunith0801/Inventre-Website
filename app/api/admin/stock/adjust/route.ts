@@ -1,0 +1,30 @@
+import { NextResponse } from "next/server";
+import { parseBody } from "@/lib/parse-body";
+import { z } from "zod";
+import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { adjust, getDefaultWarehouseId } from "@/lib/repos/inventory";
+
+const Body = z.object({
+  variantId: z.string().uuid(),
+  warehouseId: z.string().uuid().optional(),
+  delta: z.number().int(), // can be negative
+  notes: z.string().min(1),
+});
+
+export async function POST(req: Request) {
+  const guard = await requireAdmin("super", "ops");
+  if (isResponse(guard)) return guard;
+  const parsed = await parseBody(req, Body);
+  if (parsed instanceof NextResponse) return parsed;
+  const body = parsed;
+  const wh = body.warehouseId ?? (await getDefaultWarehouseId());
+  try {
+    const result = await adjust(body.variantId, wh, body.delta, body.notes, guard.id);
+    return NextResponse.json({ bin: result });
+  } catch (e) {
+    return NextResponse.json(
+      { error: e instanceof Error ? e.message : "stock adjustment failed" },
+      { status: 400 }
+    );
+  }
+}

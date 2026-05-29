@@ -1,0 +1,28 @@
+# pack-refs with: peeled fully-peeled sorted 
+bc462f883288ec8b14907162876e6b88924a0e2c refs/remotes/origin/catalog-redesign-erpnext
+c0bc7fcd60631736c4edc873466a5543e0b0da38 refs/remotes/origin/chore/docker-compose-local-cookie-bypass
+3c08a7d62900d572782f0521af57026ae5405d38 refs/remotes/origin/db/migration-0014-shop-catalog-data-fixes
+6eaaeb886656d73e87d4a55353afd0e1ba1f2988 refs/remotes/origin/feature/admin-ux-and-student-shop-sync
+8705ee493f3c3455db687fa80387e5269fe8d81f refs/remotes/origin/feature/ccavenue-checkout-integration
+7218306860eec7b02ee0676871f5ad6919d4385b refs/remotes/origin/feature/erp-bridge
+95fb1cc992684c54aeb8d16d2083940f113cdc09 refs/remotes/origin/feature/erp-bridge-fixes-2026-05-20
+39ab4718b8b9d5f5f3b703af34bf5dcf980e8aca refs/remotes/origin/feature/login-register-recovery-multi-student
+55971be5596d6fabe8b132e28833366f48cfc7ba refs/remotes/origin/feature/parent-auth-and-recovery
+8f9339e5653d0c5a304183c288f3c5c7292c2c82 refs/remotes/origin/feature/shop-bookkit-language-fixes
+dff08d9819e6f43499c101d30bc9a29a323f7536 refs/remotes/origin/feature/shop-improvements
+aff1a6cbee0715472728b58f0551f72aa8e09f5e refs/remotes/origin/feature/two-stage-mobile-recovery
+e37b9224ca668c855aa6e1093561954a49763edb refs/remotes/origin/fix/local-docker-insecure-cookies
+0eaac18c6a1ab18901056e52f548d550b7009591 refs/remotes/origin/fix/parent-cookie-shadowing
+801c990418993f6fde98946641798b3af0fc0c54 refs/remotes/origin/fix/shop-catalog-resolution
+800cf54eedc54afbbe269dc14aa5ab4cdd01dd11 refs/remotes/origin/frontend-redesign
+fa6166873aaf2f33c7b5e990fb466487649fd399 refs/remotes/origin/main
+98a2cdd3eafda8dfc90f9d2f4a4773b85a5b7302 refs/tags/v1.0-pre-overhaul
+^b90a469e0d63de7806b6b2791281e13f3c85df05
+e18e3606998a8b2bf671223e8e4f58824246a378 refs/tags/v1.1-phase-1-complete
+^3c4b98efc70de8c63d9d541d7349941e000eea4c
+c01fb1fcf67efe35a54d062d2b13810b57ea5686 refs/tags/v1.11-phase-2-to-11-complete
+^98c9353b7f1a4c5a879839c394ad511c888eef4e
+668bf148accc875f8cd303362fe2e87f5eeaac87 refs/tags/v1.12-gap-fix-complete
+^5cbda8e60b0dc676c33f7f7b5f9f9853d395be2a
+3df5bfd2a465b2d87b26dddc24e86ee4b6391b91 refs/tags/v1.12-phase-12-complete
+^e8dd499956d673f34f06ad79c769ca88e41a8d1a

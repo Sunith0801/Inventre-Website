@@ -1,0 +1,23 @@
+dcbb059c1fd222bb4ba40715435a6cf5c0f0d255		branch 'main' of https://github.com/mahendrateja95/Inventre
+bc462f883288ec8b14907162876e6b88924a0e2c	not-for-merge	branch 'catalog-redesign-erpnext' of https://github.com/mahendrateja95/Inventre
+c0bc7fcd60631736c4edc873466a5543e0b0da38	not-for-merge	branch 'chore/docker-compose-local-cookie-bypass' of https://github.com/mahendrateja95/Inventre
+3c08a7d62900d572782f0521af57026ae5405d38	not-for-merge	branch 'db/migration-0014-shop-catalog-data-fixes' of https://github.com/mahendrateja95/Inventre
+6f01d74ed5baec2a9b39b8494f74d9385b98b5b2	not-for-merge	branch 'feat/ccavenue-prod-prep-and-order-numbering' of https://github.com/mahendrateja95/Inventre
+034c3b54492bcb6f90c471aaa07ab54865d375bb	not-for-merge	branch 'feat/multi-guardian-otp-login' of https://github.com/mahendrateja95/Inventre
+6eaaeb886656d73e87d4a55353afd0e1ba1f2988	not-for-merge	branch 'feature/admin-ux-and-student-shop-sync' of https://github.com/mahendrateja95/Inventre
+8705ee493f3c3455db687fa80387e5269fe8d81f	not-for-merge	branch 'feature/ccavenue-checkout-integration' of https://github.com/mahendrateja95/Inventre
+7218306860eec7b02ee0676871f5ad6919d4385b	not-for-merge	branch 'feature/erp-bridge' of https://github.com/mahendrateja95/Inventre
+95fb1cc992684c54aeb8d16d2083940f113cdc09	not-for-merge	branch 'feature/erp-bridge-fixes-2026-05-20' of https://github.com/mahendrateja95/Inventre
+39ab4718b8b9d5f5f3b703af34bf5dcf980e8aca	not-for-merge	branch 'feature/login-register-recovery-multi-student' of https://github.com/mahendrateja95/Inventre
+55971be5596d6fabe8b132e28833366f48cfc7ba	not-for-merge	branch 'feature/parent-auth-and-recovery' of https://github.com/mahendrateja95/Inventre
+8f9339e5653d0c5a304183c288f3c5c7292c2c82	not-for-merge	branch 'feature/shop-bookkit-language-fixes' of https://github.com/mahendrateja95/Inventre
+dff08d9819e6f43499c101d30bc9a29a323f7536	not-for-merge	branch 'feature/shop-improvements' of https://github.com/mahendrateja95/Inventre
+aff1a6cbee0715472728b58f0551f72aa8e09f5e	not-for-merge	branch 'feature/two-stage-mobile-recovery' of https://github.com/mahendrateja95/Inventre
+e37b9224ca668c855aa6e1093561954a49763edb	not-for-merge	branch 'fix/local-docker-insecure-cookies' of https://github.com/mahendrateja95/Inventre
+0eaac18c6a1ab18901056e52f548d550b7009591	not-for-merge	branch 'fix/parent-cookie-shadowing' of https://github.com/mahendrateja95/Inventre
+801c990418993f6fde98946641798b3af0fc0c54	not-for-merge	branch 'fix/shop-catalog-resolution' of https://github.com/mahendrateja95/Inventre
+800cf54eedc54afbbe269dc14aa5ab4cdd01dd11	not-for-merge	branch 'frontend-redesign' of https://github.com/mahendrateja95/Inventre
+301f059921b306f1946a3f7d4c9ef67029fdf3c8	not-for-merge	branch 'wip/2026-05-26-admin-fixes-perf-delivery' of https://github.com/mahendrateja95/Inventre
+1d31ba67db6244209f9986f330d855d9bd503e94	not-for-merge	branch 'wip/2026-05-27-coupon-codes' of https://github.com/mahendrateja95/Inventre
+78f340d98774d6cc104e0c96762860b6903f45db	not-for-merge	branch 'wip/checkpoint-2026-05-24' of https://github.com/mahendrateja95/Inventre
+887eeb6aeb94468c9f2533283577b27e476b0aad	not-for-merge	branch 'wip/tc-fees-payment-logs' of https://github.com/mahendrateja95/Inventre

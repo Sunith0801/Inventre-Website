@@ -1,0 +1,15 @@
+0000000000000000000000000000000000000000 36239f2d921cf047ce5ed06cbb1d627a2028f9b9 root <root@vmi3314148.contaboserver.net> 1779675085 +0200	branch: Created from HEAD
+36239f2d921cf047ce5ed06cbb1d627a2028f9b9 8753d531e112c12989f7b656ecc669865336b3f5 root <root@vmi3314148.contaboserver.net> 1779675118 +0200	commit: T&C acceptance on first-login, checkout fee notice, payment logs + relations fixes
+8753d531e112c12989f7b656ecc669865336b3f5 aad7ad88ca22184b57ae527026b0a0dc8ccb8a5f root <root@vmi3314148.contaboserver.net> 1779772333 +0200	commit: Retire legacy ERPNext, migrate to local DB, perf + reliability hardening
+aad7ad88ca22184b57ae527026b0a0dc8ccb8a5f 30024b142013934f5869d25915a22065a435a8bd root <root@vmi3314148.contaboserver.net> 1779772987 +0200	commit: Gitignore .bak.* snapshots and stray root assets; remove duplicates
+30024b142013934f5869d25915a22065a435a8bd 0bc39c076b8cacb33fe4893dc1801fa9c4e8f881 root <root@vmi3314148.contaboserver.net> 1779773829 +0200	commit: README: comprehensive local-laptop setup guide
+0bc39c076b8cacb33fe4893dc1801fa9c4e8f881 0ab9d4cb7d2a3503b507a62489c72c9f92e9f25d root <root@vmi3314148.contaboserver.net> 1779776014 +0200	commit: db client: bump max connection pool 10 → 30
+0ab9d4cb7d2a3503b507a62489c72c9f92e9f25d 1d7c104d93a33ea186f290046372e070b9aacd27 root <root@vmi3314148.contaboserver.net> 1779779015 +0200	commit: Async webhook drain + pgbouncer pool bump + duration logging
+1d7c104d93a33ea186f290046372e070b9aacd27 201b410451dfc9092ef6066097265ee1ea602d81 root <root@vmi3314148.contaboserver.net> 1779790358 +0200	commit: Full production hardening: 16-point action plan
+201b410451dfc9092ef6066097265ee1ea602d81 bfe5a1d92dfa1c6b02f214bbde48f8e05772953b root <root@vmi3314148.contaboserver.net> 1779795634 +0200	commit: Numbering: skip 4.7s re-seed when counter is fresh + MinIO healthcheck disabled
+bfe5a1d92dfa1c6b02f214bbde48f8e05772953b 75b09d9ac5aac44d2395536253238fcc7f4cdb4b root <root@vmi3314148.contaboserver.net> 1779795658 +0200	commit: Monitoring: cAdvisor v0.52.1, polystat plugin auto-install, blackbox probes
+75b09d9ac5aac44d2395536253238fcc7f4cdb4b 76c98d8156dffab21b5dcb85bf114cae491fcbb2 root <root@vmi3314148.contaboserver.net> 1779796023 +0200	commit: docs: production migration playbook + harden inventory
+76c98d8156dffab21b5dcb85bf114cae491fcbb2 6e0fa451e4883fca175cd6c2b4b78ab475b48ed6 root <root@vmi3314148.contaboserver.net> 1779804009 +0200	commit: ERP bridge: stop renaming order_number on audit ack — keep local SO ID immutable
+6e0fa451e4883fca175cd6c2b4b78ab475b48ed6 77560401dc11659678e81d64461dcba99349b1a6 root <root@vmi3314148.contaboserver.net> 1779804022 +0200	commit: Monitoring: Grafana alerts via Office 365 SMTP — Redis/Postgres/site/disk
+77560401dc11659678e81d64461dcba99349b1a6 26862e29afcdb255f4d41841241e62d306af7244 root <root@vmi3314148.contaboserver.net> 1779804808 +0200	commit: Heal script: created_at from db.execute is a string, not Date
+26862e29afcdb255f4d41841241e62d306af7244 887eeb6aeb94468c9f2533283577b27e476b0aad root <root@vmi3314148.contaboserver.net> 1779804894 +0200	commit: Heal script: per-row INSERT (postgres-js can't bind string[] to uuid[])

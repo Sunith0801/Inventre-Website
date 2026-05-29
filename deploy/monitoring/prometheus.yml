@@ -1,0 +1,67 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    env: prod
+    service: inventre
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  - job_name: node
+    # node-exporter is a regular container on inventre-deploy_default + the
+    # monitoring stack's default network; reach it by service name.
+    static_configs:
+      - targets: ["node-exporter:9100"]
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: inventre-prod-vps
+
+  - job_name: postgres
+    static_configs:
+      - targets: ["postgres-exporter:9187"]
+
+  - job_name: redis
+    static_configs:
+      - targets: ["redis-exporter:9121"]
+
+  - job_name: pgbouncer
+    static_configs:
+      - targets: ["pgbouncer-exporter:9127"]
+
+  - job_name: cadvisor
+    static_configs:
+      - targets: ["cadvisor:8080"]
+
+  # Synthetic HTTP probes via blackbox-exporter — fills the
+  # "Blackbox exporter - multiple locations" Grafana dashboard.
+  # Each target is probed every 30s with the http_2xx module; results
+  # land as probe_success{instance=...}, probe_duration_seconds, etc.
+  - job_name: blackbox_http
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets:
+          - https://inventre.in/api/health
+          - https://www.inventre.in/api/health
+          - https://test.inventre.in/api/health
+          - https://inventre.in/
+          - https://inventre.in/shop
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  # Inventre app itself doesn't expose /metrics yet. When you wire up
+  # `next-metrics` or a small Prometheus endpoint at /api/metrics, add:
+  # - job_name: app
+  #   static_configs:
+  #     - targets: ["app:3000"]
+  #   metrics_path: /api/metrics

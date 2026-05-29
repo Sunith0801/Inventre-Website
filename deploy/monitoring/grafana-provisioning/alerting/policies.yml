@@ -1,0 +1,33 @@
+apiVersion: 1
+
+# Notification routing tree.
+#
+# Default receiver = email-ops.
+# Group alerts by severity so a single email is sent per severity bucket
+# instead of one email per individual firing alert (which would be very
+# noisy during a real outage where several rules fire at once).
+
+policies:
+  - orgId: 1
+    receiver: email-ops
+    group_by:
+      - grafana_folder
+      - alertname
+      - severity
+    group_wait: 30s
+    group_interval: 5m
+    repeat_interval: 4h
+    routes:
+      # Critical alerts re-page every hour until acknowledged.
+      - receiver: email-ops
+        matchers:
+          - severity = critical
+        group_wait: 15s
+        group_interval: 2m
+        repeat_interval: 1h
+        continue: false
+      # Warning alerts: standard cadence.
+      - receiver: email-ops
+        matchers:
+          - severity = warning
+        continue: false

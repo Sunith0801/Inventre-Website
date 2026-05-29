@@ -1,0 +1,149 @@
+--- a/lib/repos/product-attribute-groups.ts
++++ b/lib/repos/product-attribute-groups.ts
+@@ -33,6 +33,38 @@
+ 
+ export type AttributeGroupJson = { name: string; values: string[] };
+ 
++/**
++ * Look up the human-friendly axis name to use for the "size" group when
++ * deriving `products.attribute_groups` from the legacy `product_variants.size`
++ * column. Returns the name of the EAV attribute of type='size' bound to the
++ * product's active variants (e.g. "Caps Sizes", "Skirt Size", "Shirt Size"),
++ * or `null` if no such EAV attribute exists. Callers decide whether to fall
++ * back to the legacy "Size" label or skip the size group entirely (the
++ * latter prevents a phantom Size axis on products whose
++ * `product_variants.size` column holds non-size labels, like the CAS
++ * bookkit parents where `size` is a sibling product name).
++ */
++export async function getSizeAxisNameForProduct(
++  productId: string
++): Promise<string | null> {
++  const rows = await db
++    .select({ name: productAttributes.name })
++    .from(productAttributes)
++    .innerJoin(
++      productVariantAttributes,
++      eq(productVariantAttributes.attributeId, productAttributes.id)
++    )
++    .innerJoin(
++      productVariants,
++      eq(productVariants.id, productVariantAttributes.variantId)
++    )
++    .where(
++      sql`${productVariants.productId} = ${productId} AND ${productAttributes.type}::text = 'size'`
++    )
++    .limit(1);
++  return rows[0]?.name ?? null;
++}
++
+ export async function refreshProductAttributeGroups(
+   productId: string
+ ): Promise<AttributeGroupJson[]> {
+--- a/app/api/admin/products/[id]/route.ts
++++ b/app/api/admin/products/[id]/route.ts
+@@ -15,6 +15,7 @@
+ } from "@/db/schema";
+ import { requireAdmin, isResponse } from "@/lib/admin-guard";
+ import { invalidateCatalog } from "@/lib/cache";
++import { getSizeAxisNameForProduct } from "@/lib/repos/product-attribute-groups";
+ 
+ const Variant = z.object({
+   id: z.string().uuid().optional(),
+@@ -320,10 +321,30 @@
+       }
+ 
+       const groups: { name: string; values: string[] }[] = [];
+-      if (sizes.length > 0) groups.push({ name: "Size", values: sizes });
+       const otherGroups = Array.from(buckets.values()).sort(
+         (a, b) => a.attrSort - b.attrSort
+       );
++      if (sizes.length > 0) {
++        // Pick the axis name for the legacy size group. Three cases:
++        //   1. Product has an EAV attribute of type='size' (e.g. "Caps Sizes",
++        //      "Skirt Size") — use that name so the JSON axis matches the key
++        //      MultiAttributePicker looks up in variantsByAttributeKey.
++        //   2. No EAV size attribute and no other EAV axes — fall back to
++        //      the legacy "Size" label (preserves behaviour for the ~2,100
++        //      legacy-only products with no EAV metadata).
++        //   3. No EAV size attribute but other EAV axes exist — skip the
++        //      size group entirely. This prevents a phantom "Size" axis on
++        //      products whose `product_variants.size` column holds non-size
++        //      labels (e.g. CAS bookkit parents where `size` is a sibling
++        //      product name); otherwise every option would become unreachable
++        //      in the picker.
++        const eavSizeName = await getSizeAxisNameForProduct(id);
++        const sizeAxisName =
++          eavSizeName ?? (otherGroups.length === 0 ? "Size" : null);
++        if (sizeAxisName !== null) {
++          groups.push({ name: sizeAxisName, values: sizes });
++        }
++      }
+       for (const g of otherGroups) {
+         const values = g.values
+           .sort((a, b) => a.sort - b.sort)
+--- a/scripts/recompute-attribute-groups.ts
++++ b/scripts/recompute-attribute-groups.ts
+@@ -88,6 +88,25 @@
+     byProduct.set(r.product_id, buckets);
+   }
+ 
++  // Per-product size axis name: products with an EAV attribute of type='size'
++  // (e.g. "Caps Sizes", "Skirt Size") must use that name as the JSON axis,
++  // not the hardcoded "Size", so MultiAttributePicker can look up variants
++  // by the same key the EAV stores. Products with no EAV size attribute
++  // keep the legacy "Size" label.
++  const sizeAxisRows = (await db.execute(sql`
++    SELECT DISTINCT pv.product_id, pa.name AS size_axis_name
++      FROM product_variant_attributes pva
++      JOIN product_variants pv ON pv.id = pva.variant_id AND pv.is_active = true
++      JOIN product_attributes pa ON pa.id = pva.attribute_id
++     WHERE pa.type::text = 'size'
++  `)) as unknown as { product_id: string; size_axis_name: string }[];
++  const sizeAxisNameByProduct = new Map<string, string>();
++  for (const r of sizeAxisRows) {
++    if (!sizeAxisNameByProduct.has(r.product_id)) {
++      sizeAxisNameByProduct.set(r.product_id, r.size_axis_name);
++    }
++  }
++
+   // Fetch every product's current attribute_groups in one shot. We only
+   // touch rows whose derived value differs.
+   const currentRows = (await db.execute(sql`
+@@ -104,10 +123,25 @@
+     const buckets = byProduct.get(r.id) ?? new Map<string, Bucket>();
+ 
+     const groups: { name: string; values: string[] }[] = [];
+-    if (sizes.length > 0) groups.push({ name: "Size", values: sizes });
+     const sortedBuckets = Array.from(buckets.values()).sort(
+       (a, b) => a.attrSort - b.attrSort
+     );
++    if (sizes.length > 0) {
++      // Mirror the admin PATCH route guard. Three cases:
++      //   1. EAV size attribute exists → use its name.
++      //   2. No EAV size attribute and no other EAV axes → fall back to
++      //      "Size" (legacy-only products).
++      //   3. No EAV size attribute but other EAV axes exist → skip the size
++      //      group; the legacy `size` column likely holds non-size labels
++      //      (e.g. sibling product names on bookkit parents) and would
++      //      create a phantom unreachable axis.
++      const eavSizeName = sizeAxisNameByProduct.get(r.id);
++      const sizeAxisName =
++        eavSizeName ?? (sortedBuckets.length === 0 ? "Size" : null);
++      if (sizeAxisName !== null) {
++        groups.push({ name: sizeAxisName, values: sizes });
++      }
++    }
+     for (const g of sortedBuckets) {
+       const values = g.values.sort((a, b) => a.sort - b.sort).map((v) => v.value);
+       groups.push({ name: g.name, values });
+--- a/lib/cart.tsx
++++ b/lib/cart.tsx
+@@ -190,7 +190,7 @@
+   const add = useCallback(
+     async (product: Product, size: string): Promise<{ ok: boolean; error?: string }> => {
+       const variantId = await getVariantId(product.id, size);
+-      if (!variantId) return { ok: false, error: "Size not found" };
++      if (!variantId) return { ok: false, error: "Size not available" };
+       const r = await fetch("/api/cart", {
+         method: "POST",
+         headers: { "Content-Type": "application/json" },

@@ -1,0 +1,43 @@
+import { NextResponse } from "next/server";
+import { parseBody } from "@/lib/parse-body";
+import { z } from "zod";
+import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import {
+  createPurchaseOrder,
+  listPurchaseOrders,
+} from "@/lib/repos/purchase-orders";
+
+export async function GET(req: Request) {
+  const guard = await requireAdmin("super", "ops");
+  if (isResponse(guard)) return guard;
+  const url = new URL(req.url);
+  const status = url.searchParams.get("status") ?? undefined;
+  return NextResponse.json({ purchaseOrders: await listPurchaseOrders({ status }) });
+}
+
+const Body = z.object({
+  supplierId: z.string().uuid(),
+  orderDate: z.string(),
+  expectedDate: z.string().nullable().optional(),
+  items: z
+    .array(
+      z.object({
+        variantId: z.string().uuid().nullable().optional(),
+        description: z.string().min(1),
+        qty: z.number().int().min(1),
+        unitPrice: z.number().int().min(0), // paise
+      })
+    )
+    .min(1),
+  notes: z.string().nullable().optional(),
+});
+
+export async function POST(req: Request) {
+  const guard = await requireAdmin("super");
+  if (isResponse(guard)) return guard;
+  const parsed = await parseBody(req, Body);
+  if (parsed instanceof NextResponse) return parsed;
+  const body = parsed;
+  const po = await createPurchaseOrder({ ...body, createdBy: guard.id });
+  return NextResponse.json({ id: po.id, poNumber: po.poNumber });
+}

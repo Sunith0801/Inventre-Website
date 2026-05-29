@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>How to log in & change your mobile number</title>
+<style>
+  @page { size: A4; margin: 16mm 14mm; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: #1f2937;
+    font-size: 11.5pt;
+    line-height: 1.55;
+    margin: 0;
+  }
+  h1 { font-size: 26pt; margin: 0 0 8pt; color: #0f172a; font-weight: 800; letter-spacing: -0.02em; }
+  h2 {
+    font-size: 18pt; margin: 22pt 0 8pt; color: #0f172a; font-weight: 800;
+    border-bottom: 3px solid #f97316; padding-bottom: 6pt; letter-spacing: -0.01em;
+  }
+  h3 { font-size: 13pt; margin: 14pt 0 4pt; color: #334155; font-weight: 700; }
+  p  { margin: 0 0 8pt; }
+  ol, ul { margin: 0 0 10pt 22pt; padding: 0; }
+  li { margin: 5pt 0; }
+
+  /* ── Cover ─────────────────────────────────────────────────────── */
+  .cover {
+    page-break-after: always;
+    text-align: center;
+    padding-top: 80pt;
+    background: linear-gradient(180deg, #fff7ed 0%, #ffffff 60%);
+    margin: -16mm -14mm;
+    padding-left: 14mm; padding-right: 14mm; padding-bottom: 16mm;
+    min-height: 100vh;
+  }
+  .cover .logo-text {
+    font-weight: 900; font-size: 40pt; letter-spacing: 0.18em;
+    line-height: 1; color: #0f172a;
+  }
+  .cover .logo-text .ink-i { color: #f97316; }
+  .cover .logo-text .dot   { color: #f97316; }
+  .cover .pill {
+    display: inline-block; margin-top: 26pt;
+    padding: 6pt 18pt;
+    background: #0f172a; color: #fff;
+    border-radius: 999px; font-size: 9.5pt;
+    letter-spacing: 0.18em; font-weight: 700;
+  }
+  .cover h1 {
+    font-size: 32pt; max-width: 460pt; margin: 24pt auto 18pt;
+    color: #0f172a;
+  }
+  .cover .who { font-size: 13pt; color: #475569; max-width: 380pt; margin: 0 auto; }
+  .cover .date { margin-top: 60pt; color: #94a3b8; font-size: 10pt; }
+  .cover .url {
+    margin-top: 8pt; color: #f97316; font-weight: 700; letter-spacing: 0.05em;
+    font-size: 11pt;
+  }
+
+  /* ── Quick reference / TOC ─────────────────────────────────────── */
+  .toc {
+    border: 1px solid #e5e7eb; border-radius: 12pt; padding: 14pt 18pt;
+    background: #f9fafb; margin-bottom: 14pt;
+  }
+  .toc li { font-size: 11.5pt; }
+  .toc .section-key { display: inline-block; min-width: 60pt; color: #f97316; font-weight: 700; }
+
+  /* ── Steps ─────────────────────────────────────────────────────── */
+  .section { page-break-before: always; }
+  .step {
+    display: grid;
+    grid-template-columns: 1fr 230pt;
+    gap: 18pt;
+    margin-bottom: 18pt;
+    align-items: start;
+    page-break-inside: avoid;
+  }
+  .step.right { grid-template-columns: 230pt 1fr; }
+  .step-text { font-size: 11.5pt; }
+  .step-text .num {
+    display: inline-block;
+    background: #0f172a; color: #fff;
+    width: 24pt; height: 24pt; line-height: 24pt;
+    border-radius: 50%; text-align: center;
+    font-weight: 800; font-size: 11pt;
+    margin-right: 6pt; vertical-align: -3pt;
+  }
+  .step img {
+    width: 100%;
+    border: 1px solid #cbd5e1;
+    border-radius: 14pt;
+    box-shadow: 0 6pt 14pt rgba(15,23,42,0.08);
+  }
+
+  /* ── Callouts ──────────────────────────────────────────────────── */
+  .callout {
+    background: #fef3c7; border-left: 4px solid #f59e0b;
+    padding: 9pt 14pt; border-radius: 6pt; margin: 10pt 0; font-size: 10.5pt;
+  }
+  .callout.info { background: #dbeafe; border-left-color: #3b82f6; }
+  .callout.tip  { background: #dcfce7; border-left-color: #16a34a; }
+  .callout strong { color: #0f172a; }
+
+  /* ── Header for non-cover pages ───────────────────────────────── */
+  .page-header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding-bottom: 8pt; margin-bottom: 12pt;
+    border-bottom: 1px solid #e5e7eb;
+    color: #94a3b8; font-size: 9pt;
+  }
+  .page-header .brand {
+    color: #0f172a; font-weight: 800; letter-spacing: 0.12em; font-size: 9pt;
+  }
+  .page-header .brand .dot { color: #f97316; }
+
+  /* ── Footer note ──────────────────────────────────────────────── */
+  .footer-note {
+    margin-top: 32pt; padding: 14pt 16pt;
+    background: #0f172a; color: #f1f5f9;
+    border-radius: 10pt; font-size: 10.5pt;
+  }
+  .footer-note strong { color: #fed7aa; }
+</style>
+</head>
+<body>
+
+<!-- ───── COVER ───── -->
+<div class="cover">
+  <div class="logo-text">
+    <span class="ink-i">I</span><span class="ink-rest">NVENTRE</span><span class="dot">.</span>
+  </div>
+  <span class="pill">PARENT GUIDE</span>
+  <h1>How to log in &amp; change your mobile number</h1>
+  <p class="who">A step-by-step walkthrough for parents using the Inventre school store on their phone.</p>
+  <p class="url">inventre.online</p>
+  <p class="date">Last updated: 2026-05-28</p>
+</div>
+
+<!-- ───── QUICK REFERENCE ───── -->
+<div class="section">
+  <div class="page-header"><span class="brand">INVENTRE<span class="dot">.</span></span><span>Parent Guide · Quick reference</span></div>
+  <h2>What do you need to do?</h2>
+  <div class="toc">
+    <ul style="list-style:none; margin:0; padding:0;">
+      <li><span class="section-key">SECTION A</span> I'm logging in for the first time.</li>
+      <li><span class="section-key">SECTION B</span> I'm already logged in and want to change my mobile.</li>
+      <li><span class="section-key">SECTION C</span> I don't remember which mobile is on file (or never registered).</li>
+      <li><span class="section-key">SECTION D</span> Something's not working — troubleshooting.</li>
+    </ul>
+  </div>
+
+  <div class="callout info">
+    <strong>Before you start:</strong> Keep your <strong>10-digit mobile number</strong> ready.
+    If you have a new SIM, you'll also need access to the <em>old</em> number or your
+    registered email for a one-time verification.
+  </div>
+</div>
+
+<!-- ───── SECTION A ───── -->
+<div class="section">
+  <div class="page-header"><span class="brand">INVENTRE<span class="dot">.</span></span><span>Section A · First-time login</span></div>
+  <h2>Section A — First-time login</h2>
+  <p>Use this when the school has just added your child and you've never signed in before.</p>
+
+  <div class="step">
+    <div class="step-text">
+      <p><span class="num">1</span><strong>Open the website.</strong></p>
+      <p>Visit <strong>inventre.online</strong> on your phone or laptop and tap <em>Sign in</em>.
+      You'll land on the screen on the right — a single field for your mobile number.</p>
+    </div>
+    <img src="file:///root/Inventre/tmp/guide-shots/01-login-empty.png" alt="Login screen" />
+  </div>
+
+  <div class="step right">
+    <img src="file:///root/Inventre/tmp/guide-shots/02-login-mobile-filled.png" alt="Mobile number filled in" />
+    <div class="step-text">
+      <p><span class="num">2</span><strong>Type your 10-digit mobile number.</strong></p>
+      <p>No spaces, no +91 — just the 10 digits. Then tap <em>Continue</em>.</p>
+      <div class="callout">
+        The website auto-removes spaces, dashes and the +91 prefix, but the underlying
+        number must be exactly 10 digits.
+      </div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-text">
+      <p><span class="num">3</span><strong>Enter your password</strong> (or the OTP, for first-time users).</p>
+      <p>If you're signing in for the very first time you'll be asked for a 6-digit
+      OTP that arrives on your mobile. Then you'll set a password.</p>
+      <p>If you already have a password, just enter it and tap <em>Sign in</em>.</p>
+    </div>
+    <img src="file:///root/Inventre/tmp/guide-shots/06-login-password.png" alt="Password step" />
+  </div>
+
+  <div class="callout tip">
+    <strong>Tip:</strong> Once you've set your password, future logins only need
+    the mobile + password — no OTP — unless you reset.
+  </div>
+</div>
+
+<!-- ───── SECTION B ───── -->
+<div class="section">
+  <div class="page-header"><span class="brand">INVENTRE<span class="dot">.</span></span><span>Section B · Change your mobile (logged in)</span></div>
+  <h2>Section B — Change your mobile (already logged in)</h2>
+  <p>Use this when you can sign in with your current number and just want to switch to a new one.</p>
+
+  <div class="step">
+    <div class="step-text">
+      <p><span class="num">1</span>Sign in as usual at <strong>inventre.online</strong>.</p>
+      <p><span class="num">2</span>Tap your <strong>profile icon</strong> at the top right and choose <em>My account</em>.</p>
+      <p>You'll land on the dashboard shown on the right — your current mobile number is masked
+      with the <em>Change</em> button next to it.</p>
+    </div>
+    <img src="file:///root/Inventre/tmp/guide-shots/07-account-dashboard.png" alt="Account dashboard" />
+  </div>
+
+  <div class="step right">
+    <img src="file:///root/Inventre/tmp/guide-shots/08-change-phone-enter.png" alt="Change phone — enter new mobile" />
+    <div class="step-text">
+      <p><span class="num">3</span><strong>Type your new 10-digit mobile.</strong></p>
+      <p>Tap <em>Send OTP</em>. A 6-digit code will arrive on the <strong>new</strong> number
+      within a minute.</p>
+      <div class="callout info">
+        We send the OTP to the <strong>new</strong> number so we know you really have access
+        to it before the switch.
+      </div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-text">
+      <p><span class="num">4</span><strong>Enter the 6-digit OTP</strong> that arrived on the new number.</p>
+      <p>Tap <em>Verify</em>. You'll see a confirmation screen and from your next login you'll use the new mobile.</p>
+    </div>
+    <img src="file:///root/Inventre/tmp/guide-shots/09-change-phone-otp.png" alt="Change phone — OTP entry" />
+  </div>
+
+  <div class="callout tip">
+    <strong>Tip:</strong> Your old number stays in the system as a backup guardian contact
+    until you ask the school admin to remove it. This is helpful if you ever need to recover access.
+  </div>
+</div>
+
+<!-- ───── SECTION C ───── -->
+<div class="section">
+  <div class="page-header"><span class="brand">INVENTRE<span class="dot">.</span></span><span>Section C · Recover / add a mobile</span></div>
+  <h2>Section C — "I don't remember which mobile is on file"</h2>
+  <p>Use this when you can't sign in because the registered mobile is wrong, changed, or unknown.</p>
+
+  <div class="step">
+    <div class="step-text">
+      <p><span class="num">1</span>Open <strong>inventre.online</strong> and tap <em>Sign in</em>.</p>
+      <p><span class="num">2</span>At the bottom of the login screen, tap
+      <strong>"Recover, change or add a mobile via student details"</strong>.</p>
+    </div>
+    <img src="file:///root/Inventre/tmp/guide-shots/03-forgot-modal.png" alt="Forgot mobile modal" />
+  </div>
+
+  <div class="step right">
+    <img src="file:///root/Inventre/tmp/guide-shots/04-forgot-school-grade.png" alt="School and grade pickers" />
+    <div class="step-text">
+      <p><span class="num">3</span><strong>Pick your child's school</strong> from the first dropdown.</p>
+      <p><span class="num">4</span><strong>Pick their grade</strong> from the second.</p>
+      <div class="callout">
+        If you don't see your grade, double-check the school's spelling — some appear under variants
+        (e.g. "St. Michaels" vs "St. Michaels School").
+      </div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-text">
+      <p><span class="num">5</span><strong>Type at least 3 letters of your child's name.</strong></p>
+      <p>Spelling doesn't have to be perfect — the search forgives typos, accepts
+      words in any order, and you can even type the <strong>last 4 digits of the
+      registered mobile number</strong> instead of the name.</p>
+      <p><span class="num">6</span>Tap your child's row. We mask the mobile on file with
+      only the last 4 digits visible — enough to confirm it's the right account
+      without exposing the full number.</p>
+    </div>
+    <img src="file:///root/Inventre/tmp/guide-shots/05-forgot-name-typed.png" alt="Search results (blurred for privacy)" />
+  </div>
+
+  <div class="step right">
+    <div class="step-text" style="grid-column: 1 / span 2;">
+      <p><span class="num">7</span><strong>Verify it's you.</strong> Pick one of two methods:</p>
+      <ul>
+        <li><strong>OTP to the old mobile</strong> — use this if you still have access to the registered number.</li>
+        <li><strong>OTP to your registered email</strong> — use this if the mobile is gone.</li>
+      </ul>
+      <p><span class="num">8</span>Pick what to do next:</p>
+      <ul>
+        <li><strong>Change my number</strong> — replaces the old one (use this for a new SIM).</li>
+        <li><strong>Add as extra guardian</strong> — keeps the old number and adds yours as a second contact.</li>
+      </ul>
+      <p><span class="num">9</span>Enter the new 10-digit mobile, verify the OTP, and you're done.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ───── SECTION D ───── -->
+<div class="section">
+  <div class="page-header"><span class="brand">INVENTRE<span class="dot">.</span></span><span>Section D · Troubleshooting</span></div>
+  <h2>Section D — Troubleshooting</h2>
+
+  <h3>OTP didn't arrive</h3>
+  <ul>
+    <li>Wait a full minute — SMS delivery sometimes lags.</li>
+    <li>Check that you typed the mobile correctly (10 digits, no spaces, no +91).</li>
+    <li>Make sure your phone has signal and SMS isn't blocked by a DND setting on your mobile network.</li>
+    <li>Tap <em>Resend OTP</em>. The timer resets after 60 seconds.</li>
+    <li>For email OTP, also check the spam folder.</li>
+  </ul>
+
+  <h3>"No matching students found" when I search by name</h3>
+  <ul>
+    <li>Type just the first 3 letters of the first name (e.g. <em>sun</em> for Sunith).</li>
+    <li>Try the <strong>last 4 digits of the registered mobile</strong> instead — it's the most reliable.</li>
+    <li>Double-check the school and grade — children appear under one exact grade only.</li>
+  </ul>
+
+  <h3>I see the wrong child / wrong mobile in the search results</h3>
+  <ul>
+    <li>Stop. Don't proceed with the recovery — you'd change the wrong family's number.</li>
+    <li>Contact your school admin and they'll fix the mapping.</li>
+  </ul>
+
+  <h3>"Mobile number must contain 10 digits"</h3>
+  <ul>
+    <li>The site removes spaces, dashes and +91 from what you type, but the underlying number must be exactly 10 digits.</li>
+    <li>"+91 98765-43210" is fine. "98765-43" is not — it's only 7 digits.</li>
+  </ul>
+
+  <div class="footer-note">
+    <strong>Still stuck?</strong> Reach out to your school's Inventre coordinator with:
+    your child's name, school, grade, and the mobile number you'd like on file.
+    They can update it for you directly.
+  </div>
+</div>
+
+</body>
+</html>

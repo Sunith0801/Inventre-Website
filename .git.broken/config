@@ -1,0 +1,28 @@
+[core]
+	repositoryformatversion = 0
+	filemode = true
+	bare = false
+	logallrefupdates = true
+[remote "origin"]
+	url = https://github.com/mahendrateja95/Inventre.git
+	fetch = +refs/heads/*:refs/remotes/origin/*
+[branch "main"]
+	remote = origin
+	merge = refs/heads/main
+	vscode-merge-base = origin/main
+[branch "feat/multi-guardian-otp-login"]
+	remote = origin
+	merge = refs/heads/feat/multi-guardian-otp-login
+	vscode-merge-base = origin/feat/multi-guardian-otp-login
+[branch "feat/ccavenue-prod-prep-and-order-numbering"]
+	vscode-merge-base = origin/feat/multi-guardian-otp-login
+	remote = origin
+	merge = refs/heads/feat/ccavenue-prod-prep-and-order-numbering
+[branch "wip/checkpoint-2026-05-24"]
+	vscode-merge-base = origin/feat/ccavenue-prod-prep-and-order-numbering
+	remote = origin
+	merge = refs/heads/wip/checkpoint-2026-05-24
+[branch "wip/tc-fees-payment-logs"]
+	vscode-merge-base = origin/wip/checkpoint-2026-05-24
+	remote = origin
+	merge = refs/heads/wip/tc-fees-payment-logs
