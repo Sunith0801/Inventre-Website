@@ -27,6 +27,10 @@ export type StudentRow = {
   erpName: string | null;
   enabled: boolean;
   enrollmentNumber: string | null;
+  // School-side "reference / admission" code from MCB (e.g. AW250526
+  // at SMS schools). Shown alongside enrollment so admins searching by
+  // either number can recognise the row.
+  referenceCode?: string | null;
   firstName: string | null;
   lastName: string | null;
   grade: string | null;
@@ -35,7 +39,29 @@ export type StudentRow = {
   isVerified: boolean;
   isNewStudent: boolean;
   joiningDate: string | null;
+  verifiedAt?: string | Date | null;
+  parentPhone?: string | null;
+  parentLastLoginAt?: string | Date | null;
+  mcbAccessGranted?: boolean;
 };
+
+// Format a timestamp as IST (Asia/Kolkata) "dd MMM yyyy, HH:mm" — used
+// for the Verified and Last-login admin columns. Server sends a
+// Postgres timestamptz; we display in the school's local zone.
+function fmtIST(value: string | Date | null | undefined): string {
+  if (!value) return "—";
+  const d = value instanceof Date ? value : new Date(value);
+  if (isNaN(d.getTime())) return "—";
+  return d.toLocaleString("en-IN", {
+    timeZone: "Asia/Kolkata",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
 
 type Filters = {
   q: string;
@@ -44,6 +70,7 @@ type Filters = {
   enabled: string;
   verified: string;
   newStudent: string;
+  recent: string;
   page: number;
 };
 
@@ -60,11 +87,13 @@ export function StudentsBrowser({
   initial,
   schoolList,
   gradeList,
+  gradesBySchool,
   lockedSchoolCode,
 }: {
   initial: FetchResult & { filters: Filters };
   schoolList: { code: string | null; name: string | null }[];
   gradeList: { name: string | null }[];
+  gradesBySchool: Record<string, string[]>;
   /** When set (school_admin), the school select is locked to this code. */
   lockedSchoolCode: string | null;
 }) {
@@ -90,6 +119,7 @@ export function StudentsBrowser({
     if (f.enabled) sp.set("enabled", f.enabled);
     if (f.verified) sp.set("verified", f.verified);
     if (f.newStudent) sp.set("newStudent", f.newStudent);
+    if (f.recent) sp.set("recent", f.recent);
     if (f.page > 1) sp.set("page", String(f.page));
     return sp.toString();
   };
@@ -150,6 +180,7 @@ export function StudentsBrowser({
         enabled: sp.get("enabled") ?? "",
         verified: sp.get("verified") ?? "",
         newStudent: sp.get("newStudent") ?? "",
+        recent: sp.get("recent") ?? "",
         page: Math.max(1, Number(sp.get("page") ?? "1") || 1),
       });
     };
@@ -199,7 +230,13 @@ export function StudentsBrowser({
         </div>
         <select
           value={filters.schoolCode}
-          onChange={(e) => setFilter({ schoolCode: e.target.value })}
+          onChange={(e) => {
+            const next = e.target.value;
+            // Reset grade if it isn't available at the new school.
+            const availableGrades = next ? (gradesBySchool[next] ?? []) : null;
+            const dropGrade = availableGrades && filters.grade && !availableGrades.includes(filters.grade);
+            setFilter({ schoolCode: next, ...(dropGrade ? { grade: "" } : {}) });
+          }}
           disabled={!!lockedSchoolCode}
           className={selectClass}
         >
@@ -216,7 +253,10 @@ export function StudentsBrowser({
           className={selectClass}
         >
           <option value="">All grades</option>
-          {gradeList.map((g) => (
+          {(filters.schoolCode && gradesBySchool[filters.schoolCode]
+            ? gradesBySchool[filters.schoolCode].map((name) => ({ name }))
+            : gradeList
+          ).map((g) => (
             <option key={g.name ?? ""} value={g.name ?? ""}>
               {g.name ?? ""}
             </option>
@@ -249,6 +289,18 @@ export function StudentsBrowser({
           <option value="1">New students only</option>
           <option value="0">Returning only</option>
         </select>
+        <select
+          value={filters.recent}
+          onChange={(e) => setFilter({ recent: e.target.value })}
+          className={selectClass}
+          title="Filter by last update — synced_at bumps on every MCB grant and edit"
+        >
+          <option value="">All time</option>
+          <option value="1d">Last 24 hours</option>
+          <option value="7d">Last 7 days</option>
+          <option value="30d">Last 30 days</option>
+          <option value="90d">Last 90 days</option>
+        </select>
       </Toolbar>
 
       <div className="mb-1 h-4 text-[11px] text-ink-400">
@@ -270,11 +322,14 @@ export function StudentsBrowser({
                   <Th>Enrollment</Th>
                   <Th>Status</Th>
                   <Th>Name</Th>
+                  <Th>Parent</Th>
                   <Th>Grade · Section</Th>
                   <Th>School</Th>
                   <Th>Joining Date</Th>
                   <Th>New</Th>
                   <Th>Verified</Th>
+                  <Th>Last login (IST)</Th>
+                  <Th>Access</Th>
                 </tr>
               </thead>
               <tbody>
@@ -284,6 +339,9 @@ export function StudentsBrowser({
                       <Link href={`/admin/students/${s.id}`} className="font-mono text-[11px] text-ink-700 hover:text-brand-700">
                         {s.enrollmentNumber ?? "—"}
                       </Link>
+                      {s.referenceCode && s.referenceCode !== s.enrollmentNumber ? (
+                        <div className="font-mono text-[10px] text-ink-500">ref: {s.referenceCode}</div>
+                      ) : null}
                     </Td>
                     <Td>
                       <Badge tone={s.enabled ? "success" : "default"} dot size="sm">
@@ -294,6 +352,13 @@ export function StudentsBrowser({
                       <Link href={`/admin/students/${s.id}`} className="font-semibold text-ink-900 hover:text-brand-700">
                         {[s.firstName, s.lastName].filter(Boolean).join(" ") || s.erpName}
                       </Link>
+                    </Td>
+                    <Td muted>
+                      {s.parentPhone ? (
+                        <span className="font-mono text-[11px]">{s.parentPhone}</span>
+                      ) : (
+                        <span className="text-ink-400 text-[12px]">—</span>
+                      )}
                     </Td>
                     <Td muted>
                       {s.grade ?? "—"}
@@ -312,7 +377,22 @@ export function StudentsBrowser({
                     </Td>
                     <Td>
                       {s.isVerified ? (
-                        <Badge tone="info" size="sm">✓</Badge>
+                        <div className="flex flex-col gap-0.5">
+                          <Badge tone="info" size="sm">✓</Badge>
+                          {s.verifiedAt ? (
+                            <span className="text-[10px] text-ink-500 whitespace-nowrap">{fmtIST(s.verifiedAt)}</span>
+                          ) : null}
+                        </div>
+                      ) : (
+                        <span className="text-ink-400 text-[12px]">—</span>
+                      )}
+                    </Td>
+                    <Td muted>
+                      <span className="text-[11px] whitespace-nowrap">{fmtIST(s.parentLastLoginAt)}</span>
+                    </Td>
+                    <Td>
+                      {s.mcbAccessGranted ? (
+                        <Badge tone="success" size="sm">Granted</Badge>
                       ) : (
                         <span className="text-ink-400 text-[12px]">—</span>
                       )}

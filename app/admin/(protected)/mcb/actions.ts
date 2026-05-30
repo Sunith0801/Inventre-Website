@@ -8,7 +8,8 @@ import { getCurrentUser } from "@/lib/session";
 import {
   mcbBranchToSchoolCode,
   mcbGenderToLabel,
-  mcbGradeToCanonical,
+  mcbGradeToCbse,
+  targetedToMcbDisplay,
 } from "@/lib/mcb/mappings";
 
 type GrantResult = { ok: true } | { ok: false; error: string };
@@ -31,7 +32,12 @@ function isNewStudentRule(
 ): boolean {
   if (!enrollment || !enrollment.startsWith("26")) return false;
   if (!schoolCode) return false;
-  return !schoolCode.toUpperCase().startsWith("CAS");
+  const sc = schoolCode.toUpperCase();
+  // CAS and TTT schools don't ship Magic Boxes — every student there is
+  // treated as returning so they see the full bookkit + uniform catalog
+  // rather than an empty magic-box feed.
+  if (sc.startsWith("CAS") || sc.startsWith("TTT")) return false;
+  return true;
 }
 
 /**
@@ -109,12 +115,17 @@ export async function grantMcbAccess(formData: FormData): Promise<GrantResult> {
         .returning({ id: parents.id });
     }
 
-    // Upsert student by erpName (unique). Re-granting after a revoke flips
-    // enabled back on instead of failing with a duplicate-key error.
+    // Upsert by (school_id, enrollment_number) — the natural key. Matching
+    // by erpName previously caused a parallel `MCB-…` row when the same
+    // student already existed via ERP/ADMIN import; the partial unique
+    // index `students_school_enrolment_uq` makes that impossible now.
     const existing = await tx
       .select({ id: students.id })
       .from(students)
-      .where(eq(students.erpName, erpName))
+      .where(and(
+        eq(students.enrollmentNumber, enrolmentNumber),
+        eq(students.schoolId, school.id),
+      ))
       .limit(1);
 
     const studentValues = {
@@ -215,6 +226,33 @@ export async function grantMcbAccess(formData: FormData): Promise<GrantResult> {
       }
     }
 
+    // Ensure school_grade_mappings has a row for (this school, this grade)
+    // so the storefront can render the MCB-friendly label (e.g. "Class 12")
+    // instead of the internal Targeted vocabulary (e.g. "Grade 15") via
+    // StudentBar's `schoolGivenGrade ?? grade` fallback. Idempotent — if a
+    // row already exists for this (school, grade), we don't overwrite the
+    // admin's existing label choice. WHERE NOT EXISTS rather than ON
+    // CONFLICT because the underlying unique index is partial
+    // (db/migrations/0023_school_grade_mappings_uq.sql).
+    const displayLabel = targetedToMcbDisplay(grade);
+    if (grade && displayLabel) {
+      await tx.execute(sql`
+        INSERT INTO school_grade_mappings
+          (school_id, row_idx, grade, school_given_grade_name, sections, raw)
+        SELECT ${school.id},
+               COALESCE(
+                 (SELECT MAX(row_idx) + 1 FROM school_grade_mappings WHERE school_id = ${school.id}),
+                 0
+               ),
+               ${grade}, ${displayLabel}, NULL, NULL
+         WHERE NOT EXISTS (
+           SELECT 1 FROM school_grade_mappings
+            WHERE school_id = ${school.id}
+              AND lower(grade) = lower(${grade})
+         )
+      `);
+    }
+
     await tx.execute(sql`
       UPDATE mcb_students
       SET website_access = true,
@@ -307,7 +345,7 @@ export async function bulkGrantMcbAccess(
       const fd = new FormData();
       fd.set("enrolment_number", r.enrolment_number);
       fd.set("full_name", r.full_name || r.student_name || "");
-      fd.set("grade", mcbGradeToCanonical(r.grade) ?? "");
+      fd.set("grade", mcbGradeToCbse(r.grade) ?? "");
       fd.set("section", r.section ?? "");
       fd.set("gender", mcbGenderToLabel(r.gender_raw as boolean | string | null) ?? "");
       fd.set("mobile", mobile);

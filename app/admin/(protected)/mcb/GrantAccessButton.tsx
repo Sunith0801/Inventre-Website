@@ -43,6 +43,7 @@ export default function GrantAccessButton(props: Props) {
         )}
         <form
           action={(fd) => {
+            if (!window.confirm(`Revoke website access for ${defaults.fullName || enrolmentNumber}? The parent will be signed out and lose access until you re-grant.`)) return;
             startTransition(async () => {
               const r = await revokeMcbAccess(fd);
               if (!r.ok) setError(r.error);
@@ -96,31 +97,32 @@ export default function GrantAccessButton(props: Props) {
               <label className={LABEL}>Student name</label>
               <input name="full_name" className={FIELD} defaultValue={defaults.fullName} required />
             </div>
-            <div>
+            <div className="col-span-2">
               <label className={LABEL}>MCB grade (from API)</label>
               <input
-                className={`${FIELD} bg-cream-50 text-ink-500`}
+                className={`${FIELD} bg-cream-50 text-ink-700 font-semibold`}
                 value={defaults.mcbGrade || "—"}
                 readOnly
                 tabIndex={-1}
               />
-            </div>
-            <div>
-              <label className={LABEL}>
-                Catalog grade <span className="text-ink-400">(stored internally · editable)</span>
-              </label>
-              <input
-                name="grade"
-                className={FIELD}
-                defaultValue={defaults.grade}
-                placeholder="Grade 4 / Grade 1 / Grade 2"
-              />
-              <p className="mt-1 text-[11px] leading-snug text-ink-500">
-                Catalog grades are +3 ahead of the school class
-                (MCB Class 1 = Grade 4 · Class 9 = Grade 12 · Class 12 = Grade 15);
-                pre-primary is Grade 1/2/3 = Nursery/LKG/UKG. Parents see the
-                school-friendly label from <code>school_grade_mappings</code>.
-              </p>
+              <details className="mt-1.5">
+                <summary className="text-[11px] text-ink-400 cursor-pointer hover:text-ink-600 select-none">
+                  Internal catalog grade ({defaults.grade || "—"})
+                </summary>
+                <div className="mt-1.5 rounded-md border border-ink-100 bg-cream-50/40 p-2">
+                  <input
+                    name="grade"
+                    className={FIELD}
+                    defaultValue={defaults.grade}
+                    placeholder="Grade 4 / Grade 1 / Nursery"
+                  />
+                  <p className="mt-1 text-[10.5px] leading-snug text-ink-500">
+                    Used only for catalog product targeting (+3 offset from
+                    MCB). Parents see the school label from
+                    <code>school_grade_mappings</code>, not this value.
+                  </p>
+                </div>
+              </details>
             </div>
             <div>
               <label className={LABEL}>Section</label>

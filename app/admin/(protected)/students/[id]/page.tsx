@@ -5,7 +5,7 @@ import {
   students, studentAddresses, studentGuardianLinks,
   schools, grades, schoolGradeMappings, parents,
 } from "@/db/schema";
-import { and, eq, asc, inArray } from "drizzle-orm";
+import { and, eq, asc, inArray, sql } from "drizzle-orm";
 import { last10 } from "@/lib/phone";
 import {
   PageHeader, Card, CardHeader, Badge, Th, Td, Tr, EmptyState,
@@ -111,6 +111,38 @@ export default async function StudentDetailPage({
   const billing = addrs.filter((a) => a.kind === "billing");
   const shipping = addrs.filter((a) => a.kind === "shipping");
 
+  // Parent row (when present) and MCB access metadata. These come from
+  // separate tables that grantMcbAccess writes — parents via
+  // students.parentId, mcb_students by enrolment_number.
+  const parentRow = s.parentId
+    ? (
+        await db
+          .select({ id: parents.id, name: parents.name, phone: parents.phone, email: parents.email })
+          .from(parents)
+          .where(eq(parents.id, s.parentId))
+          .limit(1)
+      )[0] ?? null
+    : null;
+  const parentPhoneStatus: "ready" | "pending" | "invalid" = (() => {
+    if (!parentRow?.phone) return "invalid";
+    const n = last10(parentRow.phone);
+    return n ? "ready" : "invalid";
+  })();
+  const mcbAccessRows = s.enrollmentNumber
+    ? ((await db.execute(sql`
+        SELECT website_access, website_access_at, website_access_by
+          FROM mcb_students
+         WHERE enrolment_number = ${s.enrollmentNumber}
+         LIMIT 1
+      `)) as unknown as {
+        website_access: boolean | null;
+        website_access_at: string | null;
+        website_access_by: string | null;
+      }[])
+    : [];
+  const mcbAccess = mcbAccessRows[0] ?? null;
+  const mcbAccessGranted = !!mcbAccess?.website_access;
+
   // Per-guardian-link login status: green=parent row exists for this phone,
   // amber=valid 10-digit but no parent row yet (verify will auto-create on
   // first OTP), red=phone can't be normalized to 10 digits.
@@ -166,8 +198,14 @@ export default async function StudentDetailPage({
         description={
           <span className="flex items-center gap-2 flex-wrap">
             <Badge tone={s.enabled ? "success" : "default"} dot size="sm">{s.enabled ? "Enabled" : "Disabled"}</Badge>
+            {s.grade ? <Badge tone="brand" size="sm">{s.grade}</Badge> : null}
             {s.isVerified ? <Badge tone="info" size="sm">Verified</Badge> : null}
             {s.isNewStudent ? <Badge tone="warning" size="sm">New</Badge> : null}
+            {mcbAccessGranted ? (
+              <Badge tone="success" size="sm" title={
+                `Access granted${mcbAccess?.website_access_at ? ` on ${new Date(mcbAccess.website_access_at).toLocaleDateString("en-IN")}` : ""}${mcbAccess?.website_access_by ? ` by ${mcbAccess.website_access_by}` : ""}`
+              }>MCB Access</Badge>
+            ) : null}
             {school[0] ? (
               <Link href={`/admin/schools/${school[0].id}`} className="text-[11px] text-brand-700 hover:underline">{school[0].schoolName ?? school[0].schoolCode}</Link>
             ) : null}
@@ -202,6 +240,42 @@ export default async function StudentDetailPage({
       </div>
 
       {tab === "details" && (
+        <div className="space-y-5">
+        {(parentRow || mcbAccessGranted) && (
+          <Card>
+            <CardHeader
+              title="Parent &amp; access"
+              description={
+                mcbAccessGranted
+                  ? `Granted via MCB${mcbAccess?.website_access_at ? ` on ${new Date(mcbAccess.website_access_at).toLocaleDateString("en-IN")}` : ""}${mcbAccess?.website_access_by ? ` by ${mcbAccess.website_access_by}` : ""}.`
+                  : "Linked parent — created at student grant time."
+              }
+            />
+            <div className="px-5 pb-5 grid sm:grid-cols-2 gap-x-6 gap-y-2 text-[13px]">
+              <div>
+                <p className="text-[11px] uppercase tracking-wider text-ink-400">Parent name</p>
+                <p className="text-ink-900">{parentRow?.name ?? "—"}</p>
+              </div>
+              <div>
+                <p className="text-[11px] uppercase tracking-wider text-ink-400">Parent phone</p>
+                <p className="text-ink-900 flex items-center gap-2">
+                  {parentRow?.phone ?? "—"}
+                  {parentRow?.phone ? (
+                    parentPhoneStatus === "ready" ? (
+                      <Badge tone="success" size="sm">Login ready</Badge>
+                    ) : (
+                      <Badge tone="warning" size="sm">Invalid</Badge>
+                    )
+                  ) : null}
+                </p>
+              </div>
+              <div>
+                <p className="text-[11px] uppercase tracking-wider text-ink-400">Parent email</p>
+                <p className="text-ink-900">{parentRow?.email ?? "—"}</p>
+              </div>
+            </div>
+          </Card>
+        )}
         <Card>
           <CardHeader title="Student details" description="All fields are editable. Guardians & siblings live on the Relations tab; addresses on Address & Contact." />
           <StudentEditor
@@ -235,6 +309,7 @@ export default async function StudentDetailPage({
             }}
           />
         </Card>
+        </div>
       )}
 
       {tab === "addressContact" && (

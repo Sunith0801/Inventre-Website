@@ -1,7 +1,7 @@
 import "server-only";
 import { cache } from "react";
 import { cookies } from "next/headers";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { erpGradeToReal } from "@/lib/grade-translate";
 import { last10 } from "@/lib/phone";
@@ -97,6 +97,12 @@ export type CurrentAdmin = {
   name: string | null;
   role: "super" | "ops" | "school_admin";
   schoolId: string | null;
+  /** Permission keys granted via the user's role. Empty Set if the
+   *  user has no `role_id` (legacy rows during the RBAC rollout). */
+  permissions: ReadonlySet<string>;
+  /** Display name of the assigned role row (e.g. "Super Admin"). Falls
+   *  back to a capitalised legacy enum value when role_id is null. */
+  roleName: string;
 };
 
 export type CurrentUser = CurrentParent | CurrentAdmin | null;
@@ -151,13 +157,25 @@ export const getCurrentParent = cache(async (): Promise<CurrentParent | null> =>
   // wrongly-attached student without losing its history. Also defends
   // against legacy / disabled records (e.g. MCB-prefixed entries that
   // sneak in via the phone-fallback backfill) ever surfacing.
+  //
+  // Picker membership is the UNION of:
+  //   (a) students whose parent_id points at me (primary owner), AND
+  //   (b) students linked to my phone via student_guardian_links (the
+  //       "guardian" relationship — e.g. mother on a father-primary
+  //       record). The partial unique index on (student_id, right10(phone))
+  //       guarantees no double-counting.
+  const myPhone10 = last10(parent.phone);
   const rows = await db
     .select({ student: students, school: schools })
     .from(students)
     .innerJoin(schools, eq(schools.id, students.schoolId))
     .where(
       and(
-        eq(students.parentId, parent.id),
+        sql`(${students.parentId} = ${parent.id} OR EXISTS (
+          SELECT 1 FROM ${studentGuardianLinks} gl
+           WHERE gl.student_id = ${students.id}
+             AND right(regexp_replace(coalesce(gl.phone_no, ''), '\D', '', 'g'), 10) = ${myPhone10}
+        ))`,
         eq(students.enabled, true),
         eq(students.status, "active"),
       )
@@ -266,8 +284,12 @@ export const getCurrentParent = cache(async (): Promise<CurrentParent | null> =>
       .where(inArray(schoolGradeMappings.schoolId, schoolIds));
     for (const m of mappings) {
       if (!m.grade || !m.label) continue;
-      const targeted = erpGradeToReal(m.grade) ?? m.grade;
-      gradeLabel.set(`${m.schoolId}::${targeted}`, m.label);
+      // Raw-to-raw keying. Each school's mapping vocabulary must match
+      // the vocabulary of its students.grade — MCB schools use CBSE
+      // throughout post-cleanup; ERP-only schools still use ERP. Either
+      // way both sides line up at the same string so no translation
+      // needed.
+      gradeLabel.set(`${m.schoolId}::${m.grade}`, m.label);
     }
   }
 
@@ -325,6 +347,28 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser> => {
     .where(eq(users.id, sess.sub))
     .limit(1);
   if (!user) return null;
+
+  // Load permissions + role display name. The legacy `users.role` enum
+  // still drives the ~140 `requireAdmin(...)` calls, but new code uses
+  // the permission Set via `requirePermission(...)` and the sidebar
+  // filters by these keys.
+  const permSet = new Set<string>();
+  let roleName = user.role === "super" ? "Super Admin"
+              : user.role === "ops" ? "Operations"
+              : "School Admin";
+  if (user.roleId) {
+    const rows = (await db.execute(sql`
+      SELECT r.name AS role_name, p.permission
+        FROM admin_roles r
+        LEFT JOIN admin_role_permissions p ON p.role_id = r.id
+       WHERE r.id = ${user.roleId}
+    `)) as unknown as { role_name: string; permission: string | null }[];
+    for (const r of rows) {
+      if (r.permission) permSet.add(r.permission);
+      if (r.role_name) roleName = r.role_name;
+    }
+  }
+
   return {
     kind: "admin",
     id: user.id,
@@ -332,6 +376,8 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser> => {
     name: user.name,
     role: user.role,
     schoolId: user.schoolId,
+    permissions: permSet,
+    roleName,
   };
 });
 

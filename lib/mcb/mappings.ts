@@ -96,6 +96,66 @@ export function mcbGradeToCanonical(grade: string | null | undefined): string | 
 }
 
 /**
+ * MCB → CBSE/Real grade (1:1, no offset). This is the vocabulary
+ * `product_grades.grade` uses, so storing this directly on
+ * `students.grade` ensures the catalog query
+ * (`WHERE pg.grade = students.grade`) returns the right products.
+ *
+ *   MCB Nursery → "Nursery"   (school displays "Nursery")
+ *   MCB LKG     → "LKG"
+ *   MCB UKG     → "UKG"
+ *   MCB Class 1 → "Grade 1"
+ *   MCB Class 9 → "Grade 9"
+ *   MCB Class X → "Grade 10"
+ *   MCB XII     → "Grade 12"
+ *
+ * Returns null on unrecognised input so callers can fail loudly.
+ */
+export function mcbGradeToCbse(grade: string | null | undefined): string | null {
+  if (!grade) return null;
+  const s = grade.trim();
+  if (/\bnursery\b/i.test(s) || /\bnur\b/i.test(s)) return "Nursery";
+  if (/\blkg\b/i.test(s)) return "LKG";
+  if (/\bukg\b/i.test(s)) return "UKG";
+  const n = mcbGradeToNumber(s);
+  if (n == null) return null;
+  return `Grade ${n}`;
+}
+
+/**
+ * Inverse of `mcbGradeToCanonical` — Targeted grade → school-friendly
+ * label that matches what MCB shows. Used to populate
+ * `school_grade_mappings.schoolGivenGradeName` so parents see "Class 12"
+ * on the storefront instead of the internal "Grade 15" vocabulary.
+ *
+ * Returns null when input is null/unrecognised — caller decides whether
+ * to skip writing the mapping row.
+ *
+ *   "Grade 1"  → "Nursery"
+ *   "Grade 2"  → "LKG"
+ *   "Grade 3"  → "UKG"
+ *   "Grade 4"  → "Class 1"
+ *   "Grade 12" → "Class 9"
+ *   "Grade 15" → "Class 12"
+ */
+export function targetedToMcbDisplay(grade: string | null | undefined): string | null {
+  if (!grade) return null;
+  const s = grade.trim();
+  // 1:1 identity for the CBSE values now used end-to-end. Anything that
+  // doesn't look like a known CBSE label returns null so the caller can
+  // skip seeding a malformed mapping row (defensive — should never
+  // happen after the Phase A cleanup).
+  if (/^nursery$/i.test(s)) return "Nursery";
+  if (/^lkg$/i.test(s)) return "LKG";
+  if (/^ukg$/i.test(s)) return "UKG";
+  const m = s.match(/^grade\s+(\d{1,2})$/i);
+  if (!m) return null;
+  const n = parseInt(m[1], 10);
+  if (n >= 1 && n <= 12) return `Grade ${n}`;
+  return null;
+}
+
+/**
  * MCB `Gender` → "Male" | "Female".
  *
  * Convention verified against ~13k rows: boolean `true` is overwhelmingly

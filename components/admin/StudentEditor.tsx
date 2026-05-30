@@ -5,23 +5,12 @@ import { Save, Trash2, Plus, AlertCircle, X, Users } from "lucide-react";
 import { Button } from "@/components/admin/ui/primitives-client";
 import { Modal } from "@/components/ui/Modal";
 
-// Inlined ERP-offset translation so `students.grade` (Targeted vocab) and
-// `school_grade_mappings.grade` (ERP-uniform vocab) line up in the picker.
-// Mirrors lib/grade-translate.ts.
-const ERP_TO_REAL: Record<string, string> = {
-  "Grade 1": "Nursery", "Grade 2": "LKG", "Grade 3": "UKG",
-  "Grade 4": "Grade 1", "Grade 5": "Grade 2", "Grade 6": "Grade 3",
-  "Grade 7": "Grade 4", "Grade 8": "Grade 5", "Grade 9": "Grade 6",
-  "Grade 10": "Grade 7", "Grade 11": "Grade 8", "Grade 12": "Grade 9",
-  "Grade 13": "Grade 10", "Grade 14": "Grade 11", "Grade 15": "Grade 12",
-  Nursery: "Nursery", LKG: "LKG", UKG: "UKG",
-};
+// Identity passthrough — was an ERP→CBSE translator that's now obsolete.
+// All grade tables are in CBSE space after the Phase A cleanup
+// (scripts/cleanup-erp-* + scripts/revert-mcb-grade-plus3). Keeping the
+// function name so the picker's call sites don't need a refactor.
 function toTargetedGrade(raw: string): string {
-  const t = raw.trim();
-  if (ERP_TO_REAL[t]) return ERP_TO_REAL[t];
-  const m = t.match(/^Grade\s+(\d{1,2})$/i);
-  if (m) return ERP_TO_REAL[`Grade ${parseInt(m[1], 10)}`] ?? raw;
-  return raw;
+  return raw.trim();
 }
 
 type Form = {
@@ -379,6 +368,8 @@ export function StudentEditor({
         }))
       : gradeOptions.map((g) => ({ value: g, label: g }));
   if (form.grade && !gradeChoices.some((c) => c.value === form.grade)) {
+    // Stored value isn't in the school's mapped choices — surface it
+    // tagged so admin sees and can edit it.
     gradeChoices.unshift({ value: form.grade, label: `${form.grade} (legacy)` });
   }
 

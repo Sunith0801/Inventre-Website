@@ -172,6 +172,10 @@ export async function POST(req: Request) {
   // path) and inherited at student-creation time, not here — OTP-only
   // sign-ins don't promote verification on their own.
   await createParentSession(parent.id, body.phone);
+  db.update(parents)
+    .set({ lastLoginAt: new Date() })
+    .where(eq(parents.id, parent.id))
+    .catch(console.error);
   db.insert(otpLogs)
     .values({ phone: body.phone, purpose: "login", event: "verified", ip })
     .catch(console.error);

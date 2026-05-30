@@ -49,8 +49,10 @@ type NavItem = {
   href: string;
   label: string;
   icon: React.ComponentType<{ className?: string }>;
-  /** If set, only admins with one of these roles see this item. */
-  roles?: ("super" | "ops" | "school_admin")[];
+  /** Permission key from lib/admin-permissions.ts. Item is hidden when
+   *  the current admin's permissions Set doesn't include it. Omit to
+   *  always show (rare — used only for items pre-RBAC). */
+  perm?: string;
 };
 
 type NavGroup = { kicker: string; items: NavItem[] };
@@ -58,32 +60,32 @@ type NavGroup = { kicker: string; items: NavItem[] };
 const groups: NavGroup[] = [
   {
     kicker: "Overview",
-    items: [{ href: "/admin/dashboard", label: "Dashboard", icon: LayoutDashboard }],
+    items: [{ href: "/admin/dashboard", label: "Dashboard", icon: LayoutDashboard, perm: "nav:dashboard" }],
   },
   {
     kicker: "Sales",
     items: [
-      { href: "/admin/orders", label: "Orders", icon: ShoppingBag },
-      { href: "/admin/shipments", label: "Shipments", icon: Truck },
-      { href: "/admin/invoices", label: "Invoices", icon: FileText },
-      { href: "/admin/returns", label: "Returns", icon: PackageOpen },
+      { href: "/admin/orders",    label: "Orders",    icon: ShoppingBag, perm: "nav:orders" },
+      { href: "/admin/shipments", label: "Shipments", icon: Truck,       perm: "nav:shipments" },
+      { href: "/admin/invoices",  label: "Invoices",  icon: FileText,    perm: "nav:invoices" },
+      { href: "/admin/returns",   label: "Returns",   icon: PackageOpen, perm: "nav:returns" },
     ],
   },
   {
     kicker: "Network",
     items: [
-      { href: "/admin/schools",   label: "Schools",   icon: School },
-      { href: "/admin/grades",    label: "Grades",    icon: GraduationCap },
-      { href: "/admin/delivery-fee-rules", label: "Delivery fees", icon: Truck },
+      { href: "/admin/schools",            label: "Schools",       icon: School,        perm: "nav:schools" },
+      { href: "/admin/grades",             label: "Grades",        icon: GraduationCap, perm: "nav:grades" },
+      { href: "/admin/delivery-fee-rules", label: "Delivery fees", icon: Truck,         perm: "nav:delivery-fees" },
     ],
   },
   {
     kicker: "People",
     items: [
-      { href: "/admin/customers", label: "Customers (Parents)", icon: Users },
-      { href: "/admin/students",  label: "Students",            icon: GraduationCap },
-      { href: "/admin/mcb",       label: "MCB",                 icon: Wallet },
-      { href: "/admin/guardians", label: "Guardians",           icon: Users },
+      { href: "/admin/customers", label: "Customers (Parents)", icon: Users,         perm: "nav:customers" },
+      { href: "/admin/students",  label: "Students",            icon: GraduationCap, perm: "nav:students" },
+      { href: "/admin/mcb",       label: "MCB",                 icon: Wallet,        perm: "nav:mcb" },
+      { href: "/admin/guardians", label: "Guardians",           icon: Users,         perm: "nav:guardians" },
     ],
   },
   {
@@ -94,60 +96,61 @@ const groups: NavGroup[] = [
     // "which tab do I click first?" confusion.
     kicker: "Catalog",
     items: [
-      { href: "/admin/catalog", label: "Catalog", icon: Eye },
+      { href: "/admin/catalog", label: "Catalog", icon: Eye, perm: "nav:catalog" },
     ],
   },
   {
     kicker: "Pricing & Tax",
     items: [
-      { href: "/admin/discounts", label: "Discounts", icon: Tag },
-      { href: "/admin/tax/rates", label: "Tax & GST", icon: Receipt },
+      { href: "/admin/discounts", label: "Discounts", icon: Tag,     perm: "nav:discounts" },
+      { href: "/admin/tax/rates", label: "Tax & GST", icon: Receipt, perm: "nav:tax" },
     ],
   },
   {
     kicker: "Buying",
     items: [
-      { href: "/admin/suppliers", label: "Suppliers", icon: TruckSupplier },
-      { href: "/admin/purchase-orders", label: "Purchase orders", icon: ClipboardList },
+      { href: "/admin/suppliers",       label: "Suppliers",       icon: TruckSupplier,  perm: "nav:suppliers" },
+      { href: "/admin/purchase-orders", label: "Purchase orders", icon: ClipboardList,  perm: "nav:purchase-orders" },
     ],
   },
   {
     kicker: "Accounting",
     items: [
-      { href: "/admin/payments", label: "Payments", icon: CreditCard },
-      { href: "/admin/payments/ccavenue", label: "CCAvenue Payment Logs", icon: Receipt },
+      { href: "/admin/payments",          label: "Payments",              icon: CreditCard, perm: "nav:payments" },
+      { href: "/admin/payments/ccavenue", label: "CCAvenue Payment Logs", icon: Receipt,    perm: "nav:payments-ccavenue" },
     ],
   },
   {
     kicker: "Engagement",
     items: [
-      { href: "/admin/reviews", label: "Reviews", icon: Star },
-      { href: "/admin/testimonials", label: "Testimonials", icon: MessageSquareQuote },
-      { href: "/admin/contact-forms", label: "Contact forms", icon: Inbox },
-      { href: "/admin/gift-cards", label: "Gift cards", icon: Gift },
+      { href: "/admin/reviews",       label: "Reviews",       icon: Star,                perm: "nav:reviews" },
+      { href: "/admin/testimonials",  label: "Testimonials",  icon: MessageSquareQuote,  perm: "nav:testimonials" },
+      { href: "/admin/contact-forms", label: "Contact forms", icon: Inbox,               perm: "nav:contact-forms" },
+      { href: "/admin/gift-cards",    label: "Gift cards",    icon: Gift,                perm: "nav:gift-cards" },
     ],
   },
   {
     kicker: "Content",
     items: [
-      { href: "/admin/content", label: "Pages & blocks", icon: ImageIcon },
+      { href: "/admin/content", label: "Pages & blocks", icon: ImageIcon, perm: "nav:content" },
     ],
   },
   {
     kicker: "Tools",
     items: [
-      { href: "/admin/import", label: "Import CSV/XLSX", icon: Upload },
-      { href: "/admin/reports", label: "Reports", icon: BarChart3 },
-      { href: "/admin/activity", label: "Activity log", icon: Activity },
-      { href: "/admin/otp-logs", label: "OTP Logs", icon: MessageSquare, roles: ["super"] },
+      { href: "/admin/import",   label: "Import CSV/XLSX", icon: Upload,        perm: "nav:import" },
+      { href: "/admin/reports",  label: "Reports",         icon: BarChart3,     perm: "nav:reports" },
+      { href: "/admin/activity", label: "Activity log",    icon: Activity,      perm: "nav:activity" },
+      { href: "/admin/otp-logs", label: "OTP Logs",        icon: MessageSquare, perm: "nav:otp-logs" },
     ],
   },
   {
     kicker: "Settings",
     items: [
-      { href: "/admin/settings/users", label: "Admin users", icon: Settings },
-      { href: "/admin/settings/otp", label: "SMS / SMTP OTP", icon: KeyRound, roles: ["super"] },
-      { href: "/admin/settings/erp-bridge", label: "ERP bridge (live)", icon: Activity },
+      { href: "/admin/settings/users",       label: "Admin users",       icon: Settings, perm: "nav:settings-users" },
+      { href: "/admin/roles",                label: "Roles & permissions", icon: KeyRound, perm: "nav:roles" },
+      { href: "/admin/settings/otp",         label: "SMS / SMTP OTP",    icon: KeyRound, perm: "nav:settings-otp" },
+      { href: "/admin/settings/erp-bridge",  label: "ERP bridge (live)", icon: Activity, perm: "nav:settings-erp-bridge" },
     ],
   },
 ];
@@ -185,7 +188,7 @@ export function AdminShell({
     <div className="space-y-5 py-2">
       {groups.map((g) => {
         const visible = g.items.filter(
-          (it) => !it.roles || it.roles.includes(user.role)
+          (it) => !it.perm || user.permissions.has(it.perm)
         );
         if (visible.length === 0) return null;
         return (

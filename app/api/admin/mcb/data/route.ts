@@ -3,7 +3,7 @@ import { db } from "@/db/client";
 import { sql } from "drizzle-orm";
 import { getCurrentUser } from "@/lib/session";
 
-const PAGE_SIZE = 50;
+const PAGE_SIZE = 5000;
 
 const SCHOOLS: { school_code: string; mcb_branch: string }[] = [
   { school_code: "SASKS", mcb_branch: "St. ANDREWS SCHOOL KEESARA" },
@@ -18,6 +18,7 @@ function rowsOf<T>(res: unknown): T[] {
 }
 
 const isYmd = (s: string | null) => !!s && /^\d{4}-\d{2}-\d{2}$/.test(s);
+const isYm = (s: string | null) => !!s && /^\d{4}-\d{2}$/.test(s);
 
 export async function GET(req: NextRequest) {
   const me = await getCurrentUser();
@@ -80,17 +81,39 @@ export async function GET(req: NextRequest) {
         ? sql`website_access = false`
         : sql`true`;
 
+  // Month filter (master tab) — YYYY-MM. When set, restricts to students
+  // whose most recent Tuition fee payment fell in that calendar month.
+  // Implemented as a HAVING-like clause on the LATERAL feeagg join.
+  const month = isYm(u.get("month")) ? u.get("month")! : null;
+  const monthFilter = month
+    ? sql`feeagg.last_tuition_paid_date >= (${month + "-01"})::date
+          AND feeagg.last_tuition_paid_date < ((${month + "-01"})::date + INTERVAL '1 month')`
+    : sql`true`;
+  const monthFilterCount = month
+    ? sql`EXISTS (
+        SELECT 1 FROM mcb_fee_payments p
+         WHERE p.enrolment_number = s.enrolment_number
+           AND p.fee_head = 'Tuition fee'
+           AND p.payment_date >= (${month + "-01"})::date
+           AND p.payment_date < ((${month + "-01"})::date + INTERVAL '1 month')
+           AND p.payment_date = (
+             SELECT MAX(p2.payment_date) FROM mcb_fee_payments p2
+              WHERE p2.enrolment_number = s.enrolment_number AND p2.fee_head = 'Tuition fee'
+           )
+      )`
+    : sql`true`;
+
   if (tab === "master") {
     const [counts, total, rows] = await Promise.all([
       db.execute(sql`
-        SELECT school_name AS mcb_branch, count(*)::int AS n
-        FROM mcb_students
-        WHERE school_name IS NOT NULL AND ${accessFilter} AND ${searchFilter}
-        GROUP BY school_name
+        SELECT s.school_name AS mcb_branch, count(*)::int AS n
+        FROM mcb_students s
+        WHERE s.school_name IS NOT NULL AND ${accessFilter} AND ${searchFilterS} AND ${monthFilterCount}
+        GROUP BY s.school_name
       `),
       db.execute(sql`
-        SELECT count(*)::int AS n FROM mcb_students
-        WHERE school_name = ${activeSchool.mcb_branch} AND ${accessFilter} AND ${searchFilter}
+        SELECT count(*)::int AS n FROM mcb_students s
+        WHERE s.school_name = ${activeSchool.mcb_branch} AND ${accessFilter} AND ${searchFilterS} AND ${monthFilterCount}
       `),
       db.execute(sql`
         SELECT s.enrolment_number,
@@ -120,7 +143,7 @@ export async function GET(req: NextRequest) {
           FROM mcb_fee_payments
           WHERE enrolment_number = s.enrolment_number
         ) feeagg ON true
-        WHERE s.school_name = ${activeSchool.mcb_branch} AND ${accessFilter} AND ${searchFilterS}
+        WHERE s.school_name = ${activeSchool.mcb_branch} AND ${accessFilter} AND ${searchFilterS} AND ${monthFilter}
         ORDER BY s.student_name
         LIMIT ${PAGE_SIZE} OFFSET ${offset}
       `),

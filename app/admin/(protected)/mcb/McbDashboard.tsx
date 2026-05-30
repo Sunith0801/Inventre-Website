@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from
 import { GraduationCap, Wallet } from "lucide-react";
 import { PageHeader, Card, Th, Td, Tr, Badge, EmptyState, Button } from "@/components/admin/ui/primitives";
 import GrantAccessButton from "./GrantAccessButton";
-import { mcbGenderToLabel, mcbGradeToCanonical } from "@/lib/mcb/mappings";
+import { mcbGenderToLabel, mcbGradeToCbse } from "@/lib/mcb/mappings";
 import { bulkGrantMcbAccess } from "./actions";
 
 type Tab = "master" | "fees";
@@ -20,7 +20,7 @@ const SCHOOLS: School[] = [
   { code: "WMAWF", name: "Winmore Whitefield",  mcbBranch: "Winmore Academy Whitefield" },
 ];
 
-const PAGE_SIZE = 50;
+const PAGE_SIZE = 5000;
 
 type MasterRow = {
   enrolment_number: string;
@@ -112,6 +112,8 @@ export default function McbDashboard({ initialData }: { initialData: InitialData
   const [tab, setTab] = useState<Tab>(initialData.tab);
   const [school, setSchool] = useState<string>(SCHOOLS[0].code);
   const [access, setAccess] = useState<Access>("all");
+  // YYYY-MM. Empty string = any month (no filter).
+  const [month, setMonth] = useState<string>("");
   const [from, setFrom] = useState<string>(today);
   const [to, setTo] = useState<string>(today);
   const [q, setQ] = useState<string>("");
@@ -130,9 +132,25 @@ export default function McbDashboard({ initialData }: { initialData: InitialData
     [school]
   );
 
+  // 24 most-recent months (this month + previous 23) as YYYY-MM. Labelled
+  // "May 2026" for the dropdown. Computed in IST so the boundary matches
+  // the server-side date_trunc('month', payment_date).
+  const monthOptions = useMemo(() => {
+    const now = new Date(Date.now() + 5.5 * 3600_000);
+    const out: { value: string; label: string }[] = [];
+    const monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    for (let i = 0; i < 24; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, "0");
+      out.push({ value: `${y}-${m}`, label: `${monthNames[d.getMonth()]} ${y}` });
+    }
+    return out;
+  }, []);
+
   const refresh = useCallback(
-    (overrides?: Partial<{ tab: Tab; school: string; access: Access; from: string; to: string; q: string; page: number }>) => {
-      const s = { tab, school, access, from, to, q, page, ...overrides };
+    (overrides?: Partial<{ tab: Tab; school: string; access: Access; from: string; to: string; q: string; page: number; month: string }>) => {
+      const s = { tab, school, access, from, to, q, page, month, ...overrides };
       const u = new URLSearchParams({
         tab: s.tab,
         school: s.school,
@@ -142,6 +160,7 @@ export default function McbDashboard({ initialData }: { initialData: InitialData
         page: String(s.page),
       });
       if (s.q) u.set("q", s.q);
+      if (s.month) u.set("month", s.month);
       abortRef.current?.abort();
       const ac = new AbortController();
       abortRef.current = ac;
@@ -161,7 +180,7 @@ export default function McbDashboard({ initialData }: { initialData: InitialData
           });
       });
     },
-    [tab, school, access, from, to, q, page]
+    [tab, school, access, from, to, q, page, month]
   );
 
   // Re-fetch whenever any state changes (after initial paint).
@@ -173,7 +192,7 @@ export default function McbDashboard({ initialData }: { initialData: InitialData
     }
     setChecked(new Set()); // reset selection on any nav change
     refresh();
-  }, [tab, school, access, from, to, q, page, refresh]);
+  }, [tab, school, access, from, to, q, page, month, refresh]);
 
   // Debounce search input → committed `q` (which triggers the refetch).
   useEffect(() => {
@@ -291,7 +310,7 @@ export default function McbDashboard({ initialData }: { initialData: InitialData
         </div>
       </div>
 
-      {/* access filter (master) */}
+      {/* access + month filters (master) */}
       {tab === "master" && (
         <div className="mb-3 flex flex-wrap items-center gap-2">
           <span className="text-[13px] text-ink-500">Show:</span>
@@ -300,13 +319,37 @@ export default function McbDashboard({ initialData }: { initialData: InitialData
               key={a}
               type="button"
               onClick={() => setStateAndResetPage(() => setAccess(a))}
-              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[13px] font-medium ${
-                access === a ? "bg-ink-900 text-white" : "bg-white border border-ink-200 text-ink-700 hover:bg-cream-50"
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[13px] font-medium ring-1 transition-colors ${
+                access === a
+                  ? "bg-brand-600 text-white ring-brand-700 shadow-sm"
+                  : "bg-white text-ink-700 ring-ink-200 hover:bg-cream-50"
               }`}
             >
+              {access === a && <span aria-hidden>●</span>}
               {a === "all" ? "All students" : a === "not" ? "Not granted" : "Granted"}
             </button>
           ))}
+          <span className="mx-2 text-ink-300">·</span>
+          <label className="text-[13px] text-ink-500">Last tuition paid in:</label>
+          <select
+            value={month}
+            onChange={(e) => setStateAndResetPage(() => setMonth(e.target.value))}
+            className="h-9 px-2.5 rounded-lg border border-ink-200 text-[13px] bg-white"
+          >
+            <option value="">Any month</option>
+            {monthOptions.map((m) => (
+              <option key={m.value} value={m.value}>{m.label}</option>
+            ))}
+          </select>
+          {month && (
+            <button
+              type="button"
+              onClick={() => setStateAndResetPage(() => setMonth(""))}
+              className="text-[13px] text-ink-500 hover:text-ink-800"
+            >
+              Clear
+            </button>
+          )}
         </div>
       )}
 
@@ -379,9 +422,35 @@ export default function McbDashboard({ initialData }: { initialData: InitialData
               description={`No ${access === "all" ? "" : access === "granted" ? "granted " : "ungranted "}students in ${activeSchool.name}.`}
             />
           ) : (
+          <>
+          {ungrantedVisible.length > 0 && (
+            <div className="flex items-center gap-3 px-3 py-2 border-b border-ink-100 bg-cream-50/60 text-[13px]">
+              <span className="text-ink-500">
+                {checked.size > 0
+                  ? `${checked.size} selected`
+                  : `${ungrantedVisible.length} ungranted on this page`}
+              </span>
+              <Button
+                variant="primary"
+                disabled={checked.size === 0 || bulkPending}
+                onClick={runBulkGrant}
+              >
+                {bulkPending ? "Granting…" : `Grant access to ${checked.size || ""}`.trim()}
+              </Button>
+              {bulkMsg && <span className="text-ink-600">{bulkMsg}</span>}
+            </div>
+          )}
             <table className="w-full text-[14px]">
               <thead>
                 <tr>
+                  <Th>
+                    <input
+                      type="checkbox"
+                      checked={allChecked}
+                      onChange={toggleAll}
+                      aria-label="Select all ungranted on this page"
+                    />
+                  </Th>
                   <Th>{REF_CODE_SCHOOLS.has(school) ? "Ref / Adm No" : "Enrolment"}</Th>
                   <Th>Name</Th>
                   <Th>Grade · Section</Th>
@@ -404,9 +473,19 @@ export default function McbDashboard({ initialData }: { initialData: InitialData
                     (m.mobile_number || "").replace(/\D/g, "").slice(-10);
                   const parentName = m.father_name || m.mother_name || "";
                   const grantEmail = m.father_email || m.mother_email || m.email || "";
-                  const canonical = mcbGradeToCanonical(m.grade) || "";
+                  const canonical = mcbGradeToCbse(m.grade) || "";
                   return (
                     <Tr key={m.enrolment_number}>
+                      <Td>
+                        {!m.website_access && (
+                          <input
+                            type="checkbox"
+                            checked={checked.has(m.enrolment_number)}
+                            onChange={() => toggleOne(m.enrolment_number)}
+                            aria-label={`Select ${m.enrolment_number}`}
+                          />
+                        )}
+                      </Td>
                       <Td>
                         <span className="font-mono text-[13px] font-semibold text-ink-800">{displayEnrolment(school, m)}</span>
                       </Td>
@@ -462,6 +541,7 @@ export default function McbDashboard({ initialData }: { initialData: InitialData
                 })}
               </tbody>
             </table>
+          </>
           )
         ) : data.rows.length === 0 ? (
           <EmptyState
@@ -515,7 +595,7 @@ export default function McbDashboard({ initialData }: { initialData: InitialData
                 const mobile = (r.mother_phone || r.father_phone || r.mobile_number || "").replace(/\D/g, "").slice(-10);
                 const email = r.father_email || r.mother_email || r.email || "";
                 const parentName = r.father_name || r.mother_name || "";
-                const canonical = mcbGradeToCanonical(r.grade) || "";
+                const canonical = mcbGradeToCbse(r.grade) || "";
                 const gender = mcbGenderToLabel(r.gender_raw as boolean | string | null) || "";
                 return (
                   <Tr key={r.enrolment_number}>

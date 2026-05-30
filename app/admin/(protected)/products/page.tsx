@@ -35,12 +35,14 @@ const STATUS_OPTIONS = [
   { value: "archived", label: "Archived" },
 ];
 
+const PAGE_SIZE = 100;
+
 export default async function ProductsListPage({
   searchParams,
 }: {
   searchParams: Promise<{
     q?: string; status?: string; schoolId?: string; erp?: string;
-    grade?: string; kind?: string;
+    grade?: string; kind?: string; page?: string;
   }>;
 }) {
   // Catalog management is super/ops only — school_admin can't write products,
@@ -48,7 +50,8 @@ export default async function ProductsListPage({
   const guard = await requireAdmin("super", "ops");
   if (isResponse(guard)) redirect("/admin/dashboard");
 
-  const { q, status, schoolId, erp, grade, kind } = await searchParams;
+  const { q, status, schoolId, erp, grade, kind, page } = await searchParams;
+  const pageNum = Math.max(1, parseInt(page ?? "1", 10) || 1);
   const conds = [];
   if (q) {
     conds.push(
@@ -112,9 +115,37 @@ export default async function ProductsListPage({
       )
     );
   }
+  // Total count for pagination — re-issued with the same joins so the
+  // counter reflects the filtered set, not the unfiltered table.
+  let cqb = db.select({ n: sql<number>`COUNT(*)::int` }).from(products).$dynamic();
+  if (effectiveSchoolId) {
+    cqb = cqb.innerJoin(
+      productSchool,
+      and(
+        eq(productSchool.productId, products.id),
+        eq(productSchool.schoolId, effectiveSchoolId),
+      ),
+    );
+  }
+  if (effectiveGrade) {
+    cqb = cqb.innerJoin(
+      productGrades,
+      and(
+        eq(productGrades.productId, products.id),
+        eq(productGrades.grade, effectiveGrade),
+      ),
+    );
+  }
+  const [{ n: totalCount } = { n: 0 }] = await cqb.where(
+    conds.length ? and(...conds) : undefined,
+  );
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+  const safePage = Math.min(pageNum, totalPages);
   const rows = await qb
     .where(conds.length ? and(...conds) : undefined)
-    .orderBy(asc(products.name));
+    .orderBy(asc(products.name))
+    .limit(PAGE_SIZE)
+    .offset((safePage - 1) * PAGE_SIZE);
 
   // Hydrate side data
   const ids = rows.map((r) => r.id);
@@ -160,26 +191,27 @@ export default async function ProductsListPage({
     .map((g) => g.grade)
     .sort((a, b) => gradeNumber(a) - gradeNumber(b) || a.localeCompare(b));
 
-  // Grade dropdown options. When a school is picked we show ONLY that
-  // school's own grade names (its ERP "Grades Details"), e.g. "IK 1",
-  // not the standard grades. `value` stays the underlying grade so the
-  // product filter still works.
+  // Grade dropdown options. When a school is picked, show only grades
+  // that actually have products tagged at that school. Without a school,
+  // show every grade present in product_grades. Canonical sort
+  // (Nursery → LKG → UKG → Grade 1..Grade 12).
   let gradeOpts: { value: string; label: string }[];
+  const canonicalIdx = (g: string) =>
+    g === "Nursery" ? 0 : g === "LKG" ? 1 : g === "UKG" ? 2 : 2 + gradeNumber(g);
   if (effectiveSchoolId) {
-    const lblRes = (await db.execute(
-      sql`SELECT grade, school_grade_name FROM school_grade_labels WHERE school_id = ${effectiveSchoolId}`
-    )) as unknown as { grade: string; school_grade_name: string }[];
-    const lblRows = (
-      Array.isArray(lblRes) ? lblRes : ((lblRes as { rows?: unknown[] }).rows ?? [])
-    ) as { grade: string; school_grade_name: string }[];
-    gradeOpts = lblRows
-      .map((r) => ({
-        value: r.grade,
-        label: `${r.school_grade_name} (${r.grade})`,
-      }))
-      .sort((a, b) => gradeNumber(a.value) - gradeNumber(b.value));
+    const r = (await db.execute(sql`
+      SELECT DISTINCT pg.grade FROM product_grades pg
+        JOIN product_school ps ON ps.product_id = pg.product_id
+       WHERE ps.school_id = ${effectiveSchoolId}
+    `)) as unknown as { grade: string }[];
+    const list = (Array.isArray(r) ? r : (r as { rows?: unknown[] }).rows ?? []) as { grade: string }[];
+    gradeOpts = list
+      .map((x) => ({ value: x.grade, label: x.grade }))
+      .sort((a, b) => canonicalIdx(a.value) - canonicalIdx(b.value));
   } else {
-    gradeOpts = allGrades.map((g) => ({ value: g, label: g }));
+    gradeOpts = allGrades
+      .map((g) => ({ value: g, label: g }))
+      .sort((a, b) => canonicalIdx(a.value) - canonicalIdx(b.value));
   }
   // DSE is a separate grade stream — kept in its own group.
   const standardGradeOpts = gradeOpts.filter((o) => !/dse/i.test(o.value));
@@ -198,7 +230,11 @@ export default async function ProductsListPage({
       <PageHeader
         eyebrow="Catalog"
         title="Products"
-        description={`${rows.length} product${rows.length === 1 ? "" : "s"}${
+        description={`${totalCount} product${totalCount === 1 ? "" : "s"}${
+          totalPages > 1
+            ? ` · page ${safePage} of ${totalPages}`
+            : ""
+        }${
           effectiveSchoolId
             ? ` for ${
                 allSchools.find((s) => s.id === effectiveSchoolId)?.name ??
@@ -343,6 +379,78 @@ export default async function ProductsListPage({
           />
         )}
       </Card>
+
+      {totalPages > 1 && (
+        <Pagination
+          page={safePage}
+          totalPages={totalPages}
+          totalCount={totalCount}
+          pageSize={PAGE_SIZE}
+          searchParams={{ q, status, schoolId, erp, grade, kind }}
+        />
+      )}
+    </div>
+  );
+}
+
+function Pagination({
+  page,
+  totalPages,
+  totalCount,
+  pageSize,
+  searchParams,
+}: {
+  page: number;
+  totalPages: number;
+  totalCount: number;
+  pageSize: number;
+  searchParams: Record<string, string | undefined>;
+}) {
+  const firstRow = (page - 1) * pageSize + 1;
+  const lastRow = Math.min(page * pageSize, totalCount);
+  const hrefFor = (p: number) => {
+    const params = new URLSearchParams();
+    for (const [k, v] of Object.entries(searchParams)) {
+      if (v) params.set(k, v);
+    }
+    if (p > 1) params.set("page", String(p));
+    const qs = params.toString();
+    return qs ? `/admin/products?${qs}` : "/admin/products";
+  };
+  return (
+    <div className="mt-4 flex items-center justify-between gap-2 text-[12.5px] text-ink-600">
+      <span>
+        Showing <b>{firstRow}</b>–<b>{lastRow}</b> of <b>{totalCount}</b>
+      </span>
+      <div className="flex items-center gap-1.5">
+        <Link
+          href={hrefFor(Math.max(1, page - 1))}
+          aria-disabled={page <= 1}
+          className={
+            "rounded-lg border px-3 h-8 inline-flex items-center text-[12.5px] font-semibold " +
+            (page <= 1
+              ? "border-ink-100 text-ink-300 pointer-events-none"
+              : "border-ink-200 text-ink-700 hover:border-ink-900")
+          }
+        >
+          ← Prev
+        </Link>
+        <span className="px-2 text-ink-500">
+          Page {page} of {totalPages}
+        </span>
+        <Link
+          href={hrefFor(Math.min(totalPages, page + 1))}
+          aria-disabled={page >= totalPages}
+          className={
+            "rounded-lg border px-3 h-8 inline-flex items-center text-[12.5px] font-semibold " +
+            (page >= totalPages
+              ? "border-ink-100 text-ink-300 pointer-events-none"
+              : "border-ink-200 text-ink-700 hover:border-ink-900")
+          }
+        >
+          Next →
+        </Link>
+      </div>
     </div>
   );
 }

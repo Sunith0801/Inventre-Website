@@ -125,7 +125,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       const inheritVerified = verifiedSibling.length > 0;
       await db
         .update(schema.students)
-        .set({ parentId, ...(inheritVerified && !stu.isVerified ? { isVerified: true } : {}) })
+        .set({ parentId, ...(inheritVerified && !stu.isVerified ? { isVerified: true, verifiedAt: new Date() } : {}) })
         .where(eq(schema.students.id, studentId));
     }
   }

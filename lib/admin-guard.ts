@@ -19,6 +19,24 @@ export function isResponse(x: unknown): x is NextResponse {
 }
 
 /**
+ * Require the current admin to hold a specific permission (e.g.
+ * "nav:roles"). Super-admins implicitly have all permissions via their
+ * seeded role row, so a single check is enough. New code (Roles UI,
+ * Team UI) gates with this; existing routes keep using `requireAdmin`
+ * for now.
+ */
+export async function requirePermission(
+  permission: string,
+): Promise<CurrentAdmin | NextResponse> {
+  const me = await getCurrentUser();
+  if (!me || me.kind !== "admin")
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!me.permissions.has(permission))
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  return me;
+}
+
+/**
  * For a school_admin, return the SQL fragment that scopes a query to their
  * school. For super/ops, returns null (= no scope). Apply at every admin
  * query that touches school-scoped data:

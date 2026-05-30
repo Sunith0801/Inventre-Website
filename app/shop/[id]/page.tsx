@@ -328,6 +328,10 @@ export default function ProductPage() {
   >([]);
   const [multiAxisLoading, setMultiAxisLoading] = useState(false);
   const [multiAxisVariantPrice, setMultiAxisVariantPrice] = useState<number | null>(null);
+  const [mandatesByAxis, setMandatesByAxis] = useState<{
+    axisName: string;
+    subjectsByValue: Record<string, string[]>;
+  } | null>(null);
   // Bumped on tab focus to force the main PDP fetch effect to re-run so
   // any admin update lands without a manual refresh.
   const [refreshTick, setRefreshTick] = useState(0);
@@ -351,6 +355,25 @@ export default function ProductPage() {
     const t = setTimeout(() => setShowRestoreToast(false), 4000);
     return () => clearTimeout(t);
   }, [draft.didRestore]);
+
+  useEffect(() => {
+    setMandatesByAxis(null);
+    if (!product?.id) return;
+    let cancelled = false;
+    fetch(`/api/shop/kit-mandates/${product.id}`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (cancelled || !data?.axisName) return;
+        setMandatesByAxis({
+          axisName: data.axisName,
+          subjectsByValue: data.subjectsByValue ?? {},
+        });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [product?.id]);
 
   // True when a complimentary (₹0) bookkit is already in the cart — used to
   // disable the Add to Cart button on bookkit PDPs so the restriction is
@@ -989,6 +1012,7 @@ export default function ProductPage() {
                         onSelectionChange={(selection) =>
                           draft.save({ kind: "multi-axis", selection })
                         }
+                        mandatesByAxis={mandatesByAxis ?? undefined}
                       />
                       {multiAxisVariantId == null ? (
                         <div className="rounded-xl border border-ink-100 bg-cream-50 px-5 py-6 text-center">

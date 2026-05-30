@@ -5,7 +5,9 @@ import {
   Building2,
   ExternalLink as ExternalLinkIcon,
   AlertTriangle,
+  IndianRupee,
 } from "lucide-react";
+import { ProductDeleteButton } from "@/components/admin/ProductDeleteButton";
 import { requireAdmin, isResponse } from "@/lib/admin-guard";
 import { db } from "@/db/client";
 import { alias } from "drizzle-orm/pg-core";
@@ -299,6 +301,21 @@ export default async function EditProductPage({
                 Schools
               </Button>
             </Link>
+            {variantCount > 1 && (
+              <Link href={`/admin/products/${product.id}/combo-prices`}>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  icon={<IndianRupee className="h-3.5 w-3.5" />}
+                >
+                  Combo prices
+                </Button>
+              </Link>
+            )}
+            <ProductDeleteButton
+              productId={product.id}
+              productName={product.name}
+            />
           </div>
         }
       />

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { buildAttributeKey } from "@/lib/attribute-key";
 
 export type AttributeGroup = { name: string; values: string[] };
@@ -104,6 +104,7 @@ export function MultiAttributePicker({
   onResolve,
   initialSelection: externalInitial,
   onSelectionChange,
+  mandatesByAxis,
 }: {
   groups: AttributeGroup[];
   variantsByAttributeKey: Record<string, string>;
@@ -114,6 +115,15 @@ export function MultiAttributePicker({
   initialSelection?: Record<string, string>;
   /** Fires on every pick. Used by the PDP draft-saver. */
   onSelectionChange?: (selection: Record<string, string>) => void;
+  /** Read-only "Mandate Subjects" chip row, rendered immediately after
+   *  the matching parent axis. When the parent axis has a value picked,
+   *  chips show the subjects that auto-ship with that value (e.g. Stream
+   *  = Science → Physics, Chemistry, Physical Education). Parents can't
+   *  click these — they always go in the box. */
+  mandatesByAxis?: {
+    axisName: string;
+    subjectsByValue: Record<string, string[]>;
+  };
 }) {
   // Build initial selection: external draft picks first (when present and
   // still reachable), then auto-pick any axis with a single value.
@@ -184,6 +194,11 @@ export function MultiAttributePicker({
     });
   };
 
+  const mandateAxisName = mandatesByAxis?.axisName;
+  const hasMandates =
+    !!mandateAxisName &&
+    Object.keys(mandatesByAxis?.subjectsByValue ?? {}).length > 0;
+
   return (
     <div className="mt-7 space-y-5">
       {groups.map((group, idx) => {
@@ -194,9 +209,16 @@ export function MultiAttributePicker({
           firstUnfilledIdx !== -1 &&
           idx > firstUnfilledIdx;
         const avail = availableByAxis[group.name] ?? new Set<string>();
+        const showMandateAfter =
+          hasMandates && mandateAxisName === group.name;
+        const pickedMandateValue = showMandateAfter ? value : undefined;
+        const mandateChips =
+          showMandateAfter && pickedMandateValue
+            ? mandatesByAxis!.subjectsByValue[pickedMandateValue] ?? []
+            : [];
         return (
+          <Fragment key={group.name}>
           <div
-            key={group.name}
             className={locked ? "opacity-50 pointer-events-none" : ""}
           >
             <p className="text-[11px] font-semibold tracking-[0.18em] uppercase text-ink-900">
@@ -211,14 +233,25 @@ export function MultiAttributePicker({
               {group.values.map((v) => {
                 const active = value === v;
                 const reachable = avail.has(v);
+                // When the axis already has a value picked, ALL chips on
+                // that axis stay clickable — switching is the natural way
+                // to fix a mistake. `pick()` already handles cascading
+                // cleanup of now-invalid downstream picks. Without this
+                // guard the picker locked parents into their first stream
+                // because unreachable-but-clickable chips were
+                // permanently disabled once any downstream axis was set.
+                const hasOwnPick = value !== undefined;
+                const allowSwitch = hasOwnPick && !active;
                 return (
                   <button
                     key={v}
                     type="button"
-                    disabled={(fixed && active) || (!reachable && !active)}
+                    disabled={(fixed && active) || (!reachable && !active && !allowSwitch)}
                     title={
                       !reachable && !active
-                        ? "Not available with the current selection"
+                        ? allowSwitch
+                          ? "Switch to this value — your later picks will reset if they don't combine."
+                          : "Not available with the current selection"
                         : undefined
                     }
                     onClick={() => pick(group.name, v)}
@@ -228,7 +261,9 @@ export function MultiAttributePicker({
                         ? "bg-ink-900 text-white border-ink-900"
                         : reachable
                           ? "bg-white text-ink-800 border-ink-200 hover:border-ink-900"
-                          : "bg-cream-50 text-ink-300 border-ink-100 line-through cursor-not-allowed")
+                          : allowSwitch
+                            ? "bg-white text-ink-500 border-ink-200 border-dashed hover:border-ink-900 hover:text-ink-800"
+                            : "bg-cream-50 text-ink-300 border-ink-100 line-through cursor-not-allowed")
                     }
                   >
                     {v}
@@ -237,6 +272,36 @@ export function MultiAttributePicker({
               })}
             </div>
           </div>
+          {showMandateAfter && (
+            <div>
+              <p className="text-[11px] font-semibold tracking-[0.18em] uppercase text-ink-900">
+                Mandate Subjects
+                <span className="ml-2 text-[10px] font-medium tracking-normal normal-case text-ink-400">
+                  {pickedMandateValue
+                    ? `· ships with ${pickedMandateValue}`
+                    : `· pick ${group.name} above to see`}
+                </span>
+              </p>
+              {mandateChips.length > 0 ? (
+                <div className="mt-2.5 flex flex-wrap gap-2">
+                  {mandateChips.map((subject) => (
+                    <span
+                      key={subject}
+                      title="Ships with your kit — not selectable"
+                      className="h-10 px-3.5 inline-flex items-center rounded-md border text-[13px] font-semibold bg-ink-900/5 text-ink-700 border-ink-200 cursor-default"
+                    >
+                      {subject}
+                    </span>
+                  ))}
+                </div>
+              ) : pickedMandateValue ? (
+                <p className="mt-2 text-[12px] text-ink-400 italic">
+                  No mandate subjects configured for {pickedMandateValue}.
+                </p>
+              ) : null}
+            </div>
+          )}
+          </Fragment>
         );
       })}
     </div>

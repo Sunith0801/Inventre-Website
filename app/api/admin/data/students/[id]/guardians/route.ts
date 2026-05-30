@@ -213,7 +213,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     if (inheritVerified && !stuBefore?.isVerified) {
       await db
         .update(schema.students)
-        .set({ isVerified: true })
+        .set({ isVerified: true, verifiedAt: new Date() })
         .where(eq(schema.students.id, studentId));
     }
 

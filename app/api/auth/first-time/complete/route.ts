@@ -222,7 +222,7 @@ export async function POST(req: Request) {
   // guardian master record's mobile_number — all three count as "this phone".
   await db
     .update(students)
-    .set({ isVerified: true })
+    .set({ isVerified: true, verifiedAt: new Date() })
     .where(
       sql`${students.parentId} = ${parent.id} OR ${students.id} IN (
         SELECT gl.student_id
@@ -232,6 +232,8 @@ export async function POST(req: Request) {
             OR right(regexp_replace(coalesce(g.mobile_number, ''), '\D', '', 'g'), 10) = ${parent.phone}
       )`
     );
+
+  await db.update(parents).set({ lastLoginAt: new Date() }).where(eq(parents.id, parent.id));
 
   // Issue a session so the user lands directly in /shop after setup.
   await createParentSession(parent.id, body.phone);

@@ -212,6 +212,7 @@ export async function POST(req: Request) {
         status: "active",
         enabled: true,
         isVerified: true,
+        verifiedAt: new Date(),
         isNewStudent: true,
       });
 

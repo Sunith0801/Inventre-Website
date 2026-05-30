@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { parseBody } from "@/lib/parse-body";
 import { z } from "zod";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import {
   products,
@@ -372,6 +372,30 @@ export async function DELETE(
   const guard = await requireAdmin("super");
   if (isResponse(guard)) return guard;
   const { id } = await params;
+
+  // Refuse if any cart or order line references a variant of this product —
+  // deleting would cascade-drop those rows and corrupt parent baskets /
+  // historical orders.
+  const refs = (await db.execute(sql`
+    SELECT
+      (SELECT COUNT(*) FROM cart_items ci
+        JOIN product_variants v ON v.id = ci.variant_id
+        WHERE v.product_id = ${id}) AS cart_refs,
+      (SELECT COUNT(*) FROM order_items oi
+        JOIN product_variants v ON v.id = oi.variant_id
+        WHERE v.product_id = ${id}) AS order_refs
+  `)) as unknown as { cart_refs: string; order_refs: string }[];
+  const cartRefs = Number(refs[0]?.cart_refs ?? 0);
+  const orderRefs = Number(refs[0]?.order_refs ?? 0);
+  if (cartRefs > 0 || orderRefs > 0) {
+    return NextResponse.json(
+      {
+        error: `Cannot delete — referenced by ${cartRefs} cart line(s) and ${orderRefs} order line(s). Archive the product instead.`,
+      },
+      { status: 409 },
+    );
+  }
+
   await db.delete(products).where(eq(products.id, id));
   // Flush product caches so the deleted product disappears from the shop
   // immediately rather than waiting for the TTL to expire.

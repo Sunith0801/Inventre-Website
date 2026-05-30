@@ -17,7 +17,6 @@
 import { NextResponse } from "next/server";
 import { sql } from "drizzle-orm";
 import { db } from "@/db/client";
-import { erpGradeToReal } from "@/lib/grade-translate";
 
 function rows<T>(r: unknown): T[] {
   return r as unknown as T[];
@@ -66,30 +65,27 @@ export async function GET() {
     `)
   );
 
-  const gradesBySchool: Record<string, { value: string; label: string }[]> = {};
-  const seen: Record<string, Set<string>> = {};
+  // The recovery flow is "parent searching for their child" — so the
+  // dropdown should only offer grades that ACTUALLY have students at
+  // the picked school. We build the per-school grade set from
+  // student_rows first, then attach the school's preferred label from
+  // school_grade_mappings if available.
+  const labelLookup = new Map<string, string>();
   for (const m of mappings) {
-    const code = m.school_code;
-    // school_grade_mappings.grade is ERP-uniform vocab (Grade 1..15 with the
-    // +3 offset). students.grade is Targeted vocab (Nursery/LKG/UKG/Grade
-    // 1..12) — the admin StudentEditor translates on save. The recover
-    // search filter compares against students.grade exactly, so the value
-    // we submit from the picker must also be Targeted, otherwise the
-    // dropdown's "Grade 12" silently posts "Grade 15" and finds nothing.
-    const value = erpGradeToReal(m.grade) ?? m.grade;
-    (gradesBySchool[code] ??= []).push({
-      value,
-      label: (m.display_name?.trim() || value),
-    });
-    (seen[code] ??= new Set()).add(value);
+    labelLookup.set(`${m.school_code}::${m.grade}`, m.display_name?.trim() || m.grade);
   }
+  const gradesBySchool: Record<string, { value: string; label: string }[]> = {};
   for (const r of studentRows) {
-    if (seen[r.school_code]?.has(r.grade)) continue;
-    (gradesBySchool[r.school_code] ??= []).push({
-      value: r.grade,
-      label: r.grade,
-    });
-    (seen[r.school_code] ??= new Set()).add(r.grade);
+    const value = r.grade;
+    const label = labelLookup.get(`${r.school_code}::${value}`) ?? value;
+    (gradesBySchool[r.school_code] ??= []).push({ value, label });
+  }
+  // Canonical sort within each school.
+  const canonicalIdx = (g: string) =>
+    g === "Nursery" ? 0 : g === "LKG" ? 1 : g === "UKG" ? 2
+      : 2 + (parseInt(g.match(/\d+/)?.[0] ?? "99", 10) || 99);
+  for (const code of Object.keys(gradesBySchool)) {
+    gradesBySchool[code].sort((a, b) => canonicalIdx(a.value) - canonicalIdx(b.value));
   }
 
   // Flat grade list (no-school-selected fallback). Canonical names only —

@@ -211,6 +211,9 @@ export const users = pgTable(
     email: text("email").notNull(),
     passwordHash: text("password_hash").notNull(),
     role: userRoleEnum("role").notNull(),
+    /** RBAC role row. Populated by db/migrations/0044_admin_rbac.sql.
+     *  Nullable for backward compatibility with the legacy enum. */
+    roleId: uuid("role_id"),
     schoolId: uuid("school_id"),
     name: text("name"),
     status: accountStatusEnum("status").notNull().default("active"),
@@ -248,6 +251,9 @@ export const parents = pgTable(
     language: text("language").notNull().default("en"),
     // Must verify OTP + set own password before first sign-in. Migration 0013.
     firstTimeLogin: boolean("first_time_login").notNull().default(true),
+    // Bumped on every successful login OTP verification. Used by
+    // /admin/students "Last login" column. Backfilled from otp_logs.
+    lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
     // Last accepted T&C version + timestamp. Captured at the end of the
     // first-time login flow; NULL for parents that pre-date migration 0026.
     tcAcceptedAt: timestamp("tc_accepted_at", { withTimezone: true }),
@@ -284,6 +290,9 @@ export const students = pgTable(
     enabled: boolean("enabled").notNull().default(true),
     isNewStudent: boolean("is_new_student").notNull().default(false),
     isVerified: boolean("is_verified").notNull().default(false),
+    // Stamped when is_verified flips true. Backfilled best-effort from
+    // the parent's earliest 'verified' OTP log, falling back to created_at.
+    verifiedAt: timestamp("verified_at", { withTimezone: true }),
     schoolCode: text("school_code"),
     firstName: text("first_name"),
     middleName: text("middle_name"),

@@ -14,7 +14,7 @@ function humaniseZod(path: string, message: string): string {
     return "Enter a valid email address.";
   return message;
 }
-import { eq, ilike, or, and, count, asc } from "drizzle-orm";
+import { eq, ilike, or, and, count, asc, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { students, parents, schools } from "@/db/schema";
 import { requireAdmin, isResponse, assertSchoolAccess } from "@/lib/admin-guard";
@@ -179,6 +179,7 @@ export async function GET(req: NextRequest) {
   const enabled = sp.get("enabled") ?? undefined;
   const verified = sp.get("verified") ?? undefined;
   const newStudent = sp.get("newStudent") ?? undefined;
+  const recent = sp.get("recent") ?? undefined;
   const page = Math.max(1, Number(sp.get("page") ?? "1") || 1);
   const offset = (page - 1) * PAGE_SIZE;
 
@@ -204,6 +205,20 @@ export async function GET(req: NextRequest) {
         ilike(students.erpName, `%${q}%`),
         ilike(students.studentEmailId, `%${q}%`),
         ilike(students.studentMobileNumber, `%${q}%`),
+        // Match by the school's friendly grade label so e.g. "Class 12"
+        // finds students whose stored students.grade is "Grade 15".
+        sql`EXISTS (
+          SELECT 1 FROM school_grade_mappings m
+           WHERE m.school_id = ${students.schoolId}
+             AND lower(m.grade) = lower(${students.grade})
+             AND m.school_given_grade_name ILIKE ${"%" + q + "%"}
+        )`,
+        sql`EXISTS (
+          SELECT 1 FROM mcb_students mr
+           WHERE mr.enrolment_number = ${students.enrollmentNumber}
+             AND (mr.raw->>'StudentReferencesCode' ILIKE ${"%" + q + "%"}
+                  OR mr.raw->>'AdmissionNo' ILIKE ${"%" + q + "%"})
+        )`,
       )!,
     );
   if (schoolCode) conds.push(eq(students.schoolCode, schoolCode));
@@ -215,10 +230,15 @@ export async function GET(req: NextRequest) {
   if (verified === "0") conds.push(eq(students.isVerified, false));
   if (newStudent === "1") conds.push(eq(students.isNewStudent, true));
   if (newStudent === "0") conds.push(eq(students.isNewStudent, false));
+  const recentDays: Record<string, number> = { "1d": 1, "7d": 7, "30d": 30, "90d": 90 };
+  if (recent && recent in recentDays) {
+    const days = recentDays[recent];
+    conds.push(sql`${students.syncedAt} > now() - (${days}::int * INTERVAL '1 day')`);
+  }
 
   const where = conds.length ? and(...conds) : undefined;
 
-  const [rows, totalRow] = await Promise.all([
+  const [baseRows, totalRow] = await Promise.all([
     db
       .select({
         id: students.id,
@@ -233,14 +253,47 @@ export async function GET(req: NextRequest) {
         isVerified: students.isVerified,
         isNewStudent: students.isNewStudent,
         joiningDate: students.joiningDate,
+        verifiedAt: students.verifiedAt,
+        parentPhone: parents.phone,
+        parentLastLoginAt: parents.lastLoginAt,
       })
       .from(students)
+      .leftJoin(parents, eq(parents.id, students.parentId))
       .where(where)
-      .orderBy(asc(students.enrollmentNumber))
+      .orderBy(sql`${students.syncedAt} DESC NULLS LAST`, asc(students.enrollmentNumber))
       .limit(PAGE_SIZE)
       .offset(offset),
     db.select({ n: count() }).from(students).where(where),
   ]);
+
+  // Flag which of the visible enrolments has an MCB grant (raw query —
+  // mcb_students isn't in the drizzle schema).
+  const enrolNos = baseRows
+    .map((r) => r.enrollmentNumber)
+    .filter((e): e is string => !!e);
+  const grantedSet = new Set<string>();
+  const refCodeMap = new Map<string, string>();
+  if (enrolNos.length > 0) {
+    const mcbRows = (await db.execute(sql`
+      SELECT enrolment_number,
+             website_access,
+             COALESCE(raw->>'StudentReferencesCode', raw->>'AdmissionNo') AS ref_code
+        FROM mcb_students
+       WHERE enrolment_number IN (${sql.join(
+         enrolNos.map((e) => sql`${e}`),
+         sql`, `,
+       )})
+    `)) as unknown as { enrolment_number: string; website_access: boolean | null; ref_code: string | null }[];
+    for (const m of mcbRows) {
+      if (m.website_access) grantedSet.add(m.enrolment_number);
+      if (m.ref_code) refCodeMap.set(m.enrolment_number, m.ref_code);
+    }
+  }
+  const rows = baseRows.map((r) => ({
+    ...r,
+    mcbAccessGranted: r.enrollmentNumber ? grantedSet.has(r.enrollmentNumber) : false,
+    referenceCode: r.enrollmentNumber ? refCodeMap.get(r.enrollmentNumber) ?? null : null,
+  }));
 
   const total = Number(totalRow[0]?.n ?? 0);
   const lastPage = Math.max(1, Math.ceil(total / PAGE_SIZE));

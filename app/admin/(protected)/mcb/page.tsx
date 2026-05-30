@@ -4,7 +4,7 @@ import McbDashboard from "./McbDashboard";
 
 export const dynamic = "force-dynamic";
 
-const PAGE_SIZE = 50;
+const PAGE_SIZE = 5000;
 const DEFAULT_BRANCH = "St. ANDREWS SCHOOL KEESARA"; // matches SCHOOLS[0] in McbDashboard
 
 function rowsOf<T>(res: unknown): T[] {

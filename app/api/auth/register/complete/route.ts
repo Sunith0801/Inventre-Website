@@ -106,7 +106,7 @@ export async function POST(req: Request) {
   // link insert + sibling auto-grouping in a single transaction.
   await db
     .update(students)
-    .set({ isVerified: true })
+    .set({ isVerified: true, verifiedAt: new Date() })
     .where(eq(students.id, student.id));
 
   // Single canonical write: dedupes by (student, phone), find-or-creates
@@ -124,6 +124,7 @@ export async function POST(req: Request) {
   await redis.del(`otp:${body.phone}`);
   await redis.del(`otp:attempts:${body.phone}`);
 
+  await db.update(parents).set({ lastLoginAt: new Date() }).where(eq(parents.id, parent.id));
   await createParentSession(parent.id, body.phone);
   return NextResponse.json({ ok: true });
 }
