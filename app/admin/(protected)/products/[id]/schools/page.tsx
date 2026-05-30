@@ -3,14 +3,14 @@ import { notFound, redirect } from "next/navigation";
 import { db } from "@/db/client";
 import { products, schools, productSchool } from "@/db/schema";
 import { ProductSchoolEditor } from "@/components/admin/ProductSchoolEditor";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
 
 export default async function ProductSchoolsPage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const guard = await requireAdmin("super", "ops");
+  const guard = await requireAnyPermission("catalog.read", "catalog.write");
   if (isResponse(guard)) redirect("/admin/dashboard");
   const { id } = await params;
   const [product] = await db

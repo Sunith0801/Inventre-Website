@@ -14,6 +14,8 @@ import {
   EmptyState,
   statusTone,
 } from "@/components/admin/ui/primitives";
+import { redirect } from "next/navigation";
+import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +24,9 @@ export default async function SuppliersPage({
 }: {
   searchParams: Promise<{ q?: string }>;
 }) {
+  const guard = await requireAnyPermission("suppliers.read", "suppliers.write");
+  if (isResponse(guard)) redirect("/admin/dashboard");
+
   const { q } = await searchParams;
   const rows = await listSuppliers(q);
 

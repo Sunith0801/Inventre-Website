@@ -15,12 +15,12 @@ import {
   EmptyState,
   Button,
 } from "@/components/admin/ui/primitives";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
 
 export const dynamic = "force-dynamic";
 
 export default async function BundlesPage() {
-  const guard = await requireAdmin("super", "ops");
+  const guard = await requireAnyPermission("catalog.read", "catalog.write");
   if (isResponse(guard)) redirect("/admin/dashboard");
 
   const rows = await db

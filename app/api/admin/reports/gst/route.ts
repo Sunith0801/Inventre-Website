@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { sql, gte, lte, and, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { invoices, invoiceItems } from "@/db/schema";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { isResponse, requirePermission } from "@/lib/admin-guard";
 
 /**
  * GST summary report — supports the GSTR-1 outward-supply view.
@@ -12,7 +12,7 @@ import { requireAdmin, isResponse } from "@/lib/admin-guard";
  * Query params: ?from=YYYY-MM-DD &to=YYYY-MM-DD &fy=26-27
  */
 export async function GET(req: Request) {
-  const guard = await requireAdmin("super", "ops");
+  const guard = await requirePermission("reports.read");
   if (isResponse(guard)) return guard;
   const url = new URL(req.url);
   const from = url.searchParams.get("from");

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { eq, and, sql } from "drizzle-orm";
 import { db, schema } from "@/db/client";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { isResponse, requirePermission } from "@/lib/admin-guard";
 import { parseJson } from "@/lib/api-handler";
 import { emitAddressEvent } from "@/lib/erp-bridge";
 
@@ -21,7 +21,7 @@ const Row = z.object({
 });
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const guard = await requireAdmin("super", "ops");
+  const guard = await requirePermission("students.write");
   if (isResponse(guard)) return guard;
   const { id: studentId } = await params;
   const body = await parseJson(req, Row);

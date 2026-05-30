@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { isResponse, requirePermission } from "@/lib/admin-guard";
 import { buildGstr1 } from "@/lib/gstr1";
 
 /**
@@ -9,7 +9,7 @@ import { buildGstr1 } from "@/lib/gstr1";
  * Pass `format=json-download` to receive it as a downloadable .json file.
  */
 export async function GET(req: Request) {
-  const guard = await requireAdmin("super", "ops");
+  const guard = await requirePermission("reports.read");
   if (isResponse(guard)) return guard;
 
   const url = new URL(req.url);

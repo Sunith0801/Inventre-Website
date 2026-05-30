@@ -3,7 +3,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { db, schema } from "@/db/client";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { isResponse, requirePermission } from "@/lib/admin-guard";
 import { parseJson } from "@/lib/api-handler";
 import { emitStudentEvent } from "@/lib/erp-bridge";
 import { invalidateCatalog } from "@/lib/cache";
@@ -36,7 +36,7 @@ const Body = z.object({
 });
 
 export async function POST(req: Request) {
-  const guard = await requireAdmin("super", "ops");
+  const guard = await requirePermission("students.write");
   if (isResponse(guard)) return guard;
   const body = await parseJson(req, Body);
   if (body instanceof NextResponse) return body;

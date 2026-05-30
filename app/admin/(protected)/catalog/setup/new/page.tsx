@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { asc, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { grades as gradesTable } from "@/db/schema";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
 import { PageHeader } from "@/components/admin/ui/primitives";
 import { NewSchoolWizard } from "@/components/admin/NewSchoolWizard";
 import { compareGrades } from "@/lib/sort-grades";
@@ -14,7 +14,7 @@ function rowsOf<T>(res: unknown): T[] {
 }
 
 export default async function NewSchoolWizardPage() {
-  const guard = await requireAdmin("super", "ops");
+  const guard = await requireAnyPermission("catalog.read", "catalog.write");
   if (isResponse(guard)) redirect("/admin/dashboard");
 
   // ── Grade master list (active rows only). The wizard offers these as

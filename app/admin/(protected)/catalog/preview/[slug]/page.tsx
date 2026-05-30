@@ -9,7 +9,7 @@ import {
   Boxes,
   ChevronRight,
 } from "lucide-react";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
 import {
   PageHeader,
   Card,
@@ -30,7 +30,7 @@ export default async function CatalogPreviewDetailPage({
   params: Params;
   searchParams: SearchParams;
 }) {
-  const guard = await requireAdmin("super", "ops", "school_admin");
+  const guard = await requireAnyPermission("catalog.read", "catalog.write");
   if (isResponse(guard)) redirect("/admin/dashboard");
 
   const { slug } = await params;

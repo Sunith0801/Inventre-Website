@@ -4,8 +4,6 @@ import { CreditCard, Plus } from "lucide-react";
 import { db } from "@/db/client";
 import { paymentEntries, parents, suppliers, invoices } from "@/db/schema";
 import {
-import { redirect } from "next/navigation";
-import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
   PageHeader,
   Card,
   Button,
@@ -17,6 +15,8 @@ import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
   EmptyState,
   Stat,
 } from "@/components/admin/ui/primitives";
+import { redirect } from "next/navigation";
+import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
 
 export const dynamic = "force-dynamic";
 

@@ -3,7 +3,7 @@ import { parseBody } from "@/lib/parse-body";
 import { z } from "zod";
 import { db } from "@/db/client";
 import { productAttributes } from "@/db/schema";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { isResponse, requirePermission } from "@/lib/admin-guard";
 import { eq, sql } from "drizzle-orm";
 
 const Body = z.object({
@@ -15,14 +15,14 @@ const Body = z.object({
 });
 
 export async function GET() {
-  const guard = await requireAdmin("super", "ops");
+  const guard = await requirePermission("catalog.read");
   if (isResponse(guard)) return guard;
   const rows = await db.select().from(productAttributes);
   return NextResponse.json({ attributes: rows });
 }
 
 export async function POST(req: Request) {
-  const guard = await requireAdmin("super");
+  const guard = await requirePermission("catalog.write");
   if (isResponse(guard)) return guard;
   const parsed = await parseBody(req, Body);
   if (parsed instanceof NextResponse) return parsed;

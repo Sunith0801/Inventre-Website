@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { sql } from "drizzle-orm";
 import { db } from "@/db/client";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { isResponse, requirePermission } from "@/lib/admin-guard";
 
 /**
  * Force a queued ERP push to drain immediately by zeroing its
@@ -14,7 +14,7 @@ export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const guard = await requireAdmin("super", "ops");
+  const guard = await requirePermission("settings-erp-bridge.write");
   if (isResponse(guard)) return guard;
   const { id } = await params;
   const url = new URL(req.url);

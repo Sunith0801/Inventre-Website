@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { eq, asc } from "drizzle-orm";
 import { db } from "@/db/client";
 import { schools, schoolGradeMappings } from "@/db/schema";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { isResponse, requirePermission } from "@/lib/admin-guard";
 
 /**
  * List the grades a given school serves (read from the ERP-synced
@@ -10,7 +10,7 @@ import { requireAdmin, isResponse } from "@/lib/admin-guard";
  * to populate its Grade dropdown after a school is picked.
  */
 export async function GET(req: Request) {
-  const guard = await requireAdmin("super", "ops");
+  const guard = await requirePermission("discounts.read");
   if (isResponse(guard)) return guard;
 
   const erpName = new URL(req.url).searchParams.get("school")?.trim();

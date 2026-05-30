@@ -19,10 +19,15 @@ import {
   Money,
   statusTone,
 } from "@/components/admin/ui/primitives";
+import { redirect } from "next/navigation";
+import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
 
 export const dynamic = "force-dynamic";
 
 export default async function PurchaseInvoicesPage() {
+  const guard = await requireAnyPermission("purchase-orders.read", "purchase-orders.write");
+  if (isResponse(guard)) redirect("/admin/dashboard");
+
   const rows = await db
     .select({
       invoice: purchaseInvoices,

@@ -28,6 +28,8 @@ import {
   Tr,
 } from "@/components/admin/ui/primitives";
 import { AutoSubmitForm } from "@/components/admin/AutoSubmitForm";
+import { redirect } from "next/navigation";
+import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
 
 export const dynamic = "force-dynamic";
 
@@ -36,6 +38,9 @@ export default async function DashboardPage({
 }: {
   searchParams: Promise<{ dateRange?: string; from?: string; to?: string }>;
 }) {
+  const guard = await requireAnyPermission("dashboard.read", "dashboard.write");
+  if (isResponse(guard)) redirect("/admin/dashboard");
+
   const { dateRange, from, to } = await searchParams;
   const preset =
     dateRange === "today" || dateRange === "week" || dateRange === "month"

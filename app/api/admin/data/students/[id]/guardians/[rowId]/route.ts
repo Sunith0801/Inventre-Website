@@ -3,7 +3,7 @@ import { revalidatePath } from "next/cache";
 import { and, eq, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db, schema } from "@/db/client";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { isResponse, requirePermission } from "@/lib/admin-guard";
 import { parseJson } from "@/lib/api-handler";
 import { emitGuardianEvent, emitStudentEvent } from "@/lib/erp-bridge";
 import { recomputeStudentParent } from "@/lib/repos/guardians";
@@ -33,7 +33,7 @@ const PatchBody = z.object({
  *      the POST fan-out + DELETE fan-out at lines 41-48 below).
  */
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string; rowId: string }> }) {
-  const guard = await requireAdmin("super", "ops");
+  const guard = await requirePermission("students.write");
   if (isResponse(guard)) return guard;
   const { id: studentId, rowId } = await params;
   const parsed = await parseJson(req, PatchBody);
@@ -218,7 +218,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 }
 
 export async function DELETE(_: Request, { params }: { params: Promise<{ id: string; rowId: string }> }) {
-  const guard = await requireAdmin("super", "ops");
+  const guard = await requirePermission("students.write");
   if (isResponse(guard)) return guard;
   const { id: studentId, rowId } = await params;
 

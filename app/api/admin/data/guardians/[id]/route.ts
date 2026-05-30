@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { db, schema } from "@/db/client";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { isResponse, requirePermission } from "@/lib/admin-guard";
 import { parseJson } from "@/lib/api-handler";
 import { phone10Schema, phone10NullableSchema } from "@/lib/phone";
 
@@ -16,7 +16,7 @@ const Patch = z.object({
 });
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const guard = await requireAdmin("super", "ops");
+  const guard = await requirePermission("guardians.write");
   if (isResponse(guard)) return guard;
   const { id } = await params;
   const body = await parseJson(req, Patch);
@@ -28,7 +28,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 }
 
 export async function DELETE(_: Request, { params }: { params: Promise<{ id: string }> }) {
-  const guard = await requireAdmin("super");
+  const guard = await requirePermission("guardians.write");
   if (isResponse(guard)) return guard;
   const { id } = await params;
   await db.delete(schema.guardians).where(eq(schema.guardians.id, id));

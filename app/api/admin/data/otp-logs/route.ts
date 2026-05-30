@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { and, desc, eq, gt, gte, ilike } from "drizzle-orm";
 import { db } from "@/db/client";
 import { otpLogs } from "@/db/schema";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { isResponse, requirePermission } from "@/lib/admin-guard";
 
 /**
  * Cursor-paginated read of `otp_logs` for the live admin panel
@@ -18,7 +18,7 @@ import { requireAdmin, isResponse } from "@/lib/admin-guard";
  * and the duplicate-suppression in the client also dedups by id.
  */
 export async function GET(req: Request) {
-  const guard = await requireAdmin("super", "ops");
+  const guard = await requirePermission("otp-logs.read");
   if (isResponse(guard)) return guard;
 
   const url = new URL(req.url);

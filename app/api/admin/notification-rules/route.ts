@@ -3,12 +3,12 @@ import { parseBody } from "@/lib/parse-body";
 import { z } from "zod";
 import { db } from "@/db/client";
 import { notificationRules } from "@/db/schema";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { isResponse, requirePermission } from "@/lib/admin-guard";
 import { validateTemplate, EVENT_VARS } from "@/lib/notification-template";
 import { desc } from "drizzle-orm";
 
 export async function GET() {
-  const guard = await requireAdmin("super", "ops");
+  const guard = await requirePermission("settings-otp.read");
   if (isResponse(guard)) return guard;
   const rows = await db
     .select()
@@ -30,7 +30,7 @@ const Body = z.object({
 });
 
 export async function POST(req: Request) {
-  const guard = await requireAdmin("super");
+  const guard = await requirePermission("settings-otp.write");
   if (isResponse(guard)) return guard;
   const parsed = await parseBody(req, Body);
   if (parsed instanceof NextResponse) return parsed;

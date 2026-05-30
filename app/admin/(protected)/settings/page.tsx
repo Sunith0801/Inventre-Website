@@ -1,4 +1,6 @@
 import { ShieldCheck, Truck, Calculator, KeyRound, Mail, History, Bell, Webhook, RefreshCw, MessageSquare } from "lucide-react";
+import { redirect } from "next/navigation";
+import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
 
 const sections = [
   {
@@ -73,7 +75,10 @@ const sections = [
   },
 ];
 
-export default function SettingsIndex() {
+export default async function SettingsIndex() {
+  const guard = await requireAnyPermission("settings-users.read", "settings-users.write");
+  if (isResponse(guard)) redirect("/admin/dashboard");
+
   return (
     <div>
       <h1 className="font-display text-[28px] font-extrabold tracking-tight text-ink-900">

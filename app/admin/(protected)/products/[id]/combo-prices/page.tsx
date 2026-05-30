@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { eq, sql } from "drizzle-orm";
 import { ArrowLeft } from "lucide-react";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
 import { db } from "@/db/client";
 import { products, priceLists } from "@/db/schema";
 import { PageHeader, Button } from "@/components/admin/ui/primitives";
@@ -15,7 +15,7 @@ export default async function ComboPricesPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const guard = await requireAdmin("super", "ops");
+  const guard = await requireAnyPermission("catalog.read", "catalog.write");
   if (isResponse(guard)) return guard;
   const { id } = await params;
 

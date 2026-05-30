@@ -13,7 +13,7 @@ import {
   itemPrices,
   priceLists,
 } from "@/db/schema";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { isResponse, requirePermission } from "@/lib/admin-guard";
 import { invalidateCatalog } from "@/lib/cache";
 import { getSizeAxisNameForProduct } from "@/lib/repos/product-attribute-groups";
 
@@ -81,7 +81,7 @@ export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const guard = await requireAdmin("super");
+  const guard = await requirePermission("catalog.write");
   if (isResponse(guard)) return guard;
   const { id } = await params;
   const parsed = await parseBody(req, Body);
@@ -369,7 +369,7 @@ export async function DELETE(
   _: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const guard = await requireAdmin("super");
+  const guard = await requirePermission("catalog.write");
   if (isResponse(guard)) return guard;
   const { id } = await params;
 

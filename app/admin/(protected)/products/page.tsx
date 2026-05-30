@@ -23,7 +23,7 @@ import {
 import { ExportButton } from "@/components/admin/ExportButton";
 import { ArchiveErpDisabledButton } from "@/components/admin/ArchiveErpDisabledButton";
 import { ProductsTableClient } from "@/components/admin/ProductsTableClient";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
 import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
@@ -47,7 +47,7 @@ export default async function ProductsListPage({
 }) {
   // Catalog management is super/ops only — school_admin can't write products,
   // so we don't show them the list either (avoids a dead-end UX).
-  const guard = await requireAdmin("super", "ops");
+  const guard = await requireAnyPermission("catalog.read", "catalog.write");
   if (isResponse(guard)) redirect("/admin/dashboard");
 
   const { q, status, schoolId, erp, grade, kind, page } = await searchParams;

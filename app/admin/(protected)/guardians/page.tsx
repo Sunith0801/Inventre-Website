@@ -4,11 +4,11 @@ import { guardians, studentGuardianLinks } from "@/db/schema";
 import { ilike, or, sql, and, count } from "drizzle-orm";
 import { Users, Plus } from "lucide-react";
 import {
-import { redirect } from "next/navigation";
-import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
   PageHeader, Card, Th, Td, Tr, EmptyState, SearchInput, Toolbar, Button,
 } from "@/components/admin/ui/primitives";
 import { GuardianMergeBanner } from "@/components/admin/GuardianMergeBanner";
+import { redirect } from "next/navigation";
+import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
 
 export const dynamic = "force-dynamic";
 

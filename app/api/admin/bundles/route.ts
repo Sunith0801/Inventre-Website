@@ -10,10 +10,10 @@ import {
   products,
 } from "@/db/schema";
 import { eq, desc } from "drizzle-orm";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { isResponse, requirePermission } from "@/lib/admin-guard";
 
 export async function GET() {
-  const guard = await requireAdmin("super", "ops");
+  const guard = await requirePermission("catalog.read");
   if (isResponse(guard)) return guard;
   const rows = await db
     .select({
@@ -34,7 +34,7 @@ const CreateBody = z.object({
 });
 
 export async function POST(req: Request) {
-  const guard = await requireAdmin("super");
+  const guard = await requirePermission("catalog.write");
   if (isResponse(guard)) return guard;
   const parsed = await parseBody(req, CreateBody);
   if (parsed instanceof NextResponse) return parsed;

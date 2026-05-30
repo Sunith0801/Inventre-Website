@@ -18,7 +18,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { sql } from "drizzle-orm";
 import { db } from "@/db/client";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { isResponse, requirePermission } from "@/lib/admin-guard";
 import { last10Sql } from "@/lib/phone";
 
 const Query = z.object({
@@ -27,7 +27,7 @@ const Query = z.object({
 });
 
 export async function GET(req: Request) {
-  const guard = await requireAdmin("super", "ops");
+  const guard = await requirePermission("guardians.read");
   if (isResponse(guard)) return guard;
 
   const url = new URL(req.url);

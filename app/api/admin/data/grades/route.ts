@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db, schema } from "@/db/client";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { isResponse, requirePermission } from "@/lib/admin-guard";
 import { parseJson } from "@/lib/api-handler";
 
 const Body = z.object({
@@ -11,7 +11,7 @@ const Body = z.object({
 });
 
 export async function POST(req: Request) {
-  const guard = await requireAdmin("super", "ops");
+  const guard = await requirePermission("grades.write");
   if (isResponse(guard)) return guard;
   const body = await parseJson(req, Body);
   if (body instanceof NextResponse) return body;

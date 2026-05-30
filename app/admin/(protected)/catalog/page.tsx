@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import { db } from "@/db/client";
 import { schools } from "@/db/schema";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
 import {
   PageHeader,
   Card,
@@ -56,7 +56,7 @@ function rowsOf<T>(res: unknown): T[] {
 }
 
 export default async function CatalogPreviewPage({ searchParams }: { searchParams: SearchParams }) {
-  const guard = await requireAdmin("super", "ops", "school_admin");
+  const guard = await requireAnyPermission("catalog.read", "catalog.write");
   if (isResponse(guard)) redirect("/admin/dashboard");
 
   const sp = await searchParams;

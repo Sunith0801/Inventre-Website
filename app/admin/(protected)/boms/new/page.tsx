@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { asc, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { products, schools } from "@/db/schema";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
 import { PageHeader, Card } from "@/components/admin/ui/primitives";
 import { NewBomForm } from "@/components/admin/NewBomForm";
 
@@ -17,7 +17,7 @@ export default async function NewBomPage({
 }: {
   searchParams: Promise<{ schoolId?: string; grade?: string }>;
 }) {
-  const guard = await requireAdmin("super", "ops");
+  const guard = await requireAnyPermission("catalog.read", "catalog.write");
   if (isResponse(guard)) redirect("/admin/dashboard");
 
   const sp = await searchParams;

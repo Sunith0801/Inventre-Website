@@ -4,7 +4,7 @@ import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { notificationRules } from "@/db/schema";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { isResponse, requirePermission } from "@/lib/admin-guard";
 import { validateTemplate, EVENT_VARS } from "@/lib/notification-template";
 
 const KNOWN_EVENTS = Object.keys(EVENT_VARS) as [string, ...string[]];
@@ -23,7 +23,7 @@ export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const guard = await requireAdmin("super");
+  const guard = await requirePermission("settings-otp.write");
   if (isResponse(guard)) return guard;
   const { id } = await params;
   const parsed = await parseBody(req, Body);
@@ -77,7 +77,7 @@ export async function DELETE(
   _: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const guard = await requireAdmin("super");
+  const guard = await requirePermission("settings-otp.write");
   if (isResponse(guard)) return guard;
   const { id } = await params;
   await db.delete(notificationRules).where(eq(notificationRules.id, id));

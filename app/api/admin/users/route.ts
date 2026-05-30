@@ -4,7 +4,7 @@ import bcrypt from "@node-rs/bcrypt";
 import { sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { users } from "@/db/schema";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { isResponse, requirePermission } from "@/lib/admin-guard";
 import { logActivity } from "@/lib/activity";
 
 const Body = z.object({
@@ -23,7 +23,7 @@ async function roleIdForEnum(role: "super" | "ops" | "school_admin"): Promise<st
 }
 
 export async function POST(req: Request) {
-  const guard = await requireAdmin("super");
+  const guard = await requirePermission("settings-users.write");
   if (isResponse(guard)) return guard;
   let body;
   try {

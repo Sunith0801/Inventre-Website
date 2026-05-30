@@ -3,7 +3,7 @@ import { parseBody } from "@/lib/parse-body";
 import { z } from "zod";
 import { db } from "@/db/client";
 import { schools } from "@/db/schema";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { isResponse, requirePermission } from "@/lib/admin-guard";
 
 const Body = z.object({
   name: z.string().min(1),
@@ -19,7 +19,7 @@ const Body = z.object({
 });
 
 export async function POST(req: Request) {
-  const guard = await requireAdmin("super");
+  const guard = await requirePermission("schools.write");
   if (isResponse(guard)) return guard;
 
   const parsed = await parseBody(req, Body);

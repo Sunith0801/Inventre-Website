@@ -11,12 +11,12 @@ import {
   suppliers,
   warehouses,
 } from "@/db/schema";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { isResponse, requirePermission } from "@/lib/admin-guard";
 import { applyStockChange } from "@/lib/repos/inventory";
 import { nextNumber, financialYear, pad } from "@/lib/numbering";
 
 export async function GET(req: Request) {
-  const guard = await requireAdmin("super", "ops");
+  const guard = await requirePermission("purchase-orders.read");
   if (isResponse(guard)) return guard;
   const url = new URL(req.url);
   const poId = url.searchParams.get("poId");
@@ -55,7 +55,7 @@ const Body = z.object({
 });
 
 export async function POST(req: Request) {
-  const guard = await requireAdmin("super", "ops");
+  const guard = await requirePermission("purchase-orders.write");
   if (isResponse(guard)) return guard;
   const parsed = await parseBody(req, Body);
   if (parsed instanceof NextResponse) return parsed;

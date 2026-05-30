@@ -3,7 +3,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { and, eq, ne, sql } from "drizzle-orm";
 import { db, schema } from "@/db/client";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { isResponse, requirePermission } from "@/lib/admin-guard";
 import { parseJson } from "@/lib/api-handler";
 import { emitGuardianEvent, emitStudentEvent } from "@/lib/erp-bridge";
 import { upsertGuardianLink } from "@/lib/repos/guardians";
@@ -18,7 +18,7 @@ const Row = z.object({
 });
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const guard = await requireAdmin("super", "ops");
+  const guard = await requirePermission("students.write");
   if (isResponse(guard)) return guard;
   const { id: studentId } = await params;
   const parsed = await parseJson(req, Row);

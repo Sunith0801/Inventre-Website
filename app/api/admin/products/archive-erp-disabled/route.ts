@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db, schema } from "@/db/client";
 import { and, eq, sql } from "drizzle-orm";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { isResponse, requirePermission } from "@/lib/admin-guard";
 
 /**
  * Admin-driven bulk action: archive every product currently marked
@@ -17,7 +17,7 @@ import { requireAdmin, isResponse } from "@/lib/admin-guard";
  */
 
 export async function GET() {
-  const guard = await requireAdmin("super", "ops");
+  const guard = await requirePermission("catalog.read");
   if (isResponse(guard)) return guard;
   const [counts] = await db
     .select({
@@ -36,7 +36,7 @@ export async function GET() {
 }
 
 export async function POST() {
-  const guard = await requireAdmin("super");
+  const guard = await requirePermission("catalog.write");
   if (isResponse(guard)) return guard;
   const result = await db
     .update(schema.products)

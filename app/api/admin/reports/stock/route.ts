@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { sql, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { bins, productVariants, products, warehouses } from "@/db/schema";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { isResponse, requirePermission } from "@/lib/admin-guard";
 
 /**
  * Stock valuation + low-stock report.
@@ -11,7 +11,7 @@ import { requireAdmin, isResponse } from "@/lib/admin-guard";
 export async function GET() {
   // Bins/warehouses are global — not scoped to a school.
   // school_admin has no business reading cross-tenant inventory totals.
-  const guard = await requireAdmin("super", "ops");
+  const guard = await requirePermission("reports.read");
   if (isResponse(guard)) return guard;
 
   const [totals] = await db

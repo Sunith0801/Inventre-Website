@@ -3,7 +3,7 @@ import { z } from "zod";
 import { inArray } from "drizzle-orm";
 import { db } from "@/db/client";
 import { products } from "@/db/schema";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { isResponse, requirePermission } from "@/lib/admin-guard";
 import { invalidateCatalog } from "@/lib/cache";
 
 /**
@@ -18,7 +18,7 @@ const Body = z.object({
 });
 
 export async function PATCH(req: Request) {
-  const guard = await requireAdmin("super");
+  const guard = await requirePermission("catalog.write");
   if (isResponse(guard)) return guard;
 
   let body: z.infer<typeof Body>;

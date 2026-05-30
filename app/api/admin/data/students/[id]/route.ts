@@ -3,7 +3,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { db, schema } from "@/db/client";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { isResponse, requirePermission } from "@/lib/admin-guard";
 import { parseJson } from "@/lib/api-handler";
 import { emitStudentEvent } from "@/lib/erp-bridge";
 import { invalidateCatalog } from "@/lib/cache";
@@ -36,7 +36,7 @@ const Patch = z.object({
 });
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const guard = await requireAdmin("super", "ops");
+  const guard = await requirePermission("students.write");
   if (isResponse(guard)) return guard;
   const { id } = await params;
   const body = await parseJson(req, Patch);
@@ -144,7 +144,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 }
 
 export async function DELETE(_: Request, { params }: { params: Promise<{ id: string }> }) {
-  const guard = await requireAdmin("super");
+  const guard = await requirePermission("students.write");
   if (isResponse(guard)) return guard;
   const { id } = await params;
   await db.delete(schema.students).where(eq(schema.students.id, id));

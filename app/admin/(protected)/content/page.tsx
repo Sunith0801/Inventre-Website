@@ -6,6 +6,8 @@ import {
   Image as ImageIcon,
   ArrowRight,
 } from "lucide-react";
+import { redirect } from "next/navigation";
+import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
 
 const sections = [
   {
@@ -36,7 +38,10 @@ const sections = [
   },
 ];
 
-export default function ContentIndex() {
+export default async function ContentIndex() {
+  const guard = await requireAnyPermission("content.read", "content.write");
+  if (isResponse(guard)) redirect("/admin/dashboard");
+
   return (
     <div>
       <h1 className="font-display text-[28px] font-extrabold tracking-tight text-ink-900">

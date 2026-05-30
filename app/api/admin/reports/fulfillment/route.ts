@@ -2,10 +2,10 @@ import { NextResponse } from "next/server";
 import { sql, gte, and, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { orders, shipments } from "@/db/schema";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { isResponse, requirePermission } from "@/lib/admin-guard";
 
 export async function GET(req: Request) {
-  const guard = await requireAdmin("super", "ops", "school_admin");
+  const guard = await requirePermission("reports.read");
   if (isResponse(guard)) return guard;
   const url = new URL(req.url);
   const sinceDays = parseInt(url.searchParams.get("days") ?? "30", 10);

@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { sql } from "drizzle-orm";
 import { Plus, GraduationCap, Eye } from "lucide-react";
 import { db } from "@/db/client";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
 import {
   PageHeader,
   Card,
@@ -20,7 +20,7 @@ function rowsOf<T>(res: unknown): T[] {
 }
 
 export default async function CatalogSetupPage() {
-  const guard = await requireAdmin("super", "ops");
+  const guard = await requireAnyPermission("catalog.read", "catalog.write");
   if (isResponse(guard)) redirect("/admin/dashboard");
 
   // ── Per-school summary: grades defined, products tagged, magic boxes ────

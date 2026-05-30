@@ -3,7 +3,7 @@ import { parseBody } from "@/lib/parse-body";
 import { z } from "zod";
 import { db } from "@/db/client";
 import { systemSettings } from "@/db/schema";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { isResponse, requirePermission } from "@/lib/admin-guard";
 import {
   SMS_REAL_SEND_KEY,
   EMAIL_REAL_SEND_KEY,
@@ -18,14 +18,14 @@ const Body = z.object({
 });
 
 export async function GET() {
-  const guard = await requireAdmin("super");
+  const guard = await requirePermission("settings-otp.read");
   if (isResponse(guard)) return guard;
   const toggles = await getOtpToggles();
   return NextResponse.json(toggles);
 }
 
 export async function PUT(req: Request) {
-  const guard = await requireAdmin("super");
+  const guard = await requirePermission("settings-otp.write");
   if (isResponse(guard)) return guard;
   const parsed = await parseBody(req, Body);
   if (parsed instanceof NextResponse) return parsed;

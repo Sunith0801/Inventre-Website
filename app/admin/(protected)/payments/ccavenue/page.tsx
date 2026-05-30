@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { sql } from "drizzle-orm";
 import { db } from "@/db/client";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
 import {
   PageHeader,
   Card,
@@ -133,7 +133,7 @@ export default async function CCAvenuePaymentLogsPage({
     page?: string;
   }>;
 }) {
-  const guard = await requireAdmin("super", "ops");
+  const guard = await requireAnyPermission("payments-ccavenue.read", "payments-ccavenue.write");
   if (isResponse(guard)) redirect("/admin/dashboard");
 
   const sp = await searchParams;

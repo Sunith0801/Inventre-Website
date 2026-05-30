@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db, schema } from "@/db/client";
 import { eq, desc } from "drizzle-orm";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { isResponse, requirePermission } from "@/lib/admin-guard";
 import {
   enqueueErpMediaRehost,
   ERP_MEDIA_REHOST_JOB_TYPE,
@@ -14,7 +14,7 @@ const Body = z.object({
 });
 
 export async function POST(req: Request) {
-  const guard = await requireAdmin("super");
+  const guard = await requirePermission("settings-erp-bridge.write");
   if (isResponse(guard)) return guard;
   const body = req.headers.get("content-length") === "0" ? {} : await req.json().catch(() => ({}));
   const opts = Body.parse(body ?? {});
@@ -23,7 +23,7 @@ export async function POST(req: Request) {
 }
 
 export async function GET() {
-  const guard = await requireAdmin("super", "ops");
+  const guard = await requirePermission("settings-erp-bridge.read");
   if (isResponse(guard)) return guard;
   const rows = await db
     .select({

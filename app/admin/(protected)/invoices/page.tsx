@@ -3,8 +3,6 @@ import Link from "next/link";
 import { listInvoices } from "@/lib/repos/invoices";
 import { ExportButton } from "@/components/admin/ExportButton";
 import {
-import { redirect } from "next/navigation";
-import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
   PageHeader,
   Card,
   Th,
@@ -20,6 +18,8 @@ import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
   Button,
   statusTone,
 } from "@/components/admin/ui/primitives";
+import { redirect } from "next/navigation";
+import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
 
 export const dynamic = "force-dynamic";
 

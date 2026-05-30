@@ -4,7 +4,7 @@ import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { Eye, Library, Plus } from "lucide-react";
 import { db } from "@/db/client";
 import { schools, products, productSchool, productGrades, productImages } from "@/db/schema";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
 import { PageHeader, Card, Badge } from "@/components/admin/ui/primitives";
 import { BulkTagItemsTool, type TaggableProduct } from "@/components/admin/BulkTagItemsTool";
 
@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 type Params = Promise<{ schoolId: string; grade: string }>;
 
 export default async function AddItemsPage({ params }: { params: Params }) {
-  const guard = await requireAdmin("super", "ops");
+  const guard = await requireAnyPermission("catalog.read", "catalog.write");
   if (isResponse(guard)) redirect("/admin/dashboard");
 
   const { schoolId, grade: rawGrade } = await params;

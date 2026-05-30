@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { isResponse, requirePermission } from "@/lib/admin-guard";
 import { applyImport, detectImporter, parseSpreadsheet, IMPORTERS } from "@/lib/importers";
 
 export const runtime = "nodejs";
@@ -15,7 +15,7 @@ export const maxDuration = 600; // 10 minutes — lots of rows possible
  * Returns: ImportSummary { total, new, updated, skipped, errors, errorDetails[] }
  */
 export async function POST(req: Request) {
-  const guard = await requireAdmin("super", "ops");
+  const guard = await requirePermission("import.write");
   if (isResponse(guard)) return guard;
 
   const form = await req.formData();

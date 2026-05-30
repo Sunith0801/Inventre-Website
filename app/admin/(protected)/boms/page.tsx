@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { Library, Plus } from "lucide-react";
 import { db } from "@/db/client";
 import { sql } from "drizzle-orm";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
 import {
   PageHeader,
   Card,
@@ -40,7 +40,7 @@ export default async function BomMasterPage({
 }: {
   searchParams: Promise<{ q?: string; schoolId?: string; page?: string }>;
 }) {
-  const guard = await requireAdmin("super", "ops");
+  const guard = await requireAnyPermission("catalog.read", "catalog.write");
   if (isResponse(guard)) redirect("/admin/dashboard");
 
   const { q, schoolId, page: pageStr } = await searchParams;

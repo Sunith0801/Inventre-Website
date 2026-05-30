@@ -4,7 +4,7 @@ import { z } from "zod";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { productImages } from "@/db/schema";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { isResponse, requirePermission } from "@/lib/admin-guard";
 import { invalidateCatalog } from "@/lib/cache";
 
 const PatchBody = z.object({
@@ -17,7 +17,7 @@ export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string; imageId: string }> }
 ) {
-  const guard = await requireAdmin("super");
+  const guard = await requirePermission("catalog.write");
   if (isResponse(guard)) return guard;
   const { id: productId, imageId } = await params;
   const parsed = await parseBody(req, PatchBody);
@@ -70,7 +70,7 @@ export async function DELETE(
   _: Request,
   { params }: { params: Promise<{ id: string; imageId: string }> }
 ) {
-  const guard = await requireAdmin("super");
+  const guard = await requirePermission("catalog.write");
   if (isResponse(guard)) return guard;
   const { id: productId, imageId } = await params;
   await db

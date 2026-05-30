@@ -19,6 +19,8 @@ import {
 } from "@/components/admin/ui/primitives";
 import { BulkGenerateDialog } from "./BulkGenerateDialog";
 import { BulkExtendDialog } from "./BulkExtendDialog";
+import { redirect } from "next/navigation";
+import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
 
 export const dynamic = "force-dynamic";
 
@@ -35,6 +37,9 @@ export default async function DiscountsPage({
     school?: string;
   }>;
 }) {
+  const guard = await requireAnyPermission("discounts.read", "discounts.write");
+  if (isResponse(guard)) redirect("/admin/dashboard");
+
   const { q, status, type, school } = await searchParams;
   const term = (q ?? "").trim();
   const now = new Date();

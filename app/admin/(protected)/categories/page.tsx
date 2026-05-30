@@ -2,8 +2,13 @@ import { asc } from "drizzle-orm";
 import { db } from "@/db/client";
 import { categories } from "@/db/schema";
 import { CategoryEditor } from "@/components/admin/CategoryEditor";
+import { redirect } from "next/navigation";
+import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
 
 export default async function CategoriesPage() {
+  const guard = await requireAnyPermission("catalog.read", "catalog.write");
+  if (isResponse(guard)) redirect("/admin/dashboard");
+
   const rows = await db
     .select()
     .from(categories)

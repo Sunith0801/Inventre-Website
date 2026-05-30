@@ -2,8 +2,13 @@ import { asc, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { testimonials, schools } from "@/db/schema";
 import { TestimonialList } from "@/components/admin/TestimonialList";
+import { redirect } from "next/navigation";
+import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
 
 export default async function TestimonialsPage() {
+  const guard = await requireAnyPermission("testimonials.read", "testimonials.write");
+  if (isResponse(guard)) redirect("/admin/dashboard");
+
   const rows = await db
     .select({ t: testimonials, school: schools })
     .from(testimonials)

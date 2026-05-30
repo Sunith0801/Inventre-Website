@@ -3,7 +3,7 @@ import { z } from "zod";
 import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/db/client";
 import { productSchool, productGrades, products, schools } from "@/db/schema";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { isResponse, requirePermission } from "@/lib/admin-guard";
 import { parseJson } from "@/lib/api-handler";
 import { invalidateCatalog } from "@/lib/cache";
 
@@ -46,7 +46,7 @@ const Body = z.object({
 });
 
 export async function POST(req: Request) {
-  const guard = await requireAdmin("super", "ops");
+  const guard = await requirePermission("catalog.write");
   if (isResponse(guard)) return guard;
 
   const body = await parseJson(req, Body);
@@ -170,7 +170,7 @@ const UntagBody = z.object({
 });
 
 export async function DELETE(req: Request) {
-  const guard = await requireAdmin("super", "ops");
+  const guard = await requirePermission("catalog.write");
   if (isResponse(guard)) return guard;
 
   const body = await parseJson(req, UntagBody);

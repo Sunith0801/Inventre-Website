@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { isResponse, requirePermission } from "@/lib/admin-guard";
 import { detectImporter, parseSpreadsheet, IMPORTERS } from "@/lib/importers";
 
 export const runtime = "nodejs"; // need Buffer
@@ -12,7 +12,7 @@ export const maxDuration = 60;
  * Optional: ?force=Customer in querystring to override auto-detection.
  */
 export async function POST(req: Request) {
-  const guard = await requireAdmin("super", "ops");
+  const guard = await requirePermission("import.write");
   if (isResponse(guard)) return guard;
 
   const url = new URL(req.url);

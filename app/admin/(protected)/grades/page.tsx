@@ -6,6 +6,8 @@ import { GraduationCap, Plus } from "lucide-react";
 import {
   PageHeader, Card, Th, Td, Tr, Badge, EmptyState, SearchInput, Toolbar, FilterChips, Button,
 } from "@/components/admin/ui/primitives";
+import { redirect } from "next/navigation";
+import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
 
 export const dynamic = "force-dynamic";
 
@@ -18,6 +20,9 @@ const STATUS_OPTIONS = [
 export default async function GradesListPage({
   searchParams,
 }: { searchParams: Promise<{ q?: string; status?: string }> }) {
+  const guard = await requireAnyPermission("grades.read", "grades.write");
+  if (isResponse(guard)) redirect("/admin/dashboard");
+
   const { q, status } = await searchParams;
   const conds = [];
   if (q) conds.push(or(

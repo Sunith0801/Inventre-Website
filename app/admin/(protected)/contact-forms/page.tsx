@@ -11,6 +11,8 @@ import {
   EmptyState,
   Badge,
 } from "@/components/admin/ui/primitives";
+import { redirect } from "next/navigation";
+import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
 
 export const dynamic = "force-dynamic";
 
@@ -54,6 +56,9 @@ export default async function ContactFormsPage({
     page?: string;
   }>;
 }) {
+  const guard = await requireAnyPermission("contact-forms.read", "contact-forms.write");
+  if (isResponse(guard)) redirect("/admin/dashboard");
+
   const { q, kind, status, since, page: pageRaw } = await searchParams;
   const page = Math.max(1, parseInt(pageRaw ?? "1", 10) || 1);
   const offset = (page - 1) * PAGE_SIZE;

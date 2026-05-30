@@ -9,7 +9,7 @@ import {
   schools,
   students,
 } from "@/db/schema";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { isResponse, requirePermission } from "@/lib/admin-guard";
 
 const Body = z.object({
   couponCode: z.string().min(2).max(64),
@@ -32,7 +32,7 @@ const Body = z.object({
 });
 
 export async function GET(req: Request) {
-  const guard = await requireAdmin("super", "ops");
+  const guard = await requirePermission("discounts.read");
   if (isResponse(guard)) return guard;
 
   const url = new URL(req.url);
@@ -83,7 +83,7 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const guard = await requireAdmin("super");
+  const guard = await requirePermission("discounts.write");
   if (isResponse(guard)) return guard;
   const parsed = await parseBody(req, Body);
   if (parsed instanceof NextResponse) return parsed;

@@ -5,7 +5,7 @@ import { z } from "zod";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { productSchool } from "@/db/schema";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { isResponse, requirePermission } from "@/lib/admin-guard";
 import { invalidateCatalog } from "@/lib/cache";
 
 const Body = z.object({
@@ -20,7 +20,7 @@ export async function PUT(
   req: Request,
   { params }: { params: Promise<{ id: string; schoolId: string }> }
 ) {
-  const guard = await requireAdmin("super");
+  const guard = await requirePermission("catalog.write");
   if (isResponse(guard)) return guard;
   const { id: productId, schoolId } = await params;
   const parsed = await parseBody(req, Body);

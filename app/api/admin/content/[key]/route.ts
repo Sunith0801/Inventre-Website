@@ -5,7 +5,7 @@ import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { contentBlocks } from "@/db/schema";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { isResponse, requirePermission } from "@/lib/admin-guard";
 import { invalidate } from "@/lib/cache";
 
 const Body = z.object({
@@ -16,7 +16,7 @@ export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ key: string }> }
 ) {
-  const guard = await requireAdmin("super");
+  const guard = await requirePermission("content.write");
   if (isResponse(guard)) return guard;
   const { key } = await params;
   const decoded = decodeURIComponent(key);

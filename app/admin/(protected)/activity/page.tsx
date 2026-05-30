@@ -11,10 +11,15 @@ import {
   EmptyState,
   Badge,
 } from "@/components/admin/ui/primitives";
+import { redirect } from "next/navigation";
+import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
 
 export const dynamic = "force-dynamic";
 
 export default async function ActivityLogPage() {
+  const guard = await requireAnyPermission("activity.read", "activity.write");
+  if (isResponse(guard)) redirect("/admin/dashboard");
+
   const rows = await db
     .select()
     .from(activityLog)

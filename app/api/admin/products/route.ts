@@ -10,12 +10,12 @@ import {
   productGrades,
   productBundles,
 } from "@/db/schema";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { isResponse, requirePermission } from "@/lib/admin-guard";
 import { invalidateCatalog } from "@/lib/cache";
 import { buildQrPayload, renderQrSvg } from "@/lib/qr";
 
 export async function GET(req: Request) {
-  const guard = await requireAdmin("super", "ops", "school_admin");
+  const guard = await requirePermission("catalog.read");
   if (isResponse(guard)) return guard;
   const url = new URL(req.url);
   const q = url.searchParams.get("q") ?? "";
@@ -179,7 +179,7 @@ const Body = z.object({
 });
 
 export async function POST(req: Request) {
-  const guard = await requireAdmin("super");
+  const guard = await requirePermission("catalog.write");
   if (isResponse(guard)) return guard;
   const parsed = await parseBody(req, Body);
   if (parsed instanceof NextResponse) return parsed;

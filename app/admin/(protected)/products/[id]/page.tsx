@@ -8,7 +8,7 @@ import {
   IndianRupee,
 } from "lucide-react";
 import { ProductDeleteButton } from "@/components/admin/ProductDeleteButton";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
 import { db } from "@/db/client";
 import { alias } from "drizzle-orm/pg-core";
 import {
@@ -102,7 +102,7 @@ export default async function EditProductPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const guard = await requireAdmin("super", "ops");
+  const guard = await requireAnyPermission("catalog.read", "catalog.write");
   if (isResponse(guard)) redirect("/admin/dashboard");
 
   const { id } = await params;

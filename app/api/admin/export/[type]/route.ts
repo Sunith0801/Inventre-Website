@@ -12,7 +12,7 @@ import {
   websiteCartCoupons,
   students,
 } from "@/db/schema";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { requirePermission, isResponse } from "@/lib/admin-guard";
 
 /**
  * Unified CSV export for admin list pages.
@@ -50,7 +50,10 @@ export async function GET(
   req: Request,
   { params }: { params: Promise<{ type: string }> }
 ) {
-  const guard = await requireAdmin("super", "ops");
+  // Cross-area CSV export. Gated on reports.read because export is
+  // semantically a reporting/extraction action; the page that triggers
+  // an export (e.g. /admin/orders) is itself gated on its own .read perm.
+  const guard = await requirePermission("reports.read");
   if (isResponse(guard)) return guard;
   const { type } = await params;
   const today = new Date().toISOString().slice(0, 10);

@@ -3,7 +3,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { sql } from "drizzle-orm";
 import { db } from "@/db/client";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { isResponse, requirePermission } from "@/lib/admin-guard";
 import { parseJson } from "@/lib/api-handler";
 
 /**
@@ -54,7 +54,7 @@ type GuardianRow = {
 export async function POST(req: Request) {
   // Restrict to super-admins. Merging touches identity tables that ops
   // staff shouldn't be able to mass-mutate without escalation.
-  const guard = await requireAdmin("super");
+  const guard = await requirePermission("guardians.write");
   if (isResponse(guard)) return guard;
   const parsed = await parseJson(req, Body);
   if (parsed instanceof NextResponse) return parsed;

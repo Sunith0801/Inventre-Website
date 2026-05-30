@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { sql, gte, lte, and, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { orders, schools } from "@/db/schema";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { isResponse, requirePermission } from "@/lib/admin-guard";
 
 /**
  * Sales report — aggregates by school × period.
@@ -10,7 +10,7 @@ import { requireAdmin, isResponse } from "@/lib/admin-guard";
  *   ?from=2026-01-01  &to=2026-12-31  &groupBy=school|day|month
  */
 export async function GET(req: Request) {
-  const guard = await requireAdmin("super", "ops", "school_admin");
+  const guard = await requirePermission("reports.read");
   if (isResponse(guard)) return guard;
 
   const url = new URL(req.url);

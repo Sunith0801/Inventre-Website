@@ -13,7 +13,7 @@ import {
 import { PageHeader, Button } from "@/components/admin/ui/primitives";
 import { ArrowLeft } from "lucide-react";
 import { ProductVariantsEditor } from "@/components/admin/ProductVariantsEditor";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +22,7 @@ export default async function ProductVariantsPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const guard = await requireAdmin("super", "ops");
+  const guard = await requireAnyPermission("catalog.read", "catalog.write");
   if (isResponse(guard)) redirect("/admin/dashboard");
   const { id } = await params;
   const [product] = await db

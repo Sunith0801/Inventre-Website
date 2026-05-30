@@ -18,7 +18,7 @@ import { NextResponse } from "next/server";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db/client";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { requirePermission, isResponse } from "@/lib/admin-guard";
 import { parseJson } from "@/lib/api-handler";
 import {
   accumulate,
@@ -46,7 +46,7 @@ const Body = z.union([
 ]);
 
 export async function POST(req: Request) {
-  const guard = await requireAdmin("super");
+  const guard = await requirePermission("orders.write");
   if (isResponse(guard)) return guard;
   const off = erpInboundDisabledResponse();
   if (off) return off;

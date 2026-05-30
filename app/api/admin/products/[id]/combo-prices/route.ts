@@ -3,7 +3,7 @@ import { z } from "zod";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { db } from "@/db/client";
 import { itemPrices, productVariants } from "@/db/schema";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { isResponse, requirePermission } from "@/lib/admin-guard";
 import { invalidateCatalog } from "@/lib/cache";
 
 const Body = z.object({
@@ -29,7 +29,7 @@ export async function POST(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const guard = await requireAdmin("super", "ops");
+  const guard = await requirePermission("catalog.write");
   if (isResponse(guard)) return guard;
   const { id: productId } = await params;
 

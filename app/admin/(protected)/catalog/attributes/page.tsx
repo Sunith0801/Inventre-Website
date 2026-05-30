@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { db } from "@/db/client";
 import { productAttributes, schools } from "@/db/schema";
 import { eq, sql, ilike, or, and } from "drizzle-orm";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
 import { Layers, Plus } from "lucide-react";
 import {
   PageHeader,
@@ -31,7 +31,7 @@ export default async function AttributesPage({
 }: {
   searchParams: Promise<{ q?: string; status?: string }>;
 }) {
-  const guard = await requireAdmin("super", "ops");
+  const guard = await requireAnyPermission("catalog.read", "catalog.write");
   if (isResponse(guard)) redirect("/admin/dashboard");
 
   const sp = await searchParams;

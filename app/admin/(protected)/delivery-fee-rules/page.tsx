@@ -13,6 +13,8 @@ import {
 import { NewRuleButton, RuleRowActions } from "./RulesTableClient";
 import DeleteRuleButton from "./DeleteRuleButton";
 import { BulkAssignCard } from "./BulkAssignCard";
+import { redirect } from "next/navigation";
+import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +25,9 @@ function categoryLabel(itemGroup: string): "Uniforms" | "Books" {
 }
 
 export default async function DeliveryFeeRulesPage() {
+  const guard = await requireAnyPermission("delivery-fees.read", "delivery-fees.write");
+  if (isResponse(guard)) redirect("/admin/dashboard");
+
   let rules: Awaited<ReturnType<typeof listDeliveryFeeRules>> = [];
   let schools: string[] = [];
   let grades: string[] = [];

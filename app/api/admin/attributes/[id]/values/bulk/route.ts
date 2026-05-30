@@ -4,7 +4,7 @@ import { z } from "zod";
 import { eq, inArray, and, notInArray } from "drizzle-orm";
 import { db } from "@/db/client";
 import { productAttributeValues } from "@/db/schema";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { isResponse, requirePermission } from "@/lib/admin-guard";
 
 /**
  * Bulk replace the value list for an attribute (mirrors the ERP "Save"
@@ -36,7 +36,7 @@ export async function PUT(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const guard = await requireAdmin("super");
+  const guard = await requirePermission("catalog.write");
   if (isResponse(guard)) return guard;
   const { id: attributeId } = await params;
   const parsed = await parseBody(req, Body);

@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { db } from "@/db/client";
 import { orders, payments, orderItems, parents, students } from "@/db/schema";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
 import {
   PageHeader,
   Card,
@@ -60,7 +60,7 @@ export default async function CCAvenuePaymentDetailPage({
 }: {
   params: Promise<{ orderId: string }>;
 }) {
-  const guard = await requireAdmin("super", "ops");
+  const guard = await requireAnyPermission("payments-ccavenue.read", "payments-ccavenue.write");
   if (isResponse(guard)) redirect("/admin/dashboard");
 
   const { orderId } = await params;

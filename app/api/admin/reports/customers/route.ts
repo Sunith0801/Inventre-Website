@@ -2,10 +2,10 @@ import { NextResponse } from "next/server";
 import { sql, desc } from "drizzle-orm";
 import { db } from "@/db/client";
 import { parents, orders } from "@/db/schema";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { isResponse, requirePermission } from "@/lib/admin-guard";
 
 export async function GET() {
-  const guard = await requireAdmin("super", "ops");
+  const guard = await requirePermission("reports.read");
   if (isResponse(guard)) return guard;
 
   const [summary] = await db

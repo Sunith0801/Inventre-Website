@@ -6,6 +6,8 @@ import {
   Card,
 } from "@/components/admin/ui/primitives";
 import { OtpLogsLiveTable, type OtpLogRow } from "@/components/admin/OtpLogsLiveTable";
+import { redirect } from "next/navigation";
+import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +18,9 @@ export default async function OtpLogsPage({
 }: {
   searchParams: Promise<{ phone?: string; purpose?: string; event?: string; since?: string; page?: string }>;
 }) {
+  const guard = await requireAnyPermission("otp-logs.read", "otp-logs.write");
+  if (isResponse(guard)) redirect("/admin/dashboard");
+
   const { phone, purpose, event, since, page: pageRaw } = await searchParams;
   const page = Math.max(1, parseInt(pageRaw ?? "1", 10) || 1);
   const offset = (page - 1) * PAGE_SIZE;

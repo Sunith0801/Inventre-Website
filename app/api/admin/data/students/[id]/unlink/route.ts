@@ -3,7 +3,7 @@ import { revalidatePath } from "next/cache";
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { students, studentGuardianLinks, parents } from "@/db/schema";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { isResponse, requirePermission } from "@/lib/admin-guard";
 import { logActivity } from "@/lib/activity";
 import { emitStudentEvent } from "@/lib/erp-bridge";
 import type { CurrentAdmin } from "@/lib/session";
@@ -109,7 +109,7 @@ export async function POST(
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const guard = await requireAdmin("super", "ops", "school_admin");
+  const guard = await requirePermission("students.write");
   if (isResponse(guard)) return guard;
   const { id: studentId } = await params;
   const result = await unlinkStudentFromFamily(studentId, guard);

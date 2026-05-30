@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { isResponse, requirePermission } from "@/lib/admin-guard";
 
 /**
  * RETIRED — used to trigger a one-shot pull from ERPNext at
@@ -14,13 +14,13 @@ const RETIRED_MSG =
   "syncs will go through the live ERP bridge (ERP_TARGET in .env.deploy).";
 
 export async function POST() {
-  const guard = await requireAdmin("super");
+  const guard = await requirePermission("settings-erp-bridge.write");
   if (isResponse(guard)) return guard;
   return NextResponse.json({ error: RETIRED_MSG }, { status: 410 });
 }
 
 export async function GET() {
-  const guard = await requireAdmin("super", "ops");
+  const guard = await requirePermission("settings-erp-bridge.read");
   if (isResponse(guard)) return guard;
   return NextResponse.json({ configured: false, retired: true });
 }

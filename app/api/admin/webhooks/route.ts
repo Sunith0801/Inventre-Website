@@ -5,10 +5,10 @@ import crypto from "crypto";
 import { desc } from "drizzle-orm";
 import { db } from "@/db/client";
 import { webhookEndpoints } from "@/db/schema";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { isResponse, requirePermission } from "@/lib/admin-guard";
 
 export async function GET() {
-  const guard = await requireAdmin("super", "ops");
+  const guard = await requirePermission("settings-erp-bridge.read");
   if (isResponse(guard)) return guard;
   const rows = await db
     .select()
@@ -25,7 +25,7 @@ const Body = z.object({
 });
 
 export async function POST(req: Request) {
-  const guard = await requireAdmin("super");
+  const guard = await requirePermission("settings-erp-bridge.write");
   if (isResponse(guard)) return guard;
   const parsed = await parseBody(req, Body);
   if (parsed instanceof NextResponse) return parsed;

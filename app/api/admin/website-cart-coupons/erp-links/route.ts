@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { ilike, or, and, isNotNull } from "drizzle-orm";
 import { db } from "@/db/client";
 import { schools, students } from "@/db/schema";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { isResponse, requirePermission } from "@/lib/admin-guard";
 
 /**
  * Resolve the ERPNext link fields on the Website Cart Coupon form
@@ -11,7 +11,7 @@ import { requireAdmin, isResponse } from "@/lib/admin-guard";
  * looks up live records and returns the canonical ERP name string.
  */
 export async function GET(req: Request) {
-  const guard = await requireAdmin("super", "ops");
+  const guard = await requirePermission("discounts.read");
   if (isResponse(guard)) return guard;
   const url = new URL(req.url);
   const kind = url.searchParams.get("kind") ?? "school";

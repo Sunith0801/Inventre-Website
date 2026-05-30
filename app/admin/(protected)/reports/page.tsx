@@ -17,6 +17,8 @@ import {
   PageHeader,
   Card,
 } from "@/components/admin/ui/primitives";
+import { redirect } from "next/navigation";
+import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
 
 export const dynamic = "force-dynamic";
 
@@ -100,7 +102,10 @@ const reports = [
   },
 ];
 
-export default function ReportsPage() {
+export default async function ReportsPage() {
+  const guard = await requireAnyPermission("reports.read", "reports.write");
+  if (isResponse(guard)) redirect("/admin/dashboard");
+
   return (
     <div>
       <PageHeader

@@ -14,7 +14,7 @@ import {
   returns,
   erpOutboundQueue,
 } from "@/db/schema";
-import { requireAdmin, requirePermission, isResponse, assertSchoolAccess } from "@/lib/admin-guard";
+import { requirePermission, isResponse, assertSchoolAccess } from "@/lib/admin-guard";
 import { notifyOrderStatus } from "@/lib/notifications";
 import {
   reserveOrder,
@@ -261,7 +261,7 @@ export async function DELETE(
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const guard = await requireAdmin("super");
+  const guard = await requirePermission("orders.write");
   if (isResponse(guard)) return guard;
   const { id } = await params;
 
