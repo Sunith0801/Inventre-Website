@@ -3,6 +3,8 @@ import Link from "next/link";
 import { listInvoices } from "@/lib/repos/invoices";
 import { ExportButton } from "@/components/admin/ExportButton";
 import {
+import { redirect } from "next/navigation";
+import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
   PageHeader,
   Card,
   Th,
@@ -26,6 +28,9 @@ export default async function InvoicesPage({
 }: {
   searchParams: Promise<{ status?: string; fy?: string; q?: string }>;
 }) {
+  const guard = await requireAnyPermission("invoices.read", "invoices.write");
+  if (isResponse(guard)) redirect("/admin/dashboard");
+
   const { status, fy, q } = await searchParams;
   const rows = await listInvoices({ status, fy, q });
 

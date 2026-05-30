@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { requirePermission, isResponse } from "@/lib/admin-guard";
 import { submitEWB } from "@/lib/ewaybill";
 
 export async function POST(
   _: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const guard = await requireAdmin("super", "ops");
+  const guard = await requirePermission("shipments.write");
   if (isResponse(guard)) return guard;
   const { id } = await params;
   try {

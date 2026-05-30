@@ -4,14 +4,14 @@ import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { parents } from "@/db/schema";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { requirePermission, isResponse } from "@/lib/admin-guard";
 import { getCustomerDetail } from "@/lib/repos/customers";
 
 export async function GET(
   _: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const guard = await requireAdmin("super", "ops", "school_admin");
+  const guard = await requirePermission("customers.read");
   if (isResponse(guard)) return guard;
   const { id } = await params;
   let scopeSchool: string | undefined;
@@ -38,7 +38,7 @@ export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const guard = await requireAdmin("super", "ops");
+  const guard = await requirePermission("customers.write");
   if (isResponse(guard)) return guard;
   const { id } = await params;
   const parsed = await parseBody(req, PatchBody);

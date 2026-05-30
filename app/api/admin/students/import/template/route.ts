@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { requirePermission, isResponse } from "@/lib/admin-guard";
 
 /**
  * Sample CSV the admin downloads, fills, and re-uploads via the import
@@ -69,7 +69,7 @@ function csvEscape(s: string): string {
 }
 
 export async function GET() {
-  const guard = await requireAdmin("super", "school_admin");
+  const guard = await requirePermission("students.read");
   if (isResponse(guard)) return guard;
 
   const lines = [HEADERS.join(",")];

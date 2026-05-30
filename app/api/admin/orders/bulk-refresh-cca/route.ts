@@ -4,7 +4,7 @@ import { z } from "zod";
 import { eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { orders, payments } from "@/db/schema";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { requirePermission, isResponse } from "@/lib/admin-guard";
 import { parseJson } from "@/lib/api-handler";
 import { fetchCCAvenueOrderStatus, isCCAvenueConfigured } from "@/lib/ccavenue";
 
@@ -68,7 +68,7 @@ async function withConcurrency<T, U>(
 }
 
 export async function POST(req: Request) {
-  const guard = await requireAdmin("super", "ops");
+  const guard = await requirePermission("orders.write");
   if (isResponse(guard)) return guard;
   const parsed = await parseJson(req, Body);
   if (parsed instanceof NextResponse) return parsed;

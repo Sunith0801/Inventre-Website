@@ -3,7 +3,7 @@ import { revalidatePath } from "next/cache";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { orders, payments } from "@/db/schema";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { requirePermission, isResponse } from "@/lib/admin-guard";
 import { fetchCCAvenueOrderStatus } from "@/lib/ccavenue";
 
 /**
@@ -26,7 +26,7 @@ export async function POST(
   _: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const guard = await requireAdmin("super", "ops");
+  const guard = await requirePermission("orders.write");
   if (isResponse(guard)) return guard;
   const { id } = await params;
 

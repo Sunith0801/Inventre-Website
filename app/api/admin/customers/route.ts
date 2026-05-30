@@ -2,13 +2,13 @@ import { NextResponse } from "next/server";
 import { parseBody } from "@/lib/parse-body";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { requirePermission, isResponse } from "@/lib/admin-guard";
 import { searchCustomers } from "@/lib/repos/customers";
 import { db } from "@/db/client";
 import { parents } from "@/db/schema";
 
 export async function GET(req: Request) {
-  const guard = await requireAdmin("super", "ops", "school_admin");
+  const guard = await requirePermission("customers.read");
   if (isResponse(guard)) return guard;
   const url = new URL(req.url);
   const q = url.searchParams.get("q") ?? "";
@@ -32,7 +32,7 @@ const PostBody = z.object({
 });
 
 export async function POST(req: Request) {
-  const guard = await requireAdmin("super", "ops");
+  const guard = await requirePermission("customers.write");
   if (isResponse(guard)) return guard;
   const parsed = await parseBody(req, PostBody);
   if (parsed instanceof NextResponse) return parsed;

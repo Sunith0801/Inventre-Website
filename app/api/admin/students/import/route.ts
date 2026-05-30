@@ -7,7 +7,7 @@ import {
   students,
   schools,
 } from "@/db/schema";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { requirePermission, isResponse } from "@/lib/admin-guard";
 import { makeTargetedGradeResolver } from "@/lib/repos/grades";
 import { upsertGuardianLink } from "@/lib/repos/guardians";
 import { last10 } from "@/lib/phone";
@@ -59,7 +59,7 @@ const Body = z.object({
 type RowError = { row: number; message: string; data?: unknown };
 
 export async function POST(req: Request) {
-  const guard = await requireAdmin("super", "school_admin");
+  const guard = await requirePermission("students.write");
   if (isResponse(guard)) return guard;
 
   let raw;

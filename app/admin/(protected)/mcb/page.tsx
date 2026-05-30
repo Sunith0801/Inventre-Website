@@ -1,6 +1,8 @@
 import { db } from "@/db/client";
 import { sql } from "drizzle-orm";
 import McbDashboard from "./McbDashboard";
+import { redirect } from "next/navigation";
+import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
 
 export const dynamic = "force-dynamic";
 
@@ -12,6 +14,9 @@ function rowsOf<T>(res: unknown): T[] {
 }
 
 export default async function McbPage() {
+  const guard = await requireAnyPermission("mcb.read", "mcb.write");
+  if (isResponse(guard)) redirect("/admin/dashboard");
+
   // Tiny initial payload — master tab, default school (SASKS), access=all, page 1.
   // After mount, the client component takes over and every interaction is a
   // small JSON fetch to /api/admin/mcb/data instead of a full RSC roundtrip.

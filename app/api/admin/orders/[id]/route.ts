@@ -14,7 +14,7 @@ import {
   returns,
   erpOutboundQueue,
 } from "@/db/schema";
-import { requireAdmin, isResponse, assertSchoolAccess } from "@/lib/admin-guard";
+import { requireAdmin, requirePermission, isResponse, assertSchoolAccess } from "@/lib/admin-guard";
 import { notifyOrderStatus } from "@/lib/notifications";
 import {
   reserveOrder,
@@ -62,7 +62,7 @@ export async function GET(
   _: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const guard = await requireAdmin("super", "ops", "school_admin");
+  const guard = await requirePermission("orders.read");
   if (isResponse(guard)) return guard;
   const { id } = await params;
 
@@ -106,7 +106,7 @@ export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const guard = await requireAdmin("super", "ops", "school_admin");
+  const guard = await requirePermission("orders.write");
   if (isResponse(guard)) return guard;
   const { id } = await params;
   const parsed = await parseBody(req, PatchBody);

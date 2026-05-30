@@ -4,6 +4,8 @@ import { returns, parents, orders } from "@/db/schema";
 import { eq, desc } from "drizzle-orm";
 import { PackageOpen } from "lucide-react";
 import {
+import { redirect } from "next/navigation";
+import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
   PageHeader,
   Card,
   Th,
@@ -18,6 +20,9 @@ import {
 export const dynamic = "force-dynamic";
 
 export default async function ReturnsPage() {
+  const guard = await requireAnyPermission("returns.read", "returns.write");
+  if (isResponse(guard)) redirect("/admin/dashboard");
+
   const rows = await db
     .select({
       ret: returns,

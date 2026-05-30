@@ -1,14 +1,14 @@
 import { NextResponse } from "next/server";
 import { parseBody } from "@/lib/parse-body";
 import { z } from "zod";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { requirePermission, isResponse } from "@/lib/admin-guard";
 import {
   generateInvoiceForOrder,
   listInvoices,
 } from "@/lib/repos/invoices";
 
 export async function GET(req: Request) {
-  const guard = await requireAdmin("super", "ops", "school_admin");
+  const guard = await requirePermission("invoices.read");
   if (isResponse(guard)) return guard;
   const url = new URL(req.url);
   const status = url.searchParams.get("status") ?? undefined;
@@ -30,7 +30,7 @@ const CreateBody = z.object({
 });
 
 export async function POST(req: Request) {
-  const guard = await requireAdmin("super", "ops");
+  const guard = await requirePermission("invoices.write");
   if (isResponse(guard)) return guard;
   const parsed = await parseBody(req, CreateBody);
   if (parsed instanceof NextResponse) return parsed;

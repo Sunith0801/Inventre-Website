@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { Users } from "lucide-react";
 import { db } from "@/db/client";
 import { sql } from "drizzle-orm";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
 import {
   PageHeader,
   Card,
@@ -40,7 +40,7 @@ export default async function CustomersPage({
 }: {
   searchParams: Promise<{ q?: string; page?: string }>;
 }) {
-  const guard = await requireAdmin("super", "ops");
+  const guard = await requireAnyPermission("customers.read", "customers.write");
   if (isResponse(guard)) redirect("/admin/dashboard");
 
   const { q, page: pageStr } = await searchParams;

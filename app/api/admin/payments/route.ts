@@ -9,7 +9,7 @@ import {
   orders,
   purchaseInvoices,
 } from "@/db/schema";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { requirePermission, isResponse } from "@/lib/admin-guard";
 import { allocPaymentNumber } from "@/lib/numbering";
 
 const Body = z.object({
@@ -37,7 +37,7 @@ const Body = z.object({
 });
 
 export async function POST(req: Request) {
-  const guard = await requireAdmin("super", "ops");
+  const guard = await requirePermission("payments.write");
   if (isResponse(guard)) return guard;
   const parsed = await parseBody(req, Body);
   if (parsed instanceof NextResponse) return parsed;

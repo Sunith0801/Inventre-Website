@@ -9,11 +9,11 @@ import {
   orderItems,
   parents,
 } from "@/db/schema";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { requirePermission, isResponse } from "@/lib/admin-guard";
 import { logActivity } from "@/lib/activity";
 
 export async function GET(req: Request) {
-  const guard = await requireAdmin("super", "ops", "school_admin");
+  const guard = await requirePermission("returns.read");
   if (isResponse(guard)) return guard;
   const url = new URL(req.url);
   const status = url.searchParams.get("status");
@@ -66,7 +66,7 @@ async function nextReturnNumber(): Promise<string> {
 }
 
 export async function POST(req: Request) {
-  const guard = await requireAdmin("super", "ops");
+  const guard = await requirePermission("returns.write");
   if (isResponse(guard)) return guard;
 
   let body: z.infer<typeof Body>;

@@ -2,13 +2,13 @@ import { NextResponse } from "next/server";
 import { eq, and } from "drizzle-orm";
 import { db } from "@/db/client";
 import { addresses } from "@/db/schema";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { requirePermission, isResponse } from "@/lib/admin-guard";
 
 export async function DELETE(
   _: Request,
   { params }: { params: Promise<{ id: string; addressId: string }> }
 ) {
-  const guard = await requireAdmin("super", "ops");
+  const guard = await requirePermission("customers.write");
   if (isResponse(guard)) return guard;
   const { id, addressId } = await params;
   await db
@@ -22,7 +22,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string; addressId: string }> }
 ) {
   // Set as default
-  const guard = await requireAdmin("super", "ops");
+  const guard = await requirePermission("customers.write");
   if (isResponse(guard)) return guard;
   const { id, addressId } = await params;
   await db

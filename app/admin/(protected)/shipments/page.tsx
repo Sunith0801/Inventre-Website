@@ -3,6 +3,8 @@ import Link from "next/link";
 import { sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import {
+import { redirect } from "next/navigation";
+import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
   PageHeader,
   Card,
   Toolbar,
@@ -67,6 +69,9 @@ export default async function ShipmentsPage({
 }: {
   searchParams: Promise<{ status?: string }>;
 }) {
+  const guard = await requireAnyPermission("shipments.read", "shipments.write");
+  if (isResponse(guard)) redirect("/admin/dashboard");
+
   const { status } = await searchParams;
 
   // Three-way UNION:

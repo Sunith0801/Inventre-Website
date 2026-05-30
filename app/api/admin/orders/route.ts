@@ -12,7 +12,7 @@ import {
   products,
   paymentEntries,
 } from "@/db/schema";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { requirePermission, isResponse } from "@/lib/admin-guard";
 import { generateOrderNumber } from "@/lib/repos/orders";
 import { financialYearOf } from "@/lib/invoice-numbering";
 import { placeOfSupply } from "@/lib/tax";
@@ -22,7 +22,7 @@ import {
 } from "@/lib/repos/inventory";
 
 export async function GET(req: Request) {
-  const guard = await requireAdmin("super", "ops", "school_admin");
+  const guard = await requirePermission("orders.read");
   if (isResponse(guard)) return guard;
   const url = new URL(req.url);
   const status = url.searchParams.get("status");
@@ -105,7 +105,7 @@ const PostBody = z.object({
 });
 
 export async function POST(req: Request) {
-  const guard = await requireAdmin("super", "ops", "school_admin");
+  const guard = await requirePermission("orders.write");
   if (isResponse(guard)) return guard;
 
   let body: z.infer<typeof PostBody>;

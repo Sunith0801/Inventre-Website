@@ -17,7 +17,7 @@ function humaniseZod(path: string, message: string): string {
 import { eq, ilike, or, and, count, asc, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { students, parents, schools } from "@/db/schema";
-import { requireAdmin, isResponse, assertSchoolAccess } from "@/lib/admin-guard";
+import { requirePermission, isResponse, assertSchoolAccess } from "@/lib/admin-guard";
 import { logActivity } from "@/lib/activity";
 
 const Body = z.object({
@@ -40,7 +40,7 @@ const Body = z.object({
 });
 
 export async function POST(req: Request) {
-  const guard = await requireAdmin("super", "ops", "school_admin");
+  const guard = await requirePermission("students.write");
   if (isResponse(guard)) return guard;
 
   let body: z.infer<typeof Body>;
@@ -169,7 +169,7 @@ const PAGE_SIZE = 150;
  * the surrounding page.
  */
 export async function GET(req: NextRequest) {
-  const guard = await requireAdmin("super", "ops", "school_admin");
+  const guard = await requirePermission("students.read");
   if (isResponse(guard)) return guard;
 
   const sp = req.nextUrl.searchParams;

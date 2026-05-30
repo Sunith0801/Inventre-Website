@@ -4,7 +4,7 @@ import { z } from "zod";
 import { eq, and, desc } from "drizzle-orm";
 import { db } from "@/db/client";
 import { addresses, students } from "@/db/schema";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { requirePermission, isResponse } from "@/lib/admin-guard";
 
 const Body = z.object({
   label: z.string().nullable().optional(),
@@ -24,7 +24,7 @@ export async function GET(
   _: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const guard = await requireAdmin("super", "ops", "school_admin");
+  const guard = await requirePermission("customers.read");
   if (isResponse(guard)) return guard;
   const { id } = await params;
   if (guard.role === "school_admin") {
@@ -50,7 +50,7 @@ export async function POST(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const guard = await requireAdmin("super", "ops");
+  const guard = await requirePermission("customers.write");
   if (isResponse(guard)) return guard;
   const { id } = await params;
   const parsed = await parseBody(req, Body);

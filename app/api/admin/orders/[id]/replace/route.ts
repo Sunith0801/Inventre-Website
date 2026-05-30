@@ -4,7 +4,7 @@ import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { orders, orderItems } from "@/db/schema";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { requirePermission, isResponse } from "@/lib/admin-guard";
 import { generateOrderNumber } from "@/lib/repos/orders";
 import { financialYearOf } from "@/lib/invoice-numbering";
 
@@ -32,7 +32,7 @@ export async function POST(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const guard = await requireAdmin("super", "ops");
+  const guard = await requirePermission("orders.write");
   if (isResponse(guard)) return guard;
   const { id: originalOrderId } = await params;
   const parsed = await parseBody(req, Body);

@@ -4,6 +4,8 @@ import { guardians, studentGuardianLinks } from "@/db/schema";
 import { ilike, or, sql, and, count } from "drizzle-orm";
 import { Users, Plus } from "lucide-react";
 import {
+import { redirect } from "next/navigation";
+import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
   PageHeader, Card, Th, Td, Tr, EmptyState, SearchInput, Toolbar, Button,
 } from "@/components/admin/ui/primitives";
 import { GuardianMergeBanner } from "@/components/admin/GuardianMergeBanner";
@@ -15,6 +17,9 @@ const PAGE_SIZE = 50;
 export default async function ErpGuardiansPage({
   searchParams,
 }: { searchParams: Promise<{ q?: string; page?: string }> }) {
+  const guard = await requireAnyPermission("guardians.read", "guardians.write");
+  if (isResponse(guard)) redirect("/admin/dashboard");
+
   const { q, page: pageRaw } = await searchParams;
   const page = Math.max(1, Number(pageRaw ?? "1") || 1);
   const offset = (page - 1) * PAGE_SIZE;

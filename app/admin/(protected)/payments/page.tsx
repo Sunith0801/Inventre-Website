@@ -4,6 +4,8 @@ import { CreditCard, Plus } from "lucide-react";
 import { db } from "@/db/client";
 import { paymentEntries, parents, suppliers, invoices } from "@/db/schema";
 import {
+import { redirect } from "next/navigation";
+import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
   PageHeader,
   Card,
   Button,
@@ -19,6 +21,9 @@ import {
 export const dynamic = "force-dynamic";
 
 export default async function PaymentsPage() {
+  const guard = await requireAnyPermission("payments.read", "payments.write");
+  if (isResponse(guard)) redirect("/admin/dashboard");
+
   const rows = await db
     .select({
       p: paymentEntries,

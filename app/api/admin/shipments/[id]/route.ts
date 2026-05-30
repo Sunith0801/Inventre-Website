@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { parseBody } from "@/lib/parse-body";
 import { z } from "zod";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { requirePermission, isResponse } from "@/lib/admin-guard";
 import {
   getShipmentDetail,
   markShipped,
@@ -12,7 +12,7 @@ export async function GET(
   _: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const guard = await requireAdmin("super", "ops", "school_admin");
+  const guard = await requirePermission("shipments.read");
   if (isResponse(guard)) return guard;
   const { id } = await params;
   let scopeSchool: string | undefined;
@@ -36,7 +36,7 @@ export async function POST(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const guard = await requireAdmin("super", "ops");
+  const guard = await requirePermission("shipments.write");
   if (isResponse(guard)) return guard;
   const { id } = await params;
   const parsed = await parseBody(req, Body);

@@ -7,6 +7,8 @@ import { PageHeader, Button } from "@/components/admin/ui/primitives";
 import { getCurrentUser } from "@/lib/session";
 import { StudentsBrowser } from "./StudentsBrowser";
 import { STUDENTS_PAGE_SIZE } from "./_constants";
+import { redirect } from "next/navigation";
+import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +17,9 @@ export default async function ErpStudentsPage({
 }: {
   searchParams: Promise<{ q?: string; page?: string; schoolCode?: string; grade?: string; enabled?: string; verified?: string; newStudent?: string; recent?: string }>;
 }) {
+  const guard = await requireAnyPermission("students.read", "students.write");
+  if (isResponse(guard)) redirect("/admin/dashboard");
+
   const [{ q, page: pageRaw, schoolCode: schoolCodeParam, grade, enabled, verified, newStudent, recent }, me] = await Promise.all([
     searchParams,
     getCurrentUser(),

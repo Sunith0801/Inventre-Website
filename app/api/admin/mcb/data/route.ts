@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db/client";
 import { sql } from "drizzle-orm";
-import { getCurrentUser } from "@/lib/session";
+import { requirePermission, isResponse } from "@/lib/admin-guard";
 
 const PAGE_SIZE = 5000;
 
@@ -21,10 +21,8 @@ const isYmd = (s: string | null) => !!s && /^\d{4}-\d{2}-\d{2}$/.test(s);
 const isYm = (s: string | null) => !!s && /^\d{4}-\d{2}$/.test(s);
 
 export async function GET(req: NextRequest) {
-  const me = await getCurrentUser();
-  if (!me || me.kind !== "admin") {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const guard = await requirePermission("mcb.read");
+  if (isResponse(guard)) return guard;
 
   const u = req.nextUrl.searchParams;
   const tab = u.get("tab") === "fees" ? "fees" : "master";

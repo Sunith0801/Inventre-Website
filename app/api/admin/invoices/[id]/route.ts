@@ -4,14 +4,14 @@ import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { invoices } from "@/db/schema";
-import { requireAdmin, isResponse } from "@/lib/admin-guard";
+import { requirePermission, isResponse } from "@/lib/admin-guard";
 import { getInvoiceDetail, generateCreditNote } from "@/lib/repos/invoices";
 
 export async function GET(
   _: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const guard = await requireAdmin("super", "ops", "school_admin");
+  const guard = await requirePermission("invoices.read");
   if (isResponse(guard)) return guard;
   const { id } = await params;
   let scopeSchool: string | undefined;
@@ -41,7 +41,7 @@ export async function POST(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const guard = await requireAdmin("super", "ops");
+  const guard = await requirePermission("invoices.write");
   if (isResponse(guard)) return guard;
   const { id } = await params;
   const parsed = await parseBody(req, Body);
