@@ -4,13 +4,13 @@ import { sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { ChevronLeft } from "lucide-react";
 import { requirePermission, isResponse } from "@/lib/admin-guard";
-import { ADMIN_PERMISSIONS, ADMIN_PERMISSION_GROUPS } from "@/lib/admin-permissions";
+import { ADMIN_PAGES, ADMIN_PERMISSION_GROUPS } from "@/lib/admin-permissions";
 import { RoleEditor } from "@/components/admin/RoleEditor";
 
 export const dynamic = "force-dynamic";
 
 export default async function EditRolePage({ params }: { params: Promise<{ id: string }> }) {
-  const guard = await requirePermission("nav:roles");
+  const guard = await requirePermission("roles.write");
   if (isResponse(guard)) redirect("/admin/dashboard");
   const { id } = await params;
 
@@ -49,7 +49,7 @@ export default async function EditRolePage({ params }: { params: Promise<{ id: s
           isSuperAdmin: role.slug === "super-admin",
           assignedUsers: n_users,
         }}
-        permissions={ADMIN_PERMISSIONS}
+        pages={ADMIN_PAGES}
         groups={[...ADMIN_PERMISSION_GROUPS]}
         granted={[...granted]}
       />

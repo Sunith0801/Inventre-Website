@@ -13,9 +13,30 @@ const Body = z.object({
   name: z.string().nullable().optional(),
   password: z.string().min(6).optional(),
   role: z.enum(["super", "ops", "school_admin"]).optional(),
+  /** Optional override: assign any role (system or custom) by id. Takes
+   *  precedence over `role` enum mapping when both are present. */
+  roleId: z.string().uuid().optional(),
   schoolId: z.string().nullable().optional(),
   status: z.enum(["active", "blocked", "pending"]).optional(),
 });
+
+/** Reverse-map an admin_roles row to the legacy users.role enum so the
+ *  ~310 unmigrated `requireAdmin(role)` callsites keep working. */
+async function enumForRoleId(
+  roleId: string,
+): Promise<"super" | "ops" | "school_admin" | null> {
+  const [row] = (await db.execute(
+    sql`SELECT slug FROM admin_roles WHERE id = ${roleId} LIMIT 1`,
+  )) as unknown as { slug: string }[];
+  if (!row) return null;
+  if (row.slug === "super-admin") return "super";
+  if (row.slug === "operations") return "ops";
+  if (row.slug === "school-admin") return "school_admin";
+  // Custom role — pick the closest legacy enum so requireAdmin gates don't
+  // wholesale 403. Custom roles get "ops" treatment (mid-power); their
+  // actual access is governed by admin_role_permissions + overrides.
+  return "ops";
+}
 
 /** Map legacy enum value to the canonical admin_roles row id. */
 async function roleIdForEnum(role: "super" | "ops" | "school_admin"): Promise<string | null> {
@@ -52,6 +73,9 @@ export async function PATCH(
     if (body.role !== undefined && body.role !== target.role) {
       return NextResponse.json({ error: "You can't change your own role." }, { status: 400 });
     }
+    if (body.roleId !== undefined && body.roleId !== target.roleId) {
+      return NextResponse.json({ error: "You can't change your own role." }, { status: 400 });
+    }
     if (body.status !== undefined && body.status !== "active") {
       return NextResponse.json({ error: "You can't disable your own account." }, { status: 400 });
     }
@@ -72,7 +96,17 @@ export async function PATCH(
   const update: Record<string, unknown> = {};
   if (body.email !== undefined) update.email = body.email.toLowerCase();
   if (body.name !== undefined) update.name = body.name || null;
-  if (body.role !== undefined) {
+  // roleId takes precedence — it lets super-admin assign custom roles. The
+  // legacy enum is mirrored from the picked role so unmigrated
+  // requireAdmin(role) callsites keep enforcing something sensible.
+  if (body.roleId !== undefined) {
+    const mappedEnum = await enumForRoleId(body.roleId);
+    if (!mappedEnum) {
+      return NextResponse.json({ error: "Unknown roleId" }, { status: 400 });
+    }
+    update.roleId = body.roleId;
+    update.role = mappedEnum;
+  } else if (body.role !== undefined) {
     update.role = body.role;
     update.roleId = await roleIdForEnum(body.role);
   }

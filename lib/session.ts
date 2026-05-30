@@ -348,10 +348,10 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser> => {
     .limit(1);
   if (!user) return null;
 
-  // Load permissions + role display name. The legacy `users.role` enum
-  // still drives the ~140 `requireAdmin(...)` calls, but new code uses
-  // the permission Set via `requirePermission(...)` and the sidebar
-  // filters by these keys.
+  // Effective permission set = (role perms ∪ user grants) \ user revokes.
+  // The legacy `users.role` enum still drives ~310 `requireAdmin(...)`
+  // calls (phases 2-3 migrate those); new code uses `me.permissions`
+  // via `requirePermission` / `hasPermission` / `canSeePage`.
   const permSet = new Set<string>();
   let roleName = user.role === "super" ? "Super Admin"
               : user.role === "ops" ? "Operations"
@@ -367,6 +367,17 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser> => {
       if (r.permission) permSet.add(r.permission);
       if (r.role_name) roleName = r.role_name;
     }
+  }
+  // User-level overrides — added by super-admin on /admin/settings/users/[id].
+  // `granted=true` adds, `granted=false` revokes (even if the role grants it).
+  const overrideRows = (await db.execute(sql`
+    SELECT permission, granted
+      FROM admin_user_permissions
+     WHERE user_id = ${user.id}
+  `)) as unknown as { permission: string; granted: boolean }[];
+  for (const o of overrideRows) {
+    if (o.granted) permSet.add(o.permission);
+    else permSet.delete(o.permission);
   }
 
   return {

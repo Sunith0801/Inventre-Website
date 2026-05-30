@@ -17,7 +17,7 @@ function slugify(s: string): string {
 }
 
 export async function POST(req: NextRequest) {
-  const guard = await requirePermission("nav:roles");
+  const guard = await requirePermission("roles.write");
   if (isResponse(guard)) return guard;
 
   const json = await req.json().catch(() => null);

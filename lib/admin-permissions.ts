@@ -13,60 +13,139 @@ export function canWriteAsAdmin(role: AdminRole): boolean {
 /**
  * Single source of truth for admin nav permission keys.
  *
- * Each admin sidebar item declares a `perm` from this list. The matching
- * enum value lives in `admin_role_permissions.permission` and is loaded
- * into the session's `permissions` Set on each request.
+ * Each admin page declares a `slug` (e.g. "orders"). Permissions come in
+ * two flavours per page:
  *
- * Adding a new admin tab? Add a key here, add a row for super-admin via
- * SQL, and reference it from the sidebar entry.
+ *   <slug>.read   — render the page and any GET data; sidebar visibility.
+ *   <slug>.write  — perform mutations (POST/PATCH/PUT/DELETE) and render
+ *                   create/edit/delete UI affordances.
+ *
+ * The DB stores these strings literally in `admin_role_permissions.permission`
+ * and `admin_user_permissions.permission`. Session loads them into
+ * `CurrentAdmin.permissions` Set; runtime gates use `requirePermission(key)`
+ * for APIs and `hasPermission(me, key)` / `canSeePage(me, slug)` for UI.
+ *
+ * Adding a new admin page:
+ *   1. Add a row below with `slug`, `label`, `group`.
+ *   2. The migration adds `slug.read` + `slug.write` to super-admin
+ *      automatically — none needed for existing system roles.
+ *   3. Reference `slug` from the sidebar (AdminShell.tsx) `pageSlug` field.
  */
-export type AdminPermission = {
-  key: string;
+export type AdminPage = {
+  /** URL-safe page identifier, e.g. "orders", "settings-users". */
+  slug: string;
+  /** Human label shown in the role/permissions editor and sidebar. */
   label: string;
+  /** Grouping bucket for the editor UI. */
   group: string;
 };
 
-export const ADMIN_PERMISSIONS: AdminPermission[] = [
-  { key: "nav:dashboard",            label: "Dashboard",             group: "Overview" },
-  { key: "nav:orders",               label: "Orders",                group: "Sales" },
-  { key: "nav:shipments",            label: "Shipments",             group: "Sales" },
-  { key: "nav:invoices",             label: "Invoices",              group: "Sales" },
-  { key: "nav:returns",              label: "Returns",               group: "Sales" },
-  { key: "nav:schools",              label: "Schools",               group: "Network" },
-  { key: "nav:grades",               label: "Grades",                group: "Network" },
-  { key: "nav:delivery-fees",        label: "Delivery fees",         group: "Network" },
-  { key: "nav:customers",            label: "Customers (Parents)",   group: "People" },
-  { key: "nav:students",             label: "Students",              group: "People" },
-  { key: "nav:mcb",                  label: "MCB",                   group: "People" },
-  { key: "nav:guardians",            label: "Guardians",             group: "People" },
-  { key: "nav:catalog",              label: "Catalog",               group: "Catalog" },
-  { key: "nav:discounts",            label: "Discounts",             group: "Pricing & Tax" },
-  { key: "nav:tax",                  label: "Tax & GST",             group: "Pricing & Tax" },
-  { key: "nav:suppliers",            label: "Suppliers",             group: "Buying" },
-  { key: "nav:purchase-orders",      label: "Purchase orders",       group: "Buying" },
-  { key: "nav:payments",             label: "Payments",              group: "Accounting" },
-  { key: "nav:payments-ccavenue",    label: "CCAvenue Payment Logs", group: "Accounting" },
-  { key: "nav:reviews",              label: "Reviews",               group: "Engagement" },
-  { key: "nav:testimonials",         label: "Testimonials",          group: "Engagement" },
-  { key: "nav:contact-forms",        label: "Contact forms",         group: "Engagement" },
-  { key: "nav:gift-cards",           label: "Gift cards",            group: "Engagement" },
-  { key: "nav:content",              label: "Pages & blocks",        group: "Content" },
-  { key: "nav:import",               label: "Import CSV/XLSX",       group: "Tools" },
-  { key: "nav:reports",              label: "Reports",               group: "Tools" },
-  { key: "nav:activity",             label: "Activity log",          group: "Tools" },
-  { key: "nav:otp-logs",             label: "OTP Logs",              group: "Tools" },
-  { key: "nav:settings-users",       label: "Admin users",           group: "Settings" },
-  { key: "nav:settings-otp",         label: "SMS / SMTP OTP",        group: "Settings" },
-  { key: "nav:settings-erp-bridge",  label: "ERP bridge (live)",     group: "Settings" },
-  { key: "nav:roles",                label: "Roles & permissions",   group: "Settings" },
+export const ADMIN_PAGES: AdminPage[] = [
+  { slug: "dashboard",            label: "Dashboard",             group: "Overview" },
+  { slug: "orders",               label: "Orders",                group: "Sales" },
+  { slug: "shipments",            label: "Shipments",             group: "Sales" },
+  { slug: "invoices",             label: "Invoices",              group: "Sales" },
+  { slug: "returns",              label: "Returns",               group: "Sales" },
+  { slug: "schools",              label: "Schools",               group: "Network" },
+  { slug: "grades",               label: "Grades",                group: "Network" },
+  { slug: "delivery-fees",        label: "Delivery fees",         group: "Network" },
+  { slug: "customers",            label: "Customers (Parents)",   group: "People" },
+  { slug: "students",             label: "Students",              group: "People" },
+  { slug: "mcb",                  label: "MCB",                   group: "People" },
+  { slug: "guardians",            label: "Guardians",             group: "People" },
+  { slug: "catalog",              label: "Catalog",               group: "Catalog" },
+  { slug: "discounts",            label: "Discounts",             group: "Pricing & Tax" },
+  { slug: "tax",                  label: "Tax & GST",             group: "Pricing & Tax" },
+  { slug: "suppliers",            label: "Suppliers",             group: "Buying" },
+  { slug: "purchase-orders",      label: "Purchase orders",       group: "Buying" },
+  { slug: "payments",             label: "Payments",              group: "Accounting" },
+  { slug: "payments-ccavenue",    label: "CCAvenue Payment Logs", group: "Accounting" },
+  { slug: "reviews",              label: "Reviews",               group: "Engagement" },
+  { slug: "testimonials",         label: "Testimonials",          group: "Engagement" },
+  { slug: "contact-forms",        label: "Contact forms",         group: "Engagement" },
+  { slug: "gift-cards",           label: "Gift cards",            group: "Engagement" },
+  { slug: "content",              label: "Pages & blocks",        group: "Content" },
+  { slug: "import",               label: "Import CSV/XLSX",       group: "Tools" },
+  { slug: "reports",              label: "Reports",               group: "Tools" },
+  { slug: "activity",             label: "Activity log",          group: "Tools" },
+  { slug: "otp-logs",             label: "OTP Logs",              group: "Tools" },
+  { slug: "settings-users",       label: "Admin users",           group: "Settings" },
+  { slug: "settings-otp",         label: "SMS / SMTP OTP",        group: "Settings" },
+  { slug: "settings-erp-bridge",  label: "ERP bridge (live)",     group: "Settings" },
+  { slug: "roles",                label: "Roles & permissions",   group: "Settings" },
 ];
 
-export const ADMIN_PERMISSION_KEYS: ReadonlySet<string> = new Set(
-  ADMIN_PERMISSIONS.map((p) => p.key),
-);
+export type AdminPermissionAction = "read" | "write";
 
 export const ADMIN_PERMISSION_GROUPS: readonly string[] = [
   "Overview", "Sales", "Network", "People", "Catalog",
   "Pricing & Tax", "Buying", "Accounting", "Engagement",
   "Content", "Tools", "Settings",
 ];
+
+export const readKey = (slug: string): string => `${slug}.read`;
+export const writeKey = (slug: string): string => `${slug}.write`;
+
+/** Split a permission key like "orders.write" into ("orders", "write"). */
+export function parsePermissionKey(
+  key: string,
+): { slug: string; action: AdminPermissionAction } | null {
+  const dot = key.lastIndexOf(".");
+  if (dot <= 0 || dot === key.length - 1) return null;
+  const slug = key.slice(0, dot);
+  const action = key.slice(dot + 1);
+  if (action !== "read" && action !== "write") return null;
+  return { slug, action };
+}
+
+/** All valid permission keys, as a frozen Set for cheap registry checks
+ *  (e.g. `if (!ADMIN_PERMISSION_KEYS.has(p)) return 400`). */
+export const ADMIN_PERMISSION_KEYS: ReadonlySet<string> = (() => {
+  const s = new Set<string>();
+  for (const p of ADMIN_PAGES) {
+    s.add(readKey(p.slug));
+    s.add(writeKey(p.slug));
+  }
+  return s;
+})();
+
+/** Pages indexed by slug for cheap label/group lookup. */
+export const ADMIN_PAGE_BY_SLUG: ReadonlyMap<string, AdminPage> = new Map(
+  ADMIN_PAGES.map((p) => [p.slug, p]),
+);
+
+/**
+ * "Can this admin see the page at all?" — true if they hold either
+ * read or write. Drives sidebar visibility and the top-of-page gate that
+ * decides between "render page" and "redirect away".
+ */
+export function canSeePage(
+  perms: ReadonlySet<string>,
+  slug: string,
+): boolean {
+  return perms.has(readKey(slug)) || perms.has(writeKey(slug));
+}
+
+/** "Can this admin mutate on the page?" — true iff they hold .write. */
+export function canWritePage(
+  perms: ReadonlySet<string>,
+  slug: string,
+): boolean {
+  return perms.has(writeKey(slug));
+}
+
+/* ─── Back-compat shim ──────────────────────────────────────────────
+ * The PRE-0046 sidebar code used `perm: "nav:<slug>"` strings + the
+ * registry below. New code uses `pageSlug: "<slug>"` and the helpers
+ * above. Leaving the shim until every AdminShell entry is migrated.
+ */
+export type AdminPermission = {
+  key: string;
+  label: string;
+  group: string;
+};
+export const ADMIN_PERMISSIONS: AdminPermission[] = ADMIN_PAGES.map((p) => ({
+  key: `nav:${p.slug}`,
+  label: p.label,
+  group: p.group,
+}));

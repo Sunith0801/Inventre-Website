@@ -20,10 +20,8 @@ export function isResponse(x: unknown): x is NextResponse {
 
 /**
  * Require the current admin to hold a specific permission (e.g.
- * "nav:roles"). Super-admins implicitly have all permissions via their
- * seeded role row, so a single check is enough. New code (Roles UI,
- * Team UI) gates with this; existing routes keep using `requireAdmin`
- * for now.
+ * "orders.write"). Effective set = role perms unioned with per-user
+ * grants, minus per-user revokes. See `lib/session.ts:getCurrentUser`.
  */
 export async function requirePermission(
   permission: string,
@@ -34,6 +32,34 @@ export async function requirePermission(
   if (!me.permissions.has(permission))
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   return me;
+}
+
+/**
+ * Require the current admin to hold AT LEAST ONE of the listed permissions.
+ * Useful for page-load gates that should pass for either read-only or
+ * read+write users (e.g. `requireAnyPermission("orders.read", "orders.write")`).
+ */
+export async function requireAnyPermission(
+  ...permissions: string[]
+): Promise<CurrentAdmin | NextResponse> {
+  const me = await getCurrentUser();
+  if (!me || me.kind !== "admin")
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!permissions.some((p) => me.permissions.has(p)))
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  return me;
+}
+
+/**
+ * Boolean check for use inside server components and route handlers that
+ * have already resolved `me`. Use `requirePermission` for the gate; use
+ * `hasPermission` for branching (e.g. "render the Save button only if…").
+ */
+export function hasPermission(
+  me: Pick<CurrentAdmin, "permissions"> | null | undefined,
+  permission: string,
+): boolean {
+  return !!me && me.permissions.has(permission);
 }
 
 /**

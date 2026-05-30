@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Plus, Save, Trash2, ShieldCheck } from "lucide-react";
+import { Plus, Save, Trash2, ShieldCheck, KeyRound } from "lucide-react";
 
 type Row = {
   id: string;
@@ -232,12 +233,23 @@ export function UserList({
                   </div>
                   <p className="text-[12px] text-ink-500 truncate">{r.email}</p>
                 </div>
-                <button
-                  onClick={() => setEditingId(r.id)}
-                  className="text-[13px] font-semibold text-brand"
-                >
-                  Edit
-                </button>
+                <div className="flex items-center gap-3">
+                  {!r.id.startsWith("new-") && (
+                    <Link
+                      href={`/admin/settings/users/${r.id}`}
+                      className="inline-flex items-center gap-1 text-[12.5px] font-semibold text-ink-700 hover:text-brand"
+                      title="Manage role + per-page access"
+                    >
+                      <KeyRound className="h-3.5 w-3.5" /> Permissions
+                    </Link>
+                  )}
+                  <button
+                    onClick={() => setEditingId(r.id)}
+                    className="text-[13px] font-semibold text-brand"
+                  >
+                    Edit
+                  </button>
+                </div>
               </div>
             )}
           </div>

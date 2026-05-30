@@ -3,7 +3,7 @@ import { z } from "zod";
 import { sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { requirePermission, isResponse } from "@/lib/admin-guard";
-import { ADMIN_PERMISSION_KEYS, ADMIN_PERMISSIONS } from "@/lib/admin-permissions";
+import { ADMIN_PERMISSION_KEYS } from "@/lib/admin-permissions";
 import { logActivity } from "@/lib/activity";
 
 const PatchBody = z.object({
@@ -23,7 +23,7 @@ export async function PATCH(
   req: NextRequest,
   ctx: { params: Promise<{ id: string }> },
 ) {
-  const guard = await requirePermission("nav:roles");
+  const guard = await requirePermission("roles.write");
   if (isResponse(guard)) return guard;
   const { id } = await ctx.params;
 
@@ -60,7 +60,7 @@ export async function PATCH(
       // Super Admin is always all-on. Refuse any attempt to remove
       // permissions for it — replace with the full set instead.
       const finalPerms = role.slug === "super-admin"
-        ? ADMIN_PERMISSIONS.map((p) => p.key)
+        ? [...ADMIN_PERMISSION_KEYS]
         : permissions;
       await tx.execute(sql`DELETE FROM admin_role_permissions WHERE role_id = ${id}`);
       if (finalPerms.length > 0) {
@@ -91,7 +91,7 @@ export async function DELETE(
   _req: NextRequest,
   ctx: { params: Promise<{ id: string }> },
 ) {
-  const guard = await requirePermission("nav:roles");
+  const guard = await requirePermission("roles.write");
   if (isResponse(guard)) return guard;
   const { id } = await ctx.params;
 

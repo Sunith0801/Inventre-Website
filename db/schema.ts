@@ -228,6 +228,32 @@ export const users = pgTable(
   })
 );
 
+/**
+ * Per-user permission overrides on top of the user's role baseline.
+ * Created by migration 0046_rbac_read_write_split.sql.
+ *
+ *   granted=true   add a permission the role doesn't have
+ *   granted=false  revoke a permission the role does have
+ *
+ * Effective permission set = (role perms ∪ user grants) \ user revokes.
+ */
+export const adminUserPermissions = pgTable(
+  "admin_user_permissions",
+  {
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    permission: text("permission").notNull(),
+    granted: boolean("granted").notNull().default(true),
+    grantedBy: uuid("granted_by"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.userId, t.permission] }),
+    userIdx: index("admin_user_permissions_user_idx").on(t.userId),
+  })
+);
+
 export const parents = pgTable(
   "parents",
   {

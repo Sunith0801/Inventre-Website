@@ -10,7 +10,7 @@ import { isResponse } from "@/lib/admin-guard";
 export const dynamic = "force-dynamic";
 
 export default async function RolesPage() {
-  const guard = await requirePermission("nav:roles");
+  const guard = await requirePermission("roles.read");
   if (isResponse(guard)) redirect("/admin/dashboard");
 
   // List roles with per-role counts (permission count + assigned-user count).

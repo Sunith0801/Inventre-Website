@@ -4,6 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Save, Trash2, AlertCircle } from "lucide-react";
 import { Button } from "@/components/admin/ui/primitives-client";
+import { readKey, writeKey } from "@/lib/admin-permissions";
 
 type RoleInput = {
   id: string;
@@ -15,14 +16,20 @@ type RoleInput = {
   assignedUsers: number;
 };
 
+type PageItem = { slug: string; label: string; group: string };
+
 export function RoleEditor({
   role,
+  /** Pages list — for back-compat the API may still pass `permissions`
+   *  with the legacy {key, label, group} shape; both are accepted. */
+  pages,
   permissions,
   groups,
   granted,
 }: {
   role: RoleInput | null;
-  permissions: { key: string; label: string; group: string }[];
+  pages?: PageItem[];
+  permissions?: { key: string; label: string; group: string }[];
   groups: string[];
   granted: string[];
 }) {
@@ -31,6 +38,19 @@ export function RoleEditor({
   const isSuper = role?.isSuperAdmin ?? false;
   const isSystem = role?.isSystem ?? false;
 
+  const pageList: PageItem[] = useMemo(() => {
+    if (pages?.length) return pages;
+    // Legacy callsite — derive slug from "nav:foo" key prefix.
+    if (permissions?.length) {
+      return permissions.map((p) => ({
+        slug: p.key.startsWith("nav:") ? p.key.slice(4) : p.key,
+        label: p.label,
+        group: p.group,
+      }));
+    }
+    return [];
+  }, [pages, permissions]);
+
   const [name, setName] = useState(role?.name ?? "");
   const [description, setDescription] = useState(role?.description ?? "");
   const [checked, setChecked] = useState<Set<string>>(new Set(granted));
@@ -38,30 +58,71 @@ export function RoleEditor({
   const [error, setError] = useState<string | null>(null);
 
   const grouped = useMemo(() => {
-    const out = new Map<string, { key: string; label: string }[]>();
+    const out = new Map<string, PageItem[]>();
     for (const g of groups) out.set(g, []);
-    for (const p of permissions) {
+    for (const p of pageList) {
       const arr = out.get(p.group);
-      if (arr) arr.push({ key: p.key, label: p.label });
+      if (arr) arr.push(p);
     }
     return out;
-  }, [permissions, groups]);
+  }, [pageList, groups]);
 
-  const toggleOne = (k: string) =>
+  const toggleKey = (k: string) =>
     setChecked((cur) => {
       const n = new Set(cur);
       if (n.has(k)) n.delete(k);
       else n.add(k);
       return n;
     });
-  const toggleGroup = (g: string) => {
-    const keys = (grouped.get(g) ?? []).map((p) => p.key);
-    const allOn = keys.every((k) => checked.has(k));
+
+  /** Tri-state per page: "none" | "read" | "rw". Clicking Write turns on
+   *  Read implicitly (write-without-read is meaningless and would let
+   *  someone POST to an endpoint they can't load). */
+  const toggleRead = (slug: string) => {
+    const rk = readKey(slug);
+    const wk = writeKey(slug);
     setChecked((cur) => {
       const n = new Set(cur);
-      for (const k of keys) {
-        if (allOn) n.delete(k);
-        else n.add(k);
+      if (n.has(rk)) {
+        n.delete(rk);
+        n.delete(wk); // removing read implicitly removes write
+      } else {
+        n.add(rk);
+      }
+      return n;
+    });
+  };
+  const toggleWrite = (slug: string) => {
+    const rk = readKey(slug);
+    const wk = writeKey(slug);
+    setChecked((cur) => {
+      const n = new Set(cur);
+      if (n.has(wk)) {
+        n.delete(wk);
+      } else {
+        n.add(wk);
+        n.add(rk); // adding write implicitly adds read
+      }
+      return n;
+    });
+  };
+
+  /** Group-level master toggles: cycles none → all-read → all-rw → none. */
+  const cycleGroup = (g: string) => {
+    const items = grouped.get(g) ?? [];
+    const reads = items.map((p) => readKey(p.slug));
+    const writes = items.map((p) => writeKey(p.slug));
+    const allReads = reads.every((k) => checked.has(k));
+    const allWrites = writes.every((k) => checked.has(k));
+    setChecked((cur) => {
+      const n = new Set(cur);
+      if (allWrites) {
+        for (const k of reads) n.delete(k);
+        for (const k of writes) n.delete(k);
+      } else if (allReads) {
+        for (const k of writes) n.add(k);
+      } else {
+        for (const k of reads) n.add(k);
       }
       return n;
     });
@@ -156,22 +217,26 @@ export function RoleEditor({
       </section>
 
       <section className="rounded-2xl border border-ink-100 bg-white p-5">
-        <div className="mb-3">
-          <h2 className="font-display text-[16px] font-bold text-ink-900">Permissions</h2>
-          <p className="text-[12.5px] text-ink-500 mt-0.5">
-            Tick the admin tabs this role should see. Each group has a master toggle.
-          </p>
+        <div className="mb-3 flex items-end justify-between gap-3">
+          <div>
+            <h2 className="font-display text-[16px] font-bold text-ink-900">Page access</h2>
+            <p className="text-[12.5px] text-ink-500 mt-0.5">
+              <b>Read</b> = view the page and its data. <b>Write</b> = create/edit/delete.
+              Write implies read. Group headers cycle through none → all-read → all-read+write.
+            </p>
+          </div>
         </div>
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {groups.map((g) => {
             const items = grouped.get(g) ?? [];
             if (items.length === 0) return null;
-            const onCount = items.filter((p) => checked.has(p.key)).length;
+            const reads  = items.filter((p) => checked.has(readKey(p.slug))).length;
+            const writes = items.filter((p) => checked.has(writeKey(p.slug))).length;
             return (
               <div key={g} className="rounded-xl border border-ink-100 bg-cream-50/40 p-3">
                 <button
                   type="button"
-                  onClick={() => !isSuper && toggleGroup(g)}
+                  onClick={() => !isSuper && cycleGroup(g)}
                   disabled={isSuper}
                   className="flex items-center justify-between w-full text-left mb-2 disabled:cursor-not-allowed"
                 >
@@ -179,24 +244,38 @@ export function RoleEditor({
                     {g}
                   </span>
                   <span className="text-[10.5px] text-ink-500">
-                    {onCount}/{items.length}
+                    R {reads}/{items.length} · W {writes}/{items.length}
                   </span>
                 </button>
-                <ul className="space-y-1">
+                <ul className="space-y-1.5">
                   {items.map((p) => {
-                    const on = isSuper || checked.has(p.key);
+                    const rOn = isSuper || checked.has(readKey(p.slug));
+                    const wOn = isSuper || checked.has(writeKey(p.slug));
                     return (
-                      <li key={p.key}>
-                        <label className="flex items-center gap-2 text-[13px] text-ink-800 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={on}
-                            disabled={isSuper}
-                            onChange={() => toggleOne(p.key)}
-                            className="h-4 w-4 rounded border-ink-300 disabled:opacity-50"
-                          />
-                          <span>{p.label}</span>
-                        </label>
+                      <li key={p.slug} className="flex items-center justify-between gap-2 text-[13px] text-ink-800">
+                        <span className="truncate">{p.label}</span>
+                        <span className="flex items-center gap-2 shrink-0">
+                          <label className="flex items-center gap-1 cursor-pointer" title="Read">
+                            <input
+                              type="checkbox"
+                              checked={rOn}
+                              disabled={isSuper}
+                              onChange={() => toggleRead(p.slug)}
+                              className="h-3.5 w-3.5 rounded border-ink-300 disabled:opacity-50"
+                            />
+                            <span className="text-[11px] text-ink-500">R</span>
+                          </label>
+                          <label className="flex items-center gap-1 cursor-pointer" title="Write">
+                            <input
+                              type="checkbox"
+                              checked={wOn}
+                              disabled={isSuper}
+                              onChange={() => toggleWrite(p.slug)}
+                              className="h-3.5 w-3.5 rounded border-ink-300 disabled:opacity-50"
+                            />
+                            <span className="text-[11px] text-ink-500">W</span>
+                          </label>
+                        </span>
                       </li>
                     );
                   })}
@@ -207,7 +286,7 @@ export function RoleEditor({
         </div>
         {isSuper && (
           <p className="mt-3 text-[12px] text-ink-500">
-            Super Admin permissions auto-include every key in the system — even ones added later. Cannot be edited.
+            Super Admin permissions auto-include every page — even ones added later. Cannot be edited.
           </p>
         )}
       </section>

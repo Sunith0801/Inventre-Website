@@ -41,7 +41,7 @@ import {
   Inbox,
 } from "lucide-react";
 import type { CurrentAdmin } from "@/lib/session";
-import { isReadOnlyAdmin } from "@/lib/admin-permissions";
+import { isReadOnlyAdmin, canSeePage } from "@/lib/admin-permissions";
 import { cn } from "@/lib/cn";
 import { TopProgressBar } from "@/components/admin/TopProgressBar";
 
@@ -187,9 +187,15 @@ export function AdminShell({
   const NavList = ({ onClick }: { onClick?: () => void }) => (
     <div className="space-y-5 py-2">
       {groups.map((g) => {
-        const visible = g.items.filter(
-          (it) => !it.perm || user.permissions.has(it.perm)
-        );
+        const visible = g.items.filter((it) => {
+          if (!it.perm) return true;
+          // Legacy nav:<slug> keys map to (<slug>.read OR <slug>.write).
+          // The 0046 migration replaced nav:* in the DB with .read/.write
+          // pairs; AdminShell still labels sidebar items by their legacy
+          // nav: identifier for now.
+          const slug = it.perm.startsWith("nav:") ? it.perm.slice(4) : it.perm;
+          return canSeePage(user.permissions, slug);
+        });
         if (visible.length === 0) return null;
         return (
         <div key={g.kicker}>
