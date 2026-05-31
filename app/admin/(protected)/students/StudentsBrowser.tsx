@@ -34,6 +34,10 @@ export type StudentRow = {
   firstName: string | null;
   lastName: string | null;
   grade: string | null;
+  // School's own grade label resolved via school_grade_mappings (e.g.
+  // "Nursery"/"JKG"/"1"/"12" for TSUSC and CAS schools). Null when the
+  // school has no mapping configured — UI falls back to `grade`.
+  displayGrade?: string | null;
   section: string | null;
   schoolCode: string | null;
   isVerified: boolean;
@@ -316,27 +320,27 @@ export function StudentsBrowser({
           />
         ) : (
           <>
-            <table className="w-full text-[13px]">
-              <thead>
+            <table className="w-full text-[13.5px] border-collapse">
+              <thead className="bg-gradient-to-r from-brand-50 via-cream-50 to-brand-50 border-b border-ink-200">
                 <tr>
-                  <Th>Enrollment</Th>
-                  <Th>Status</Th>
-                  <Th>Name</Th>
-                  <Th>Parent</Th>
-                  <Th>Grade · Section</Th>
-                  <Th>School</Th>
-                  <Th>Joining Date</Th>
-                  <Th>New</Th>
-                  <Th>Verified</Th>
-                  <Th>Last login (IST)</Th>
-                  <Th>Access</Th>
+                  <th className="px-3 py-3 text-left text-[12px] font-bold uppercase tracking-wider text-ink-800">Enrollment</th>
+                  <th className="px-3 py-3 text-left text-[12px] font-bold uppercase tracking-wider text-ink-800">Status</th>
+                  <th className="px-3 py-3 text-left text-[12px] font-bold uppercase tracking-wider text-ink-800">Name</th>
+                  <th className="px-3 py-3 text-left text-[12px] font-bold uppercase tracking-wider text-ink-800">Parent</th>
+                  <th className="px-3 py-3 text-left text-[12px] font-bold uppercase tracking-wider text-ink-800">Grade · Section</th>
+                  <th className="px-3 py-3 text-left text-[12px] font-bold uppercase tracking-wider text-ink-800">School</th>
+                  <th className="px-3 py-3 text-left text-[12px] font-bold uppercase tracking-wider text-ink-800">Joining Date</th>
+                  <th className="px-3 py-3 text-left text-[12px] font-bold uppercase tracking-wider text-ink-800">New</th>
+                  <th className="px-3 py-3 text-left text-[12px] font-bold uppercase tracking-wider text-ink-800">Verified</th>
+                  <th className="px-3 py-3 text-left text-[12px] font-bold uppercase tracking-wider text-ink-800">Last login (IST)</th>
+                  <th className="px-3 py-3 text-left text-[12px] font-bold uppercase tracking-wider text-ink-800">Access</th>
                 </tr>
               </thead>
               <tbody>
                 {rows.map((s) => (
                   <Tr key={s.id}>
                     <Td>
-                      <Link href={`/admin/students/${s.id}`} className="font-mono text-[11px] text-ink-700 hover:text-brand-700">
+                      <Link href={`/admin/students/${s.id}`} className="font-mono text-[12px] font-semibold text-ink-800 hover:text-brand-700">
                         {s.enrollmentNumber ?? "—"}
                       </Link>
                       {s.referenceCode && s.referenceCode !== s.enrollmentNumber ? (
@@ -361,7 +365,7 @@ export function StudentsBrowser({
                       )}
                     </Td>
                     <Td muted>
-                      {s.grade ?? "—"}
+                      {s.displayGrade ?? s.grade ?? "—"}
                       {s.section ? ` · ${s.section}` : ""}
                     </Td>
                     <Td muted>

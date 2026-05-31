@@ -6,7 +6,10 @@ import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
 
 export const dynamic = "force-dynamic";
 
-const PAGE_SIZE = 5000;
+// Keep in sync with PAGE_SIZE in McbDashboard.tsx and /api/admin/mcb/data.
+// 100 keeps the initial render snappy (largest school is ~6k students; at
+// 5000 we were rendering ~60k DOM cells in one commit and freezing the tab).
+const PAGE_SIZE = 100;
 const DEFAULT_BRANCH = "St. ANDREWS SCHOOL KEESARA"; // matches SCHOOLS[0] in McbDashboard
 
 function rowsOf<T>(res: unknown): T[] {

@@ -262,10 +262,10 @@ export function OrdersBulkRefresh({
         </div>
       ) : null}
 
-      <table className="w-full">
-        <thead>
+      <table className="w-full border-collapse">
+        <thead className="bg-gradient-to-r from-brand-50 via-cream-50 to-brand-50 border-b border-ink-200">
           <tr>
-            <th className="px-2 py-2 w-8 text-left">
+            <th className="px-3 py-3 w-8 text-left">
               <input
                 type="checkbox"
                 checked={allOnPageSelected}
@@ -274,18 +274,18 @@ export function OrdersBulkRefresh({
                 className="h-4 w-4 rounded border-ink-300 text-brand-600 focus:ring-brand-500"
               />
             </th>
-            <th className="px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-500">Order #</th>
-            <th className="px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-500">CCAvenue Ref</th>
-            <th className="px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-500">Customer</th>
-            <th className="px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-500">School</th>
-            <th className="px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-500">Enrolment</th>
-            <th className="px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-500">Grade</th>
-            <th className="px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-500">Ordered (IST)</th>
-            <th className="px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-500">Delivery</th>
-            <th className="px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-500">Status</th>
-            <th className="px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-500">Payment</th>
-            <th className="px-2 py-2 text-right text-[11px] font-semibold uppercase tracking-wider text-ink-500">Delivered %</th>
-            <th className="px-2 py-2 text-right text-[11px] font-semibold uppercase tracking-wider text-ink-500">Grand total</th>
+            <th className="px-3 py-3 text-left text-[12px] font-bold uppercase tracking-wider text-ink-800">Order #</th>
+            <th className="px-3 py-3 text-left text-[12px] font-bold uppercase tracking-wider text-ink-800">CCAvenue Ref</th>
+            <th className="px-3 py-3 text-left text-[12px] font-bold uppercase tracking-wider text-ink-800">Customer</th>
+            <th className="px-3 py-3 text-left text-[12px] font-bold uppercase tracking-wider text-ink-800">School</th>
+            <th className="px-3 py-3 text-left text-[12px] font-bold uppercase tracking-wider text-ink-800">Enrolment</th>
+            <th className="px-3 py-3 text-left text-[12px] font-bold uppercase tracking-wider text-ink-800">Grade</th>
+            <th className="px-3 py-3 text-left text-[12px] font-bold uppercase tracking-wider text-ink-800">Ordered (IST)</th>
+            <th className="px-3 py-3 text-left text-[12px] font-bold uppercase tracking-wider text-ink-800">Delivery</th>
+            <th className="px-3 py-3 text-left text-[12px] font-bold uppercase tracking-wider text-ink-800">Status</th>
+            <th className="px-3 py-3 text-left text-[12px] font-bold uppercase tracking-wider text-ink-800">Payment</th>
+            <th className="px-3 py-3 text-right text-[12px] font-bold uppercase tracking-wider text-ink-800">Delivered %</th>
+            <th className="px-3 py-3 text-right text-[12px] font-bold uppercase tracking-wider text-ink-800">Grand total</th>
           </tr>
         </thead>
         <tbody>
@@ -306,7 +306,7 @@ export function OrdersBulkRefresh({
                 <Td>
                   <Link
                     href={`/admin/orders/${encodeURIComponent(r.erp_name)}`}
-                    className="font-mono text-[12px] font-semibold text-ink-900 hover:text-blue-600 hover:underline"
+                    className="font-mono text-[13px] font-bold text-ink-900 hover:text-brand-700 hover:underline"
                   >
                     {r.erp_name}
                   </Link>
@@ -333,7 +333,9 @@ export function OrdersBulkRefresh({
                     <span className="text-ink-300">—</span>
                   )}
                 </Td>
-                <Td>{r.customer ?? "—"}</Td>
+                <Td>
+                  <span className="font-semibold text-ink-900">{r.customer ?? "—"}</span>
+                </Td>
                 <Td muted>
                   <span className="text-[12px]">{r.school_name ?? "—"}</span>
                 </Td>

@@ -67,19 +67,22 @@ export async function getAdminStats(
   // "Today" is IST midnight → now, regardless of where the server runs.
   // Aligns with the orders page date filter so the dashboard's
   // "Paid orders today" matches what the user sees there.
-  const istTodayStart = sql`((now() AT TIME ZONE 'Asia/Kolkata')::date) AT TIME ZONE 'Asia/Kolkata'`;
+  const istTodayStart = sql`date_trunc('day', now() AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'Asia/Kolkata'`;
 
   // Resolve the range filter into a lower bound (>= ) and an upper
   // bound (< ) on orders.created_at. Presets are computed in IST; custom
   // from/to are interpreted as inclusive IST days.
   const lowerBound = (() => {
     if (range.preset === "today")
-      return sql`((now() AT TIME ZONE 'Asia/Kolkata')::date) AT TIME ZONE 'Asia/Kolkata'`;
+      return sql`date_trunc('day', now() AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'Asia/Kolkata'`;
     if (range.preset === "week")
-      return sql`date_trunc('week', (now() AT TIME ZONE 'Asia/Kolkata')::date) AT TIME ZONE 'Asia/Kolkata'`;
+      return sql`date_trunc('week', now() AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'Asia/Kolkata'`;
     if (range.preset === "month")
-      return sql`date_trunc('month', (now() AT TIME ZONE 'Asia/Kolkata')::date) AT TIME ZONE 'Asia/Kolkata'`;
-    if (range.from) return sql`${range.from}::date AT TIME ZONE 'Asia/Kolkata'`;
+      return sql`date_trunc('month', now() AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'Asia/Kolkata'`;
+    // `${range.from}::date` is a `date`; AT TIME ZONE on a date yields a
+    // `timestamp without tz` (not what we want). Cast to timestamp first so
+    // AT TIME ZONE 'Asia/Kolkata' returns a timestamptz at IST midnight.
+    if (range.from) return sql`${range.from}::date::timestamp AT TIME ZONE 'Asia/Kolkata'`;
     return null;
   })();
   const upperBound = (() => {

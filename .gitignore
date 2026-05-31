@@ -21,6 +21,7 @@ db/snapshots/
 backups/*.sql
 backups/*.sql.gz
 backups/*.dump
+backups/*.dump.gz
 # Root-level dumps (production DB snapshots) — never commit
 *.dump
 *.sql.gz
@@ -86,3 +87,15 @@ public.r2-backup/
 backups/*.png
 backups/*.docx
 backups/*.pdf
+
+# Snapshot tarballs produced by scripts/snapshot-deploy.sh — pg_dump +
+# encrypted .env + minio volume, all PII-bearing. Restore artefacts, not
+# source. Sit on disk for ops convenience; never commit.
+backups/*.tar.gz
+
+# Pre-update CSV snapshots (full student rosters with PII). Same rule —
+# kept on disk for rollback, never committed.
+backups/students-*.csv
+
+# Ad-hoc scratch workspaces created during data migrations.
+tmp/

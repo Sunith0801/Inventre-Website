@@ -147,9 +147,16 @@ export default async function AdminOrdersPage({
   // timezone the request lands in. Custom range falls through to the
   // explicit from/to inputs.
   const dateBound = (() => {
-    if (dateRange === "today") return sql`COALESCE(u.ordered_at, u.transaction_date)::timestamptz >= (now() AT TIME ZONE 'Asia/Kolkata')::date AT TIME ZONE 'Asia/Kolkata'`;
-    if (dateRange === "week") return sql`COALESCE(u.ordered_at, u.transaction_date)::timestamptz >= date_trunc('week', (now() AT TIME ZONE 'Asia/Kolkata')::date) AT TIME ZONE 'Asia/Kolkata'`;
-    if (dateRange === "month") return sql`COALESCE(u.ordered_at, u.transaction_date)::timestamptz >= date_trunc('month', (now() AT TIME ZONE 'Asia/Kolkata')::date) AT TIME ZONE 'Asia/Kolkata'`;
+    // `(now() AT TIME ZONE 'Asia/Kolkata')::date AT TIME ZONE 'Asia/Kolkata'`
+    // returns a `timestamp without tz` (not a timestamptz), because
+    // AT TIME ZONE on a `date` casts via timestamp first. Postgres then
+    // compares it against `timestamptz` columns using session TZ (UTC),
+    // shifting the IST-today window by 5h30. Use `date_trunc('day', …)` so
+    // the inner value stays `timestamp without tz` and AT TIME ZONE returns
+    // an honest `timestamptz` at IST midnight.
+    if (dateRange === "today") return sql`COALESCE(u.ordered_at, u.transaction_date)::timestamptz >= date_trunc('day', now() AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'Asia/Kolkata'`;
+    if (dateRange === "week") return sql`COALESCE(u.ordered_at, u.transaction_date)::timestamptz >= date_trunc('week', now() AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'Asia/Kolkata'`;
+    if (dateRange === "month") return sql`COALESCE(u.ordered_at, u.transaction_date)::timestamptz >= date_trunc('month', now() AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'Asia/Kolkata'`;
     return null;
   })();
 
@@ -404,7 +411,10 @@ export default async function AdminOrdersPage({
         />
       </div>
 
-      <AutoSubmitForm action="/admin/orders">
+      {/* 650 ms debounce: each navigation re-runs a heavy CTE across
+          orders + ERP mirror + legacy table, so we'd rather wait for the
+          user to finish typing than fire mid-word. */}
+      <AutoSubmitForm action="/admin/orders" debounceMs={650}>
         <Toolbar>
           <SearchInput
             defaultValue={term}

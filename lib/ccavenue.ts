@@ -241,20 +241,24 @@ export type NormalizedGatewayResult = {
 export function mapCCAvenueStatus(
   rawStatus: string
 ): NormalizedGatewayResult["status"] {
-  const s = (rawStatus || "").trim().toLowerCase();
+  // Normalise whitespace/punctuation so "Auto-Cancelled", "auto cancelled",
+  // "Time Out", "Timed Out" all collapse to the same key.
+  const s = (rawStatus || "").trim().toLowerCase().replace(/[\s_-]+/g, "");
   if (s === "successful" || s === "success" || s === "shipped") return "paid";
   if (
     s === "aborted" ||
     s === "unsuccessful" ||
     s === "failure" ||
-    s === "auto-cancelled" ||
+    s === "autocancelled" ||
     s === "cancelled" ||
     s === "invalid" ||
-    s === "fraud"
+    s === "fraud" ||
+    s === "timeout" ||
+    s === "timedout"
   ) {
     return "failed";
   }
-  if (s === "initiated" || s === "awaited" || s === "auto-reversed") {
+  if (s === "initiated" || s === "awaited" || s === "autoreversed") {
     return "pending";
   }
   return "unknown";

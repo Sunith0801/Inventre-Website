@@ -2,6 +2,7 @@ import Link from "next/link";
 import { db } from "@/db/client";
 import { students, schools, grades, parents } from "@/db/schema";
 import { ilike, or, eq, and, count, asc, sql } from "drizzle-orm";
+import { studentDisplayGradeSql } from "@/lib/repos/grades";
 import { Plus, Upload } from "lucide-react";
 import { PageHeader, Button } from "@/components/admin/ui/primitives";
 import { getCurrentUser } from "@/lib/session";
@@ -88,6 +89,11 @@ export default async function ErpStudentsPage({
       firstName: students.firstName,
       lastName: students.lastName,
       grade: students.grade,
+      // Per-school display label — resolves to school_given_grade_name when
+      // a mapping exists, else the real CBSE grade derived from erp_raw
+      // (this is what fixes CAS schools where students.grade was stored
+      // with the +3 ERP offset). See lib/repos/grades.ts.
+      displayGrade: studentDisplayGradeSql(),
       section: students.section,
       schoolCode: students.schoolCode,
       isVerified: students.isVerified,

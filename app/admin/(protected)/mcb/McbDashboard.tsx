@@ -20,7 +20,8 @@ const SCHOOLS: School[] = [
   { code: "WMAWF", name: "Winmore Whitefield",  mcbBranch: "Winmore Academy Whitefield" },
 ];
 
-const PAGE_SIZE = 5000;
+// MUST match PAGE_SIZE in /api/admin/mcb/data and /admin/mcb (server page).
+const PAGE_SIZE = 100;
 
 type MasterRow = {
   enrolment_number: string;

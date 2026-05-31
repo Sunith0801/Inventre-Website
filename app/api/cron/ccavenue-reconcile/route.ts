@@ -17,7 +17,7 @@
  * scheduler can use the same secret.
  */
 import { NextResponse } from "next/server";
-import { and, eq, isNull, lt, or, sql } from "drizzle-orm";
+import { and, asc, eq, isNull, lt, or, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { orders, payments } from "@/db/schema";
 import {
@@ -73,6 +73,10 @@ export async function GET(req: Request) {
         )
       )
     )
+    // Oldest-untouched first so a backlog drains fairly instead of the
+    // scan re-hitting the same heap pages run after run. coalesce() keeps
+    // never-polled rows ahead of recently-polled ones.
+    .orderBy(asc(sql`coalesce(${payments.lastStatusPollAt}, ${payments.createdAt})`))
     .limit(BATCH_LIMIT);
 
   let finalizedPaid = 0;

@@ -3,7 +3,9 @@ import { db } from "@/db/client";
 import { sql } from "drizzle-orm";
 import { requirePermission, isResponse } from "@/lib/admin-guard";
 
-const PAGE_SIZE = 5000;
+// MUST match PAGE_SIZE in app/admin/(protected)/mcb/page.tsx and
+// McbDashboard.tsx. 100 rows/page keeps the React commit cheap.
+const PAGE_SIZE = 100;
 
 const SCHOOLS: { school_code: string; mcb_branch: string }[] = [
   { school_code: "SASKS", mcb_branch: "St. ANDREWS SCHOOL KEESARA" },

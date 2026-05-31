@@ -620,7 +620,12 @@ export async function listProductsForStudent(args: {
   // New students see ALL Magic Boxes for their (school, grade) regardless of
   // gender — the curated starter rollup. Returning students see the regular
   // catalog (bookkits + uniforms) with Magic Box excluded.
-  const idRows = isNewStudent
+  //
+  // Schools without Magic Box rollups (CAS, TSUSC, etc.) used to fall into
+  // the magic-box branch for any new student and get an empty catalog.
+  // Detect that here and fall back to the regular catalog so a new student
+  // at a non-Magic-Box school still sees uniforms / bookkits / accessories.
+  const magicBoxRows = isNewStudent
     ? ((await db.execute(sql`
         SELECT p.id
           FROM products p
@@ -630,41 +635,48 @@ export async function listProductsForStudent(args: {
            AND p.is_variant_item = false
            AND p.kind = 'magic_box'
       `)) as unknown as { id: string }[])
-    : // Root-only catalog: select tagged products that are NOT contained in
-      // any other tagged product's BOM. E.g. when "TSUS Book Set Grade 2"
-      // exists at (TSUSC, Grade 2), its child "Bundle 5 Textbook" and that
-      // bundle's leaf textbooks are hidden — the parent buys the top-level
-      // rollup, not its duplicated components.
-      ((await db.execute(sql`
-        WITH RECURSIVE
-        catalog AS (
-          SELECT p.id
-            FROM products p
-            JOIN product_school ps ON ps.product_id = p.id AND ps.school_id = ${schoolId}
-            JOIN product_grades pg ON pg.product_id = p.id AND pg.grade = ${grade}
-           WHERE p.status = 'active'
-             AND p.is_variant_item = false
-             AND p.kind::text NOT IN ('magic_box', 'book', 'sub_bundle')
-             AND NOT (p.kind::text IN ('kit', 'set') AND p.name ILIKE '%2nd Lan%')
-        ),
-        contained AS (
-          -- Direct children of catalog products
-          SELECT DISTINCT bc.product_id AS id
-            FROM bundle_components bc
-            JOIN product_bundles pb ON pb.id = bc.bundle_id
-           WHERE pb.product_id IN (SELECT id FROM catalog)
-             AND bc.product_id IS NOT NULL
-          UNION
-          -- Recursive: children of already-contained products (handles kit→sub_bundle→book)
-          SELECT bc2.product_id AS id
-            FROM contained c
-            JOIN product_bundles pb2 ON pb2.product_id = c.id
-            JOIN bundle_components bc2 ON bc2.bundle_id = pb2.id
-           WHERE bc2.product_id IS NOT NULL
-        )
-        SELECT id FROM catalog
-         WHERE id NOT IN (SELECT id FROM contained)
-      `)) as unknown as { id: string }[]);
+    : [];
+
+  // Root-only catalog: select tagged products that are NOT contained in
+  // any other tagged product's BOM. E.g. when "TSUS Book Set Grade 2"
+  // exists at (TSUSC, Grade 2), its child "Bundle 5 Textbook" and that
+  // bundle's leaf textbooks are hidden — the parent buys the top-level
+  // rollup, not its duplicated components.
+  const regularRows =
+    isNewStudent && magicBoxRows.length > 0
+      ? []
+      : ((await db.execute(sql`
+          WITH RECURSIVE
+          catalog AS (
+            SELECT p.id
+              FROM products p
+              JOIN product_school ps ON ps.product_id = p.id AND ps.school_id = ${schoolId}
+              JOIN product_grades pg ON pg.product_id = p.id AND pg.grade = ${grade}
+             WHERE p.status = 'active'
+               AND p.is_variant_item = false
+               AND p.kind::text NOT IN ('magic_box', 'book', 'sub_bundle')
+               AND NOT (p.kind::text IN ('kit', 'set') AND p.name ILIKE '%2nd Lan%')
+          ),
+          contained AS (
+            -- Direct children of catalog products
+            SELECT DISTINCT bc.product_id AS id
+              FROM bundle_components bc
+              JOIN product_bundles pb ON pb.id = bc.bundle_id
+             WHERE pb.product_id IN (SELECT id FROM catalog)
+               AND bc.product_id IS NOT NULL
+            UNION
+            -- Recursive: children of already-contained products (handles kit→sub_bundle→book)
+            SELECT bc2.product_id AS id
+              FROM contained c
+              JOIN product_bundles pb2 ON pb2.product_id = c.id
+              JOIN bundle_components bc2 ON bc2.bundle_id = pb2.id
+             WHERE bc2.product_id IS NOT NULL
+          )
+          SELECT id FROM catalog
+           WHERE id NOT IN (SELECT id FROM contained)
+        `)) as unknown as { id: string }[]);
+
+  const idRows = magicBoxRows.length > 0 ? magicBoxRows : regularRows;
 
   const ids = idRows.map((r) => r.id);
   if (ids.length === 0) return [];

@@ -62,13 +62,19 @@ async function resolvePrice(productId: string, schoolId: string | undefined): Pr
  */
 async function checkBookkitLimit(
   parentId: string,
+  studentId: string | null,
   schoolId: string | undefined,
   variantId: string,
   qty: number
 ): Promise<string | null> {
   if (!schoolId) return null;
 
-  // Run school check + variant lookup + cart + order lookups in parallel
+  // Run school check + variant lookup + cart + order lookups in parallel.
+  // The prior-orders lookup is scoped to (parentId, studentId) so siblings
+  // are not penalised for each other's redemptions — the error message
+  // promises "per student", which is what we now enforce. When studentId
+  // is null (legacy session) we skip the order lookup entirely; the cart
+  // gate below still runs.
   const activeStatuses = ["placed", "confirmed", "packed", "shipped", "delivered"] as const;
   const [schoolRow, variantRow, cartRow, priorOrders] = await Promise.all([
     db.select({ schoolCode: schools.schoolCode }).from(schools).where(eq(schools.id, schoolId)).limit(1),
@@ -79,7 +85,13 @@ async function checkBookkitLimit(
       .where(eq(productVariants.id, variantId))
       .limit(1),
     db.select({ id: carts.id }).from(carts).where(eq(carts.parentId, parentId)).limit(1),
-    db.select({ id: orders.id }).from(orders).where(and(eq(orders.parentId, parentId), inArray(orders.status, activeStatuses))),
+    studentId
+      ? db.select({ id: orders.id }).from(orders).where(and(
+          eq(orders.parentId, parentId),
+          eq(orders.studentId, studentId),
+          inArray(orders.status, activeStatuses),
+        ))
+      : Promise.resolve([] as { id: string }[]),
   ]);
 
   if (!FREE_BOOKKIT_RESTRICTED_SCHOOL_CODES.includes(schoolRow[0]?.schoolCode ?? "")) return null;
@@ -195,7 +207,7 @@ export async function POST(req: Request) {
   const active = resolveActive(me, body.studentId);
   const schoolId = active?.school.id;
 
-  const bookkitError = await checkBookkitLimit(me.id, schoolId, body.variantId, body.qty);
+  const bookkitError = await checkBookkitLimit(me.id, active?.id ?? null, schoolId, body.variantId, body.qty);
   if (bookkitError) {
     return NextResponse.json({ error: bookkitError }, { status: 409 });
   }
@@ -235,7 +247,7 @@ export async function PATCH(req: Request) {
 
   // Only check if increasing qty (qty=0 means remove, which is always fine)
   if (body.qty > 0) {
-    const bookkitError = await checkBookkitLimit(me.id, schoolId, body.variantId, body.qty);
+    const bookkitError = await checkBookkitLimit(me.id, active?.id ?? null, schoolId, body.variantId, body.qty);
     if (bookkitError) {
       return NextResponse.json({ error: bookkitError }, { status: 409 });
     }

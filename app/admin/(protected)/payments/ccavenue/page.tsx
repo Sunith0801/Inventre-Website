@@ -82,12 +82,16 @@ function rowsOf<T>(res: unknown): T[] {
 /** SQL fragment for the lower bound of the active range preset, in IST.
  *  Returns null for "all" so the caller can skip the WHERE clause. */
 function rangeLowerBound(r: RangeFilter) {
+  // AT TIME ZONE on a `date` yields a `timestamp without tz` (not a
+  // timestamptz), shifting comparisons against `created_at` by 5h30. Use
+  // date_trunc on the timestamp form so AT TIME ZONE returns an honest
+  // timestamptz at IST midnight.
   if (r === "today")
-    return sql`((now() AT TIME ZONE 'Asia/Kolkata')::date) AT TIME ZONE 'Asia/Kolkata'`;
+    return sql`date_trunc('day', now() AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'Asia/Kolkata'`;
   if (r === "week")
-    return sql`date_trunc('week', (now() AT TIME ZONE 'Asia/Kolkata')::date) AT TIME ZONE 'Asia/Kolkata'`;
+    return sql`date_trunc('week', now() AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'Asia/Kolkata'`;
   if (r === "month")
-    return sql`date_trunc('month', (now() AT TIME ZONE 'Asia/Kolkata')::date) AT TIME ZONE 'Asia/Kolkata'`;
+    return sql`date_trunc('month', now() AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'Asia/Kolkata'`;
   return null;
 }
 

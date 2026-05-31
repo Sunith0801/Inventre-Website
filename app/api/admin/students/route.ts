@@ -18,6 +18,7 @@ import { eq, ilike, or, and, count, asc, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { students, parents, schools } from "@/db/schema";
 import { requirePermission, isResponse, assertSchoolAccess } from "@/lib/admin-guard";
+import { studentDisplayGradeSql } from "@/lib/repos/grades";
 import { logActivity } from "@/lib/activity";
 
 const Body = z.object({
@@ -248,6 +249,12 @@ export async function GET(req: NextRequest) {
         firstName: students.firstName,
         lastName: students.lastName,
         grade: students.grade,
+        // Per-school display label resolved via school_grade_mappings,
+        // keyed on the REAL CBSE grade derived from erp_raw (so CAS
+        // schools — whose students.grade was stored with the +3 ERP offset —
+        // display 5 instead of "Grade 2" / "Grade 8"). See
+        // lib/repos/grades.ts:studentDisplayGradeSql for the fallback chain.
+        displayGrade: studentDisplayGradeSql(),
         section: students.section,
         schoolCode: students.schoolCode,
         isVerified: students.isVerified,
