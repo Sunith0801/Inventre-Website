@@ -366,37 +366,42 @@ export function StudentsBrowser({
         </select>
       </Toolbar>
 
-      {total > 0 && (
+      {total > 0 && (filters.newStudent === "1" || filters.newStudent === "0") && (
         <div className="mb-2 rounded-lg border border-brand-200 bg-brand-50/70 px-3 py-2 flex flex-wrap items-center gap-3 text-[12.5px]">
           <span className="text-brand-900 font-semibold">
-            Bulk action — {total.toLocaleString()} filtered
+            Bulk action — {total.toLocaleString()} filtered{" "}
+            {filters.newStudent === "1" ? "(New students)" : "(Returning)"}
           </span>
-          <button
-            type="button"
-            disabled={bulkBusy}
-            onClick={() => runBulkSetNew(true)}
-            className={
-              "inline-flex items-center gap-1 rounded-md px-2.5 py-1 font-semibold " +
-              (bulkBusy
-                ? "bg-ink-200 text-ink-500 cursor-wait"
-                : "bg-brand-600 text-white hover:bg-brand-700")
-            }
-          >
-            Mark all as New
-          </button>
-          <button
-            type="button"
-            disabled={bulkBusy}
-            onClick={() => runBulkSetNew(false)}
-            className={
-              "inline-flex items-center gap-1 rounded-md px-2.5 py-1 font-semibold " +
-              (bulkBusy
-                ? "bg-ink-100 text-ink-400 cursor-wait"
-                : "border border-ink-300 bg-white text-ink-800 hover:bg-cream-50")
-            }
-          >
-            Unmark all
-          </button>
+          {filters.newStudent === "0" && (
+            <button
+              type="button"
+              disabled={bulkBusy}
+              onClick={() => runBulkSetNew(true)}
+              className={
+                "inline-flex items-center gap-1 rounded-md px-2.5 py-1 font-semibold " +
+                (bulkBusy
+                  ? "bg-ink-200 text-ink-500 cursor-wait"
+                  : "bg-brand-600 text-white hover:bg-brand-700")
+              }
+            >
+              Mark all as New
+            </button>
+          )}
+          {filters.newStudent === "1" && (
+            <button
+              type="button"
+              disabled={bulkBusy}
+              onClick={() => runBulkSetNew(false)}
+              className={
+                "inline-flex items-center gap-1 rounded-md px-2.5 py-1 font-semibold " +
+                (bulkBusy
+                  ? "bg-ink-100 text-ink-400 cursor-wait"
+                  : "border border-ink-300 bg-white text-ink-800 hover:bg-cream-50")
+              }
+            >
+              Unmark all
+            </button>
+          )}
           {bulkMsg && (
             <span className="text-ink-700">{bulkMsg}</span>
           )}
