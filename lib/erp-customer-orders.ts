@@ -433,7 +433,7 @@ export async function getParentOrderDetailFromErp(
              lo.shipping_address AS local_ship,
              so.raw->'derived_delivery_by_category' AS derived_by_category,
              ARRAY(SELECT jsonb_array_elements_text(
-                            COALESCE(so.raw->'derived_delivery_categories_present',
+                            COALESCE((so.raw::jsonb)->'derived_delivery_categories_present',
                                      '[]'::jsonb)))
                AS derived_categories_present
       FROM erp.sales_orders so
