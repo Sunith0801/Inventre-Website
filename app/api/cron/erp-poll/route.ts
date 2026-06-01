@@ -2,7 +2,10 @@ import { NextResponse } from "next/server";
 import crypto from "crypto";
 import { pollOpenOrders } from "@/lib/erp-poll";
 import { getErpConfig } from "@/lib/erp-config";
-import { erpInboundDisabledResponse } from "@/lib/erp-inbound-guard";
+import {
+  erpOrderPollDisabledResponse,
+  isOrderPollOnlyMode,
+} from "@/lib/erp-inbound-guard";
 
 /**
  * Cron-only entry point for the ERP status poller.
@@ -28,11 +31,13 @@ export async function POST(req: Request) {
   if (!supplied || !timingSafeEq(supplied, cfg.cronToken)) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
-  // Admin panel is the canonical backend (2026-05-28). ERP inbound
-  // is gated so a misfired cron / leftover schedule can't overwrite
-  // the cleaned-up student/guardian/parent data.
-  const off = erpInboundDisabledResponse();
+  // Admin panel is the canonical backend (2026-05-28). The narrow
+  // order-poll gate lets storefront status flow back from audit while
+  // the master inbound switch keeps student/guardian/customer/item
+  // mirrors locked.
+  const off = erpOrderPollDisabledResponse();
   if (off) return off;
-  const result = await pollOpenOrders();
-  return NextResponse.json({ ok: true, target: cfg.target, ...result });
+  const ordersOnly = isOrderPollOnlyMode();
+  const result = await pollOpenOrders({ ordersOnly });
+  return NextResponse.json({ ok: true, target: cfg.target, ordersOnly, ...result });
 }

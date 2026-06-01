@@ -15,6 +15,7 @@ export type CategoryNode = {
 export type CategoryMapRow = {
   id: string;
   slug: string;
+  name: string;
   parentId: string | null;
 };
 
@@ -25,17 +26,37 @@ export type CategoryMapRow = {
  * don't trigger the unbounded full table scan on every render.
  */
 export async function getCategoryMap(): Promise<Map<string, CategoryMapRow>> {
-  const rows = await cached("categories:map", 60 * 60, async () => {
+  const rows = await cached("categories:map:v2", 60 * 60, async () => {
     const all = await db
       .select({
         id: categories.id,
         slug: categories.slug,
+        name: categories.name,
         parentId: categories.parentId,
       })
       .from(categories);
     return all;
   });
   return new Map(rows.map((r) => [r.id, r]));
+}
+
+/**
+ * Walk up parent pointers to the root for a leaf category id. Returns
+ * the root node, or null if the id is unknown. Cycle-safe (caps walk
+ * at 16 hops).
+ */
+export async function getRootCategoryFor(
+  categoryId: string | null | undefined
+): Promise<CategoryMapRow | null> {
+  if (!categoryId) return null;
+  const map = await getCategoryMap();
+  let cur = map.get(categoryId) ?? null;
+  for (let i = 0; cur && cur.parentId && i < 16; i++) {
+    const parent = map.get(cur.parentId);
+    if (!parent) break;
+    cur = parent;
+  }
+  return cur;
 }
 
 export async function getCategoryTree(): Promise<CategoryNode[]> {

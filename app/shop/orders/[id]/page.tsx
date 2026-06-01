@@ -68,6 +68,34 @@ type OrderDetail = {
     dispatchedAt: string | null;
     deliveredAt: string | null;
   }[];
+  categoryGroups?: {
+    rootCategoryId: string | null;
+    rootCategoryName: string;
+    totalQty: number;
+    deliveredQty: number;
+    pickedQty: number;
+    returnedQty: number;
+    status: "delivered" | "in transit" | "returned" | "pending";
+    items: {
+      id: string;
+      name: string;
+      qty: number;
+      deliveredQty: number;
+      pickedQty: number;
+      returnedQty: number;
+    }[];
+  }[];
+  pollPending?: boolean;
+};
+
+const CATEGORY_STATUS_CLASS: Record<
+  "delivered" | "in transit" | "returned" | "pending",
+  string
+> = {
+  delivered: "bg-emerald-100 text-emerald-800",
+  "in transit": "bg-amber-100 text-amber-800",
+  returned: "bg-rose-100 text-rose-800",
+  pending: "bg-ink-100 text-ink-600",
 };
 
 const stages = ["placed", "confirmed", "packed", "shipped", "delivered"] as const;
@@ -292,6 +320,90 @@ export default function OrderDetailPage() {
                 );
               })}
             </ol>
+          </div>
+        )}
+
+        {/* Tracking by category */}
+        {order.categoryGroups && order.categoryGroups.length > 0 && (
+          <div className="mt-6 rounded-2xl border border-ink-100 bg-white p-5 lg:p-6">
+            <h3 className="font-display text-[16px] font-bold text-ink-900">
+              Tracking by category
+            </h3>
+            {order.pollPending && (
+              <p className="mt-2 rounded-lg bg-cream-100 px-3 py-2 text-[12px] text-ink-600">
+                Tracking will appear within a few minutes — we&apos;re syncing
+                with the warehouse.
+              </p>
+            )}
+            <ul className="mt-4 space-y-3">
+              {order.categoryGroups.map((g) => {
+                const pct =
+                  g.totalQty > 0
+                    ? Math.min(
+                        100,
+                        Math.round((g.deliveredQty / g.totalQty) * 100)
+                      )
+                    : 0;
+                return (
+                  <li
+                    key={g.rootCategoryId ?? g.rootCategoryName}
+                    className="rounded-xl border border-ink-100 bg-cream-50/40 p-3"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="font-semibold text-[14px] text-ink-900">
+                        {g.rootCategoryName}
+                      </p>
+                      <span
+                        className={
+                          "rounded-full px-2.5 py-0.5 text-[10.5px] font-bold uppercase tracking-wider " +
+                          CATEGORY_STATUS_CLASS[g.status]
+                        }
+                      >
+                        {g.status}
+                      </span>
+                    </div>
+                    <div className="mt-2 flex items-center gap-3">
+                      <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-ink-100">
+                        <div
+                          className="h-full bg-brand"
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                      <p className="shrink-0 text-[12px] tabular-nums text-ink-600">
+                        {g.deliveredQty} / {g.totalQty} delivered
+                      </p>
+                    </div>
+                    {(g.pickedQty > 0 || g.returnedQty > 0) && (
+                      <p className="mt-1.5 text-[11.5px] text-ink-500">
+                        {g.pickedQty > 0 ? `Picked ${g.pickedQty}` : ""}
+                        {g.pickedQty > 0 && g.returnedQty > 0 ? " · " : ""}
+                        {g.returnedQty > 0 ? `Returned ${g.returnedQty}` : ""}
+                      </p>
+                    )}
+                    {g.items.length > 0 && (
+                      <details className="mt-2">
+                        <summary className="cursor-pointer text-[12px] font-medium text-brand hover:underline">
+                          {g.items.length} item{g.items.length === 1 ? "" : "s"}
+                        </summary>
+                        <ul className="mt-2 space-y-1 pl-3">
+                          {g.items.map((it) => (
+                            <li
+                              key={it.id}
+                              className="flex items-center justify-between text-[12px] text-ink-700"
+                            >
+                              <span className="truncate pr-3">{it.name}</span>
+                              <span className="shrink-0 tabular-nums text-ink-500">
+                                {it.deliveredQty} / {it.qty}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      </details>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
           </div>
         )}
 

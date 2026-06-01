@@ -22,6 +22,12 @@ import {
   productVariantAttributes,
   students,
 } from "@/db/schema";
+import {
+  categoryIdBySku,
+  dispatchQtysByItemCode,
+  groupItemsByRootCategory,
+  type CategoryGroup,
+} from "@/lib/order-category-tracking";
 
 /**
  * Build a Map<variantId, [{name, value}]> for the given variant ids.
@@ -364,6 +370,15 @@ export type ParentOrderDetail = {
   // enrollment number to disambiguate.
   studentName: string | null;
   enrollment: string | null;
+  /** Per-root-category dispatch roll-up for the "Tracking by category"
+   *  section on the My Orders detail page. Empty array if the order
+   *  has no items (shouldn't happen) or category resolution failed
+   *  entirely. Items with no resolvable category bucket into a single
+   *  synthetic "Other" group. */
+  categoryGroups: CategoryGroup[];
+  /** True when the ERP poll hasn't run for this order yet — the UI
+   *  shows a "Tracking will appear within a few minutes" banner. */
+  pollPending: boolean;
 };
 
 export async function getParentOrderDetailFromErp(
@@ -431,6 +446,7 @@ export async function getParentOrderDetailFromErp(
     amount: number | null;
     image: string | null;
     bundle_selections: unknown;
+    sku: string | null;
   }>(
     await db.execute(sql`
       -- Items source: prefer the LOCAL order_items (captured at checkout,
@@ -443,6 +459,8 @@ export async function getParentOrderDetailFromErp(
       -- divide by 100 so the downstream Math.round produces rupees.
       -- bundle_selections only exists on local rows; ERP mirror has
       -- no concept of Magic Box picks, so we project NULL there.
+      -- sku is surfaced so the category-tracking enricher can join to
+      -- erp.sales_order_items.item_code (the dispatch counters).
       WITH local_items AS (
         SELECT oi.id::text AS id, oi.name_snapshot AS item_name,
                oi.qty::float8 AS qty,
@@ -450,9 +468,11 @@ export async function getParentOrderDetailFromErp(
                (oi.total      / 100.0)::float8 AS amount,
                oi.image_snapshot AS image,
                oi.bundle_selections AS bundle_selections,
+               pv.sku AS sku,
                row_number() OVER (ORDER BY oi.id) AS rn
           FROM order_items oi
           JOIN orders lo ON lo.id = oi.order_id
+          LEFT JOIN product_variants pv ON pv.id = oi.variant_id
          WHERE lo.erp_so_name = ${orderNo}
       ),
       erp_items AS (
@@ -461,18 +481,19 @@ export async function getParentOrderDetailFromErp(
                soi.rate::float8 AS rate,
                soi.amount::float8 AS amount,
                COALESCE(NULLIF(it.image,''), NULLIF(vt.image,'')) AS image,
-               NULL::jsonb AS bundle_selections
+               NULL::jsonb AS bundle_selections,
+               soi.item_code AS sku
           FROM erp.sales_order_items soi
           LEFT JOIN erp.items it ON it.erp_name = soi.item_code
           LEFT JOIN erp.items vt ON vt.erp_name = it.variant_of
          WHERE soi.order_erp_name = ${orderNo}
          ORDER BY soi.id
       )
-      SELECT id, item_name, qty, rate, amount, image, bundle_selections
+      SELECT id, item_name, qty, rate, amount, image, bundle_selections, sku
         FROM local_items
        WHERE (SELECT count(*) FROM local_items) > 0
       UNION ALL
-      SELECT id, item_name, qty, rate, amount, image, bundle_selections
+      SELECT id, item_name, qty, rate, amount, image, bundle_selections, sku
         FROM erp_items
        WHERE (SELECT count(*) FROM local_items) = 0
     `)
@@ -543,6 +564,50 @@ export async function getParentOrderDetailFromErp(
   const erpAttrsByVariant = await attrsByVariantId(
     Array.from(new Set(erpBundleVariantIds))
   );
+
+  // Category-wise tracking roll-up. Resolve each item's root category
+  // via product_variants.sku → products.category_id, and its dispatch
+  // counters via erp.sales_order_items keyed by item_code (== sku).
+  const skus = Array.from(
+    new Set(items.map((it) => it.sku).filter((s): s is string => !!s))
+  );
+  const [catBySku, qtysByCode, pollMeta] = await Promise.all([
+    categoryIdBySku(skus),
+    dispatchQtysByItemCode(orderNo),
+    db
+      .execute(sql`
+        SELECT erp_last_polled_at, created_at
+          FROM orders
+         WHERE erp_so_name = ${orderNo}
+         LIMIT 1
+      `)
+      .then((r: any) => (r?.rows ?? r ?? [])[0] as {
+        erp_last_polled_at: string | null;
+        created_at: string;
+      } | undefined),
+  ]);
+  const categoryGroups = await groupItemsByRootCategory(
+    items.map((it) => {
+      const qtys = (it.sku && qtysByCode.get(it.sku)) || {
+        deliveredQty: 0,
+        pickedQty: 0,
+        returnedQty: 0,
+      };
+      return {
+        id: String(it.id),
+        name: it.item_name ?? "Item",
+        qty: it.qty ?? 0,
+        categoryId: it.sku ? catBySku.get(it.sku) ?? null : null,
+        deliveredQty: qtys.deliveredQty,
+        pickedQty: qtys.pickedQty,
+        returnedQty: qtys.returnedQty,
+      };
+    })
+  );
+  const pollPending =
+    !pollMeta?.erp_last_polled_at &&
+    !!pollMeta?.created_at &&
+    Date.now() - new Date(pollMeta.created_at).getTime() < 10 * 60_000;
 
   return {
     id: o.order_no,
@@ -621,6 +686,8 @@ export async function getParentOrderDetailFromErp(
     })),
     studentName: o.customer_name,
     enrollment: o.enrollment,
+    categoryGroups,
+    pollPending,
   };
 }
 
@@ -695,6 +762,63 @@ export async function getParentOrderDetailLocal(
     Array.from(new Set(localBundleVariantIds))
   );
 
+  // Category-wise tracking for the local fallback. order_items here has
+  // variant_id directly, so we can resolve sku → category in one shot
+  // via product_variants → products.
+  const variantIds = Array.from(
+    new Set(
+      lines.map((l) => l.variantId).filter((v): v is string => !!v)
+    )
+  );
+  const variantMeta = await (async () => {
+    const map = new Map<string, { sku: string | null; categoryId: string | null }>();
+    if (variantIds.length === 0) return map;
+    const r: any = await db.execute(sql`
+      SELECT pv.id::text AS id, pv.sku, p.category_id::text AS category_id
+        FROM product_variants pv
+        LEFT JOIN products p ON p.id = pv.product_id
+       WHERE pv.id = ANY(${variantIds})
+    `);
+    const rs = (r?.rows ?? r ?? []) as Array<{
+      id: string;
+      sku: string | null;
+      category_id: string | null;
+    }>;
+    for (const row of rs) {
+      map.set(row.id, { sku: row.sku ?? null, categoryId: row.category_id ?? null });
+    }
+    return map;
+  })();
+  const qtysByCode = o.erpSoName
+    ? await dispatchQtysByItemCode(o.erpSoName)
+    : new Map<
+        string,
+        { deliveredQty: number; pickedQty: number; returnedQty: number }
+      >();
+  const categoryGroups = await groupItemsByRootCategory(
+    lines.map((l) => {
+      const meta = l.variantId ? variantMeta.get(l.variantId) : undefined;
+      const qtys = (meta?.sku && qtysByCode.get(meta.sku)) || {
+        deliveredQty: 0,
+        pickedQty: 0,
+        returnedQty: 0,
+      };
+      return {
+        id: l.id,
+        name: l.nameSnapshot ?? "Item",
+        qty: l.qty ?? 0,
+        categoryId: meta?.categoryId ?? null,
+        deliveredQty: qtys.deliveredQty,
+        pickedQty: qtys.pickedQty,
+        returnedQty: qtys.returnedQty,
+      };
+    })
+  );
+  const pollPending =
+    !o.erpLastPolledAt &&
+    !!o.createdAt &&
+    Date.now() - new Date(o.createdAt).getTime() < 10 * 60_000;
+
   return {
     id: o.id,
     orderNumber: o.orderNumber,
@@ -755,5 +879,7 @@ export async function getParentOrderDetailLocal(
     tracking: [],
     studentName,
     enrollment,
+    categoryGroups,
+    pollPending,
   };
 }

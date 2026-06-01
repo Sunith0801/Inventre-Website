@@ -206,7 +206,9 @@ function maxIso(a: string | null, b: string | null | undefined): string | null {
 
 // ─── orchestrator ─────────────────────────────────────────────────────
 
-export async function pollOpenOrders(): Promise<PollResult> {
+export async function pollOpenOrders(
+  opts: { ordersOnly?: boolean } = {}
+): Promise<PollResult> {
   const cfg = getErpConfig();
   if (!isErpPollConfigured(cfg)) {
     return {
@@ -222,16 +224,22 @@ export async function pollOpenOrders(): Promise<PollResult> {
     Number(process.env.ERP_POLL_BATCH_LIMIT) || DEFAULT_BATCH_LIMIT;
   const bootstrap = await bootstrapWatermark();
 
-  const [ordersR, shipmentsR, packingR, customersR, itemsR, studentsR] = await Promise.all([
+  // Orders-only mode (post 2026-05-28): pull the resources that drive
+  // storefront tracking and skip the admin-canonical masters.
+  const orderResources = await Promise.all([
     pollOrdersDelta(limit, bootstrap),
     pollShipmentsDelta(limit, bootstrap),
     pollPackingUnitsDelta(limit, bootstrap),
-    pollCustomersDelta(limit, bootstrap),
-    pollItemsDelta(limit, bootstrap),
-    pollStudentsDelta(limit, bootstrap),
   ]);
+  const masterResources = opts.ordersOnly
+    ? []
+    : await Promise.all([
+        pollCustomersDelta(limit, bootstrap),
+        pollItemsDelta(limit, bootstrap),
+        pollStudentsDelta(limit, bootstrap),
+      ]);
 
-  const resources = [ordersR, shipmentsR, packingR, customersR, itemsR, studentsR];
+  const resources = [...orderResources, ...masterResources];
 
   // Affected orders across all three order-touching resources → recompute
   // status. Customer-master changes don't affect local order status, so
