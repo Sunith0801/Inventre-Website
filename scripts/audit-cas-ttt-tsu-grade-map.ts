@@ -138,7 +138,12 @@ async function main() {
     }
 
     // Catalog cross-check: products tagged for this school whose grade
-    // value isn't in the school_given_grade_name set.
+    // value isn't in the school_given_grade_name set. DSE-stream tags
+    // (e.g. "Grade 10 DSE") are intentionally a parallel stream — they
+    // only surface to students whose grade is the DSE variant — so
+    // they don't live in school_grade_mappings and aren't real orphans.
+    // See components/admin/ProductEditTabs.tsx (DSE_GRADES) for the
+    // canonical DSE vocabulary.
     const givenSet = new Set(
       mappingRows
         .map((m) => (m.school_given_grade_name ?? "").trim().toLowerCase())
@@ -150,6 +155,7 @@ async function main() {
         JOIN product_school ps ON ps.product_id = pg.product_id
        WHERE ps.school_id = ${s.id}
          AND pg.grade IS NOT NULL
+         AND pg.grade !~* 'DSE'
        ORDER BY pg.grade
     `)) as unknown as { grade: string }[];
     const productOrphans = productGradeRows
