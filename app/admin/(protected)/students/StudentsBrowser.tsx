@@ -46,6 +46,10 @@ export type StudentRow = {
   verifiedAt?: string | Date | null;
   parentPhone?: string | null;
   parentLastLoginAt?: string | Date | null;
+  /** Most recent storefront activity for this student — defined as the
+   *  greatest of (last order placed by this student, parent's last
+   *  successful login). Null when neither signal exists. */
+  lastActiveAt?: string | Date | null;
   mcbAccessGranted?: boolean;
 };
 
@@ -212,6 +216,61 @@ export function StudentsBrowser({
   const offset = (filters.page - 1) * PAGE_SIZE;
   const showingTo = Math.min(offset + rows.length, total);
 
+  // Bulk new-student action — always available, scoped to whatever the
+  // current filter set matches. Safety comes from the confirm modal
+  // showing the exact match count (and an extra heads-up for >1000).
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkMsg, setBulkMsg] = useState<string | null>(null);
+  const runBulkSetNew = async (isNewStudent: boolean) => {
+    if (total === 0) return;
+    const verb = isNewStudent ? "Mark" : "Unmark";
+    const noun = `student${total === 1 ? "" : "s"}`;
+    const big = total > 1000
+      ? `\n\nThis will affect ${total.toLocaleString()} ${noun} — much larger than usual. Narrow the filters first if that's not intended.`
+      : "";
+    if (!window.confirm(
+      `${verb} all ${total.toLocaleString()} filtered ${noun} as New?${big}`,
+    )) return;
+    setBulkBusy(true);
+    setBulkMsg(null);
+    try {
+      const r = await fetch("/api/admin/students/bulk-set-new", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          isNewStudent,
+          filters: {
+            q: filters.q || undefined,
+            schoolCode: filters.schoolCode || undefined,
+            grade: filters.grade || undefined,
+            enabled: filters.enabled || undefined,
+            verified: filters.verified || undefined,
+            newStudent: filters.newStudent || undefined,
+            recent: filters.recent || undefined,
+          },
+        }),
+      });
+      const data = (await r.json().catch(() => null)) as
+        | { updated: number }
+        | { error: string }
+        | null;
+      if (!r.ok || !data || "error" in data) {
+        setBulkMsg(
+          (data && "error" in data ? data.error : null) ?? `Failed (HTTP ${r.status})`,
+        );
+      } else {
+        setBulkMsg(`Updated ${data.updated.toLocaleString()} student${data.updated === 1 ? "" : "s"}.`);
+        // Force a refetch with the current filters so the table reflects
+        // the new isNewStudent values.
+        setFilters((prev) => ({ ...prev }));
+      }
+    } catch (e) {
+      setBulkMsg(e instanceof Error ? e.message : "Network error");
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
   const selectClass =
     "h-9 px-2.5 rounded-lg border border-ink-200 text-[13px] bg-white disabled:opacity-70 disabled:cursor-not-allowed";
   const navBtn =
@@ -307,6 +366,43 @@ export function StudentsBrowser({
         </select>
       </Toolbar>
 
+      {total > 0 && (
+        <div className="mb-2 rounded-lg border border-brand-200 bg-brand-50/70 px-3 py-2 flex flex-wrap items-center gap-3 text-[12.5px]">
+          <span className="text-brand-900 font-semibold">
+            Bulk action — {total.toLocaleString()} filtered
+          </span>
+          <button
+            type="button"
+            disabled={bulkBusy}
+            onClick={() => runBulkSetNew(true)}
+            className={
+              "inline-flex items-center gap-1 rounded-md px-2.5 py-1 font-semibold " +
+              (bulkBusy
+                ? "bg-ink-200 text-ink-500 cursor-wait"
+                : "bg-brand-600 text-white hover:bg-brand-700")
+            }
+          >
+            Mark all as New
+          </button>
+          <button
+            type="button"
+            disabled={bulkBusy}
+            onClick={() => runBulkSetNew(false)}
+            className={
+              "inline-flex items-center gap-1 rounded-md px-2.5 py-1 font-semibold " +
+              (bulkBusy
+                ? "bg-ink-100 text-ink-400 cursor-wait"
+                : "border border-ink-300 bg-white text-ink-800 hover:bg-cream-50")
+            }
+          >
+            Unmark all
+          </button>
+          {bulkMsg && (
+            <span className="text-ink-700">{bulkMsg}</span>
+          )}
+        </div>
+      )}
+
       <div className="mb-1 h-4 text-[11px] text-ink-400">
         {busy ? "Searching…" : `${total.toLocaleString()} match${total === 1 ? "" : "es"} · page ${filters.page} / ${lastPage}`}
       </div>
@@ -333,6 +429,7 @@ export function StudentsBrowser({
                   <th className="px-3 py-3 text-left text-[12px] font-bold uppercase tracking-wider text-ink-800">New</th>
                   <th className="px-3 py-3 text-left text-[12px] font-bold uppercase tracking-wider text-ink-800">Verified</th>
                   <th className="px-3 py-3 text-left text-[12px] font-bold uppercase tracking-wider text-ink-800">Last login (IST)</th>
+                  <th className="px-3 py-3 text-left text-[12px] font-bold uppercase tracking-wider text-ink-800">Last active</th>
                   <th className="px-3 py-3 text-left text-[12px] font-bold uppercase tracking-wider text-ink-800">Access</th>
                 </tr>
               </thead>
@@ -393,6 +490,13 @@ export function StudentsBrowser({
                     </Td>
                     <Td muted>
                       <span className="text-[11px] whitespace-nowrap">{fmtIST(s.parentLastLoginAt)}</span>
+                    </Td>
+                    <Td muted>
+                      {s.lastActiveAt ? (
+                        <span className="text-[11px] whitespace-nowrap">{fmtIST(s.lastActiveAt)}</span>
+                      ) : (
+                        <span className="text-ink-400 text-[12px]">—</span>
+                      )}
                     </Td>
                     <Td>
                       {s.mcbAccessGranted ? (

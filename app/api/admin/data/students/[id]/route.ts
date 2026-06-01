@@ -102,7 +102,39 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     update.class = body.grade;
   }
 
-  await db.update(schema.students).set(update).where(eq(schema.students.id, id));
+  try {
+    await db.update(schema.students).set(update).where(eq(schema.students.id, id));
+  } catch (e) {
+    // Postgres unique_violation (23505) on the partial unique index
+    // students_school_enrolment_uq (school_id, enrollment_number). Fires
+    // when the admin changes the school (or enrolment number) to a
+    // combination already held by another student at that school — most
+    // commonly when moving a student into a school where the same
+    // enrolment number already belongs to a different child.
+    const err = e as { code?: string; constraint?: string; message?: string };
+    if (err?.code === "23505") {
+      const isEnrolment =
+        err.constraint === "students_school_enrolment_uq" ||
+        /enrol/i.test(err.message ?? "");
+      const msg = isEnrolment
+        ? `Another student at this school already has enrolment number ${body.enrollmentNumber ?? "—"}. Use a different enrolment number, or pick a different school.`
+        : "This change conflicts with an existing student record.";
+      return NextResponse.json(
+        {
+          error: msg,
+          details: isEnrolment
+            ? [{ path: "enrollmentNumber", message: msg }]
+            : undefined,
+        },
+        { status: 409 },
+      );
+    }
+    // Anything else — surface the message instead of dropping a bare 500.
+    return NextResponse.json(
+      { error: err?.message ?? "Save failed" },
+      { status: 500 },
+    );
+  }
 
   // Storefront surfaces filter products by the student's school, grade
   // and is_new_student flag. Flush every cache layer that surfaces those

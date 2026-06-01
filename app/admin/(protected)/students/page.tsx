@@ -102,6 +102,12 @@ export default async function ErpStudentsPage({
       verifiedAt: students.verifiedAt,
       parentPhone: parents.phone,
       parentLastLoginAt: parents.lastLoginAt,
+      // "Last active" = greatest of (this student's most recent order
+      // created_at, parent's last login). Same shape as the paged API.
+      lastActiveAt: sql<string | null>`GREATEST(
+        (SELECT MAX(o.created_at) FROM orders o WHERE o.student_id = ${students.id}),
+        ${parents.lastLoginAt}
+      )`,
     }).from(students)
       .leftJoin(parents, eq(parents.id, students.parentId))
       .where(conds.length ? and(...conds) : undefined)

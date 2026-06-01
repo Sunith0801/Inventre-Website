@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { eq, inArray, sql } from "drizzle-orm";
+import { eq, inArray, sql, asc } from "drizzle-orm";
 import { db } from "@/db/client";
 import { orders, payments } from "@/db/schema";
 import { requirePermission, isResponse } from "@/lib/admin-guard";
@@ -83,11 +83,19 @@ export async function POST(req: Request) {
   // One DB read for all selected orders + their payment row. Joining
   // here means the per-order worker doesn't issue its own SELECT, which
   // matters when we're firing 50 of them in parallel.
-  const localRows = await db
+  //
+  // IMPORTANT: order has-many payments (retry attempts are common after
+  // failures), so the join can return N rows per order. The Orders
+  // dashboard's `first_payment` CTE reads the EARLIEST payment per order
+  // (DISTINCT ON … ORDER BY created_at ASC). We must patch the same row
+  // here, otherwise the refresh writes to a later attempt and the
+  // dashboard keeps showing the stale status from the earlier one.
+  const joined = await db
     .select({
       orderNumber: orders.orderNumber,
       orderId: orders.id,
       paymentId: payments.id,
+      paymentCreatedAt: payments.createdAt,
       gatewayTrackingId: payments.gatewayTrackingId,
       paidAmount: payments.paidAmount,
       paymentMode: payments.paymentMode,
@@ -95,9 +103,16 @@ export async function POST(req: Request) {
     })
     .from(orders)
     .leftJoin(payments, eq(payments.orderId, orders.id))
-    .where(inArray(orders.orderNumber, parsed.orderNumbers));
+    .where(inArray(orders.orderNumber, parsed.orderNumbers))
+    .orderBy(asc(orders.orderNumber), asc(payments.createdAt));
 
-  const byOrderNo = new Map(localRows.map((r) => [r.orderNumber, r]));
+  // Collapse to the FIRST payment per order. asc-ordered by createdAt
+  // means the first occurrence we see for each orderNumber is the
+  // earliest payment.
+  const byOrderNo = new Map<string, (typeof joined)[number]>();
+  for (const r of joined) {
+    if (!byOrderNo.has(r.orderNumber)) byOrderNo.set(r.orderNumber, r);
+  }
 
   // The work — one CCAvenue call per orderNumber, parallel with cap.
   const results = await withConcurrency<string, ApiResult>(

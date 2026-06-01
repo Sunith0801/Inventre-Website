@@ -172,13 +172,22 @@ export async function POST(req: Request) {
   // path) and inherited at student-creation time, not here — OTP-only
   // sign-ins don't promote verification on their own.
   await createParentSession(parent.id, body.phone);
-  db.update(parents)
-    .set({ lastLoginAt: new Date() })
-    .where(eq(parents.id, parent.id))
-    .catch(console.error);
-  db.insert(otpLogs)
-    .values({ phone: body.phone, purpose: "login", event: "verified", ip })
-    .catch(console.error);
+  // Run the bookkeeping writes in parallel and AWAIT them. The previous
+  // code dropped these on the floor (no await + .catch only), which meant
+  // a successful login could intermittently fail to bump `last_login_at`
+  // or log a `verified` row under load / when the runtime recycled the
+  // worker before the dangling promise flushed.
+  await Promise.all([
+    db
+      .update(parents)
+      .set({ lastLoginAt: new Date() })
+      .where(eq(parents.id, parent.id))
+      .catch((e) => console.error("[otp-verify] lastLoginAt update failed:", e)),
+    db
+      .insert(otpLogs)
+      .values({ phone: body.phone, purpose: "login", event: "verified", ip })
+      .catch((e) => console.error("[otp-verify] verified log insert failed:", e)),
+  ]);
   // Fire-and-forget: mirror this parent's historical ERP orders so they
   // show up under /shop/orders without waiting for the delta-poll to
   // happen to touch them. Cooldown-throttled per-phone.

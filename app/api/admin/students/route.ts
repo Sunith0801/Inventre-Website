@@ -263,6 +263,15 @@ export async function GET(req: NextRequest) {
         verifiedAt: students.verifiedAt,
         parentPhone: parents.phone,
         parentLastLoginAt: parents.lastLoginAt,
+        // "Last active" = max of (this student's most recent order
+        // created_at, parent's last login). Surfaces both kinds of
+        // engagement signal in one column so the admin doesn't have to
+        // cross-reference Orders to see whether a student is really
+        // inactive. Null when neither signal exists.
+        lastActiveAt: sql<string | null>`GREATEST(
+          (SELECT MAX(o.created_at) FROM orders o WHERE o.student_id = ${students.id}),
+          ${parents.lastLoginAt}
+        )`,
       })
       .from(students)
       .leftJoin(parents, eq(parents.id, students.parentId))

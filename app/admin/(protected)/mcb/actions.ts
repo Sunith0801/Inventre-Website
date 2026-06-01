@@ -193,20 +193,30 @@ export async function grantMcbAccess(formData: FormData): Promise<GrantResult> {
           .where(eq(guardians.id, guardian.id));
       }
 
+      // Look up the existing link by phone (10-digit normalised), NOT by
+      // guardian_erp_name. The partial unique index
+      // `student_guardian_links_unique_phone (student_id, right(10, phone_no))`
+      // means a link already exists for this student+phone the moment the
+      // student was created via an earlier ADMIN/ERP path (with
+      // guardian_erp_name='ADMIN-…-G1'). Matching by erp_name would miss
+      // that row and the subsequent INSERT would throw 23505.
       const [existingLink] = await tx
         .select({ id: studentGuardianLinks.id })
         .from(studentGuardianLinks)
         .where(
           and(
             eq(studentGuardianLinks.studentId, studentId),
-            eq(studentGuardianLinks.guardianErpName, guardianErpName)
+            sql`right(regexp_replace(coalesce(${studentGuardianLinks.phoneNo}, ''), '\D', '', 'g'), 10) = ${mobile}`,
           )
         )
         .limit(1);
       if (existingLink) {
+        // Re-point the existing link to the MCB-style guardian_erp_name so
+        // future MCB-side lookups (and re-grants) find it directly.
         await tx
           .update(studentGuardianLinks)
           .set({
+            guardianErpName,
             guardianName: parentName,
             relation,
             phoneNo: mobile,
