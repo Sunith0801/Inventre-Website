@@ -49,6 +49,12 @@ export function ShopHeader({ count, query, onQuery, sort, onSort }: Props) {
   const school = student?.school ?? null;
   const studentNameTitled = titleCase(student?.name ?? "");
   const studentFirst = studentNameTitled.split(" ")[0] || "Your";
+  // Same fallback chain as StudentBar — DB column logoUrl wins, else the
+  // ERP-resolved /files/* path the legacy ERPNext static server still
+  // serves (see lib/session.ts:resolveErpUrl + ERP_BASE_URL).
+  const logoSrc =
+    school?.logoUrl ||
+    (school?.schoolLogoUrl?.startsWith("http") ? school.schoolLogoUrl : null);
   // Prefer the school's own label (e.g. "Class 5"/"JKG") over the raw
   // uniform grade. Falls back to `grade` then `class` so legacy rows still
   // render something sensible.
@@ -71,11 +77,11 @@ export function ShopHeader({ count, query, onQuery, sort, onSort }: Props) {
       </a>
       <div className="mt-3 flex flex-col lg:flex-row lg:items-end lg:justify-between gap-5">
         <div className="flex items-center gap-4">
-          {school?.logoUrl ? (
+          {logoSrc ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
-              src={school.logoUrl}
-              alt={school.name}
+              src={logoSrc}
+              alt={school?.name ?? ""}
               className="h-14 w-14 lg:h-16 lg:w-16 rounded-xl object-cover border border-ink-100 bg-white shrink-0"
             />
           ) : null}

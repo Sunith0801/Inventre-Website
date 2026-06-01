@@ -254,10 +254,10 @@ export function StudentBar() {
                   Your school
                 </span>
                 <div className="flex items-center gap-3">
-                  {school.logoUrl ? (
+                  {bannerSrc ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
-                      src={school.logoUrl}
+                      src={bannerSrc}
                       alt={school.name}
                       className="h-14 w-14 rounded-xl object-cover bg-white p-1 shrink-0"
                     />
