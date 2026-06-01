@@ -704,12 +704,55 @@ export async function upsertStudentMirror(s: ErpStudentResp): Promise<void> {
 
   // Reflect safe fields back onto the storefront students row if linked.
   // Auth columns (status, enabled, parent_id, school_id) are never touched.
+  //
+  // Grade resolution (2026-06-01): CAS-* / TTT-* / TSU-* schools use a
+  // school-given grade label that differs from ERP's raw value (and
+  // even from the +3-offset "real" grade — TSUSC names its Class 1
+  // "1", LKG "JKG", etc.). For those schools, translate s.grade
+  // through the school's school_grade_mappings (keyed on the
+  // +3-offset "real" grade) before persisting. Other schools keep
+  // the direct write because their school-given == ERP value.
+  // class is dual-written with grade so the admin picker and the
+  // storefront's exact-string filter (lib/repos/products.ts
+  // listProductsForStudent) always agree.
+  const erpToReal = sql`
+    CASE ${s.grade ?? null}::text
+      WHEN 'Grade 1'  THEN 'Nursery'
+      WHEN 'Grade 2'  THEN 'LKG'
+      WHEN 'Grade 3'  THEN 'UKG'
+      WHEN 'Grade 4'  THEN 'Grade 1'
+      WHEN 'Grade 5'  THEN 'Grade 2'
+      WHEN 'Grade 6'  THEN 'Grade 3'
+      WHEN 'Grade 7'  THEN 'Grade 4'
+      WHEN 'Grade 8'  THEN 'Grade 5'
+      WHEN 'Grade 9'  THEN 'Grade 6'
+      WHEN 'Grade 10' THEN 'Grade 7'
+      WHEN 'Grade 11' THEN 'Grade 8'
+      WHEN 'Grade 12' THEN 'Grade 9'
+      WHEN 'Grade 13' THEN 'Grade 10'
+      WHEN 'Grade 14' THEN 'Grade 11'
+      WHEN 'Grade 15' THEN 'Grade 12'
+      WHEN 'Nursery'  THEN 'Nursery'
+      WHEN 'LKG'      THEN 'LKG'
+      WHEN 'UKG'      THEN 'UKG'
+      ELSE NULL
+    END
+  `;
   await db
     .execute(sql`
       UPDATE students SET
         first_name            = ${s.first_name ?? null},
         school_code           = ${s.school_code ?? null},
-        grade                 = ${s.grade ?? null},
+        grade                 = CASE
+            WHEN sch.school_code ~ '^(CAS|TTT|TSU)' AND m.school_given_grade_name IS NOT NULL
+              THEN m.school_given_grade_name
+            ELSE ${s.grade ?? null}
+          END,
+        class                 = CASE
+            WHEN sch.school_code ~ '^(CAS|TTT|TSU)' AND m.school_given_grade_name IS NOT NULL
+              THEN m.school_given_grade_name
+            ELSE students.class
+          END,
         section               = ${s.section ?? null},
         enrollment_number     = ${s.enrollment_number ?? null},
         student_email_id      = ${s.student_email_id ?? null},
@@ -722,7 +765,12 @@ export async function upsertStudentMirror(s: ErpStudentResp): Promise<void> {
         customer_link         = ${s.customer ?? null},
         customer_group        = ${s.customer_group ?? null},
         erp_raw               = ${JSON.stringify(s)}::jsonb
-      WHERE erp_name = ${s.name}
+        FROM schools sch
+        LEFT JOIN school_grade_mappings m
+          ON m.school_id = sch.id
+         AND lower(m.grade) = lower((${erpToReal})::text)
+      WHERE students.erp_name = ${s.name}
+        AND sch.id = students.school_id
     `)
     .catch((e) => {
       console.warn("[erp-poll] students storefront update skipped:", e instanceof Error ? e.message.slice(0, 200) : e);
