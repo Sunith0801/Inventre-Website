@@ -81,7 +81,10 @@ export async function categoryIdBySku(
     SELECT pv.sku, p.category_id::text AS category_id
       FROM product_variants pv
       LEFT JOIN products p ON p.id = pv.product_id
-     WHERE pv.sku = ANY(${skus})
+     WHERE pv.sku IN (${sql.join(
+       skus.map((s) => sql`${s}`),
+       sql`, `
+     )})
   `);
   const rows = (r?.rows ?? r ?? []) as Array<{
     sku: string;

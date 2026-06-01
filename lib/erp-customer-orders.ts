@@ -777,7 +777,10 @@ export async function getParentOrderDetailLocal(
       SELECT pv.id::text AS id, pv.sku, p.category_id::text AS category_id
         FROM product_variants pv
         LEFT JOIN products p ON p.id = pv.product_id
-       WHERE pv.id = ANY(${variantIds})
+       WHERE pv.id IN (${sql.join(
+         variantIds.map((v) => sql`${v}`),
+         sql`, `
+       )})
     `);
     const rs = (r?.rows ?? r ?? []) as Array<{
       id: string;
