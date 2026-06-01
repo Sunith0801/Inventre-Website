@@ -223,18 +223,29 @@ export function groupItemsByAuditCategory(
     qty: number;
     erpCategory?: string | null;
   }>,
-  derivedByCategory: Record<string, string> | null | undefined
+  derivedByCategory: Record<string, string> | null | undefined,
+  categoriesPresent: string[] | null | undefined
 ): CategoryGroup[] {
-  const entries = Object.entries(derivedByCategory ?? {});
-  if (entries.length === 0) return [];
+  const byCat = derivedByCategory ?? {};
+  // `derived_delivery_categories_present` is the authoritative list of
+  // which categories actually appear in this order. `by_category` also
+  // includes entries for categories the customer didn't buy (audit
+  // emits a full ledger), so we filter to `present` when provided.
+  const present = (categoriesPresent ?? [])
+    .map((s) => (s ?? "").toString().toLowerCase().trim())
+    .filter(Boolean);
+  const allowedKeys = present.length
+    ? present
+    : Object.keys(byCat).map((k) => k.toLowerCase());
+  if (allowedKeys.length === 0) return [];
 
-  // One group per audit category, in the order audit lists them.
   const groups = new Map<string, CategoryGroup>();
-  for (const [key, statusText] of entries) {
-    const k = key.toLowerCase();
+  for (const k of allowedKeys) {
+    if (groups.has(k)) continue;
+    const statusText = byCat[k] ?? byCat[Object.keys(byCat).find((kk) => kk.toLowerCase() === k) ?? ""];
     groups.set(k, {
       rootCategoryId: null,
-      rootCategoryName: titleCaseCategory(key),
+      rootCategoryName: titleCaseCategory(k),
       totalQty: 0,
       deliveredQty: 0,
       pickedQty: 0,
@@ -243,6 +254,7 @@ export function groupItemsByAuditCategory(
       items: [],
     });
   }
+  const keys = [...groups.keys()];
   const otherGroup: CategoryGroup = {
     rootCategoryId: null,
     rootCategoryName: OTHER_LABEL,
@@ -254,20 +266,24 @@ export function groupItemsByAuditCategory(
     items: [],
   };
 
-  const keys = [...groups.keys()];
   for (const it of items) {
     const erpCat = (it.erpCategory ?? "").toLowerCase().trim();
     let target = erpCat ? groups.get(erpCat) : undefined;
     if (!target) {
-      // Orphan: best-effort match by item-name substring against a
-      // category key.
-      const lcName = it.name.toLowerCase();
-      const matchKey = keys.find((k) => k && lcName.includes(k));
-      target = matchKey ? groups.get(matchKey) : undefined;
+      // Orphan line (no `category` mirrored on erp.sales_order_items
+      // — usually a pre-migration row). If only one category is
+      // present on this order, every orphan must belong to it. With
+      // multiple present categories, try a substring match on the
+      // item name; otherwise fall through to "Other".
+      if (keys.length === 1) {
+        target = groups.get(keys[0]);
+      } else {
+        const lcName = it.name.toLowerCase();
+        const matchKey = keys.find((k) => k && lcName.includes(k));
+        target = matchKey ? groups.get(matchKey) : undefined;
+      }
     }
     if (!target) target = otherGroup;
-    // Quantity bookkeeping mirrors the audit status — we don't have
-    // per-line counters here, so the card shows "N / N <status>".
     target.totalQty += it.qty;
     if (target.status === "delivered") target.deliveredQty += it.qty;
     else if (target.status === "in transit") target.pickedQty += it.qty;
@@ -282,7 +298,9 @@ export function groupItemsByAuditCategory(
     });
   }
 
-  const out = [...groups.values()];
+  // Hide cards with zero items — the customer should only see
+  // categories they actually ordered.
+  const out = [...groups.values()].filter((g) => g.items.length > 0);
   if (otherGroup.items.length > 0) out.push(otherGroup);
   return out;
 }

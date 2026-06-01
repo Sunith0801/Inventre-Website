@@ -409,6 +409,7 @@ export async function getParentOrderDetailFromErp(
     enrollment: string | null;
     local_ship: Record<string, unknown> | null;
     derived_by_category: Record<string, string> | null;
+    derived_categories_present: string[] | null;
   }>(
     await db.execute(sql`
       SELECT so.erp_name AS order_no, so.customer_name, so.contact_mobile,
@@ -430,7 +431,11 @@ export async function getParentOrderDetailFromErp(
                AS dispatched_pu,
              c.custom_enrollment_number AS enrollment,
              lo.shipping_address AS local_ship,
-             so.raw->'derived_delivery_by_category' AS derived_by_category
+             so.raw->'derived_delivery_by_category' AS derived_by_category,
+             ARRAY(SELECT jsonb_array_elements_text(
+                            COALESCE(so.raw->'derived_delivery_categories_present',
+                                     '[]'::jsonb)))
+               AS derived_categories_present
       FROM erp.sales_orders so
       LEFT JOIN erp.customers c ON c.erp_name = so.customer
       LEFT JOIN orders lo ON lo.erp_so_name = so.erp_name
@@ -620,7 +625,11 @@ export async function getParentOrderDetailFromErp(
   let categoryGroups: Awaited<ReturnType<typeof groupItemsByRootCategory>>;
   const auditCat = o.derived_by_category ?? null;
   if (auditCat && Object.keys(auditCat).length > 0) {
-    categoryGroups = groupItemsByAuditCategory(itemsForGrouping, auditCat);
+    categoryGroups = groupItemsByAuditCategory(
+      itemsForGrouping,
+      auditCat,
+      o.derived_categories_present ?? null
+    );
   } else {
     // Pre-mirror orders (no derived_delivery_by_category on audit yet).
     // Fall back to the per-shipment derivation so the card isn't blank.
