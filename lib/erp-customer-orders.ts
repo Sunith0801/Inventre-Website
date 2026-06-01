@@ -586,6 +586,23 @@ export async function getParentOrderDetailFromErp(
         created_at: string;
       } | undefined),
   ]);
+  // Audit records dispatch at the shipment/parcel level only for many
+  // orders — per-line counters stay at 0 even after a parcel is
+  // shipped. When that happens, fall back to the shipment-level state
+  // so the customer sees "in transit" / "delivered" instead of the
+  // misleading "pending" chip.
+  const fallback: "delivered" | "in_transit" | "none" =
+    shipments.some((s) => (s.status ?? "").toLowerCase() === "delivered")
+      ? "delivered"
+      : shipments.some(
+            (s) =>
+              !!s.dispatched_at ||
+              ["shipped", "in_transit", "dispatched", "packed"].includes(
+                (s.status ?? "").toLowerCase()
+              )
+          )
+        ? "in_transit"
+        : "none";
   const categoryGroups = await groupItemsByRootCategory(
     items.map((it) => {
       const qtys = (it.sku && qtysByCode.get(it.sku)) || {
@@ -602,7 +619,8 @@ export async function getParentOrderDetailFromErp(
         pickedQty: qtys.pickedQty,
         returnedQty: qtys.returnedQty,
       };
-    })
+    }),
+    fallback
   );
   const pollPending =
     !pollMeta?.erp_last_polled_at &&
@@ -798,6 +816,11 @@ export async function getParentOrderDetailLocal(
         string,
         { deliveredQty: number; pickedQty: number; returnedQty: number }
       >();
+  const fallback: "delivered" | "in_transit" | "none" = o.deliveredAt
+    ? "delivered"
+    : o.shippedAt
+      ? "in_transit"
+      : "none";
   const categoryGroups = await groupItemsByRootCategory(
     lines.map((l) => {
       const meta = l.variantId ? variantMeta.get(l.variantId) : undefined;
@@ -815,7 +838,8 @@ export async function getParentOrderDetailLocal(
         pickedQty: qtys.pickedQty,
         returnedQty: qtys.returnedQty,
       };
-    })
+    }),
+    fallback
   );
   const pollPending =
     !o.erpLastPolledAt &&

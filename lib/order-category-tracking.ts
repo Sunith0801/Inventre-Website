@@ -153,6 +153,13 @@ function statusOf(
 /**
  * Group items by root category and roll up dispatch counts. Items with
  * no resolvable category fall into a single synthetic "Other" group.
+ *
+ * `fallback` covers orders where ERP records dispatch at the parcel /
+ * shipment level only — `erp.sales_order_items.delivered_qty` etc. are
+ * still zero, but the order has a dispatched shipment. We treat every
+ * line whose counters are all zero as fully matching the order-level
+ * shipping state ("delivered" or "in transit") so the customer doesn't
+ * see "pending" next to an order they can already track.
  */
 export async function groupItemsByRootCategory(
   items: Array<{
@@ -163,10 +170,20 @@ export async function groupItemsByRootCategory(
     deliveredQty: number;
     pickedQty: number;
     returnedQty: number;
-  }>
+  }>,
+  fallback: "none" | "in_transit" | "delivered" = "none"
 ): Promise<CategoryGroup[]> {
   const groups = new Map<string, CategoryGroup>();
-  for (const it of items) {
+  for (const raw of items) {
+    const noLineData =
+      raw.deliveredQty === 0 && raw.pickedQty === 0 && raw.returnedQty === 0;
+    let deliveredQty = raw.deliveredQty;
+    let pickedQty = raw.pickedQty;
+    if (noLineData) {
+      if (fallback === "delivered") deliveredQty = raw.qty;
+      else if (fallback === "in_transit") pickedQty = raw.qty;
+    }
+    const it = { ...raw, deliveredQty, pickedQty };
     const root = await getRootCategoryFor(it.categoryId);
     const key = root?.id ?? "__other__";
     const name = root?.name ?? OTHER_LABEL;

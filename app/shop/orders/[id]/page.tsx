@@ -337,13 +337,31 @@ export default function OrderDetailPage() {
             )}
             <ul className="mt-4 space-y-3">
               {order.categoryGroups.map((g) => {
+                // Pick the counter that matches the group's effective
+                // status so customers see meaningful numbers (e.g.
+                // "6 / 6 in transit" instead of "0 / 6 delivered" when
+                // the parcel is on its way but per-line delivery hasn't
+                // been recorded yet).
+                const counter =
+                  g.status === "delivered"
+                    ? g.deliveredQty
+                    : g.status === "returned"
+                      ? g.returnedQty
+                      : g.status === "in transit"
+                        ? Math.max(g.pickedQty, g.deliveredQty)
+                        : 0;
                 const pct =
                   g.totalQty > 0
-                    ? Math.min(
-                        100,
-                        Math.round((g.deliveredQty / g.totalQty) * 100)
-                      )
+                    ? Math.min(100, Math.round((counter / g.totalQty) * 100))
                     : 0;
+                const lineLabel =
+                  g.status === "delivered"
+                    ? "delivered"
+                    : g.status === "in transit"
+                      ? "in transit"
+                      : g.status === "returned"
+                        ? "returned"
+                        : "awaiting dispatch";
                 return (
                   <li
                     key={g.rootCategoryId ?? g.rootCategoryName}
@@ -365,38 +383,54 @@ export default function OrderDetailPage() {
                     <div className="mt-2 flex items-center gap-3">
                       <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-ink-100">
                         <div
-                          className="h-full bg-brand"
+                          className={
+                            "h-full " +
+                            (g.status === "delivered"
+                              ? "bg-emerald-500"
+                              : g.status === "in transit"
+                                ? "bg-amber-500"
+                                : g.status === "returned"
+                                  ? "bg-rose-500"
+                                  : "bg-ink-200")
+                          }
                           style={{ width: `${pct}%` }}
                         />
                       </div>
                       <p className="shrink-0 text-[12px] tabular-nums text-ink-600">
-                        {g.deliveredQty} / {g.totalQty} delivered
+                        {g.status === "pending"
+                          ? `${g.totalQty} ${lineLabel}`
+                          : `${counter} / ${g.totalQty} ${lineLabel}`}
                       </p>
                     </div>
-                    {(g.pickedQty > 0 || g.returnedQty > 0) && (
-                      <p className="mt-1.5 text-[11.5px] text-ink-500">
-                        {g.pickedQty > 0 ? `Picked ${g.pickedQty}` : ""}
-                        {g.pickedQty > 0 && g.returnedQty > 0 ? " · " : ""}
-                        {g.returnedQty > 0 ? `Returned ${g.returnedQty}` : ""}
-                      </p>
-                    )}
                     {g.items.length > 0 && (
-                      <details className="mt-2">
+                      <details className="mt-2" open>
                         <summary className="cursor-pointer text-[12px] font-medium text-brand hover:underline">
                           {g.items.length} item{g.items.length === 1 ? "" : "s"}
                         </summary>
                         <ul className="mt-2 space-y-1 pl-3">
-                          {g.items.map((it) => (
-                            <li
-                              key={it.id}
-                              className="flex items-center justify-between text-[12px] text-ink-700"
-                            >
-                              <span className="truncate pr-3">{it.name}</span>
-                              <span className="shrink-0 tabular-nums text-ink-500">
-                                {it.deliveredQty} / {it.qty}
-                              </span>
-                            </li>
-                          ))}
+                          {g.items.map((it) => {
+                            const itCounter =
+                              g.status === "delivered"
+                                ? it.deliveredQty
+                                : g.status === "returned"
+                                  ? it.returnedQty
+                                  : g.status === "in transit"
+                                    ? Math.max(it.pickedQty, it.deliveredQty)
+                                    : 0;
+                            return (
+                              <li
+                                key={it.id}
+                                className="flex items-center justify-between text-[12px] text-ink-700"
+                              >
+                                <span className="truncate pr-3">{it.name}</span>
+                                <span className="shrink-0 tabular-nums text-ink-500">
+                                  {g.status === "pending"
+                                    ? `× ${it.qty}`
+                                    : `${itCounter} / ${it.qty} ${lineLabel}`}
+                                </span>
+                              </li>
+                            );
+                          })}
                         </ul>
                       </details>
                     )}
