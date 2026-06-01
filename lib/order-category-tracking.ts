@@ -95,24 +95,43 @@ export async function categoryIdBySku(
 }
 
 /**
- * Map<item_code, {delivered, picked, returned}> from the ERP mirror.
- * Empty map when nothing has been polled yet — UI shows "pending".
+ * Map<item_code, {delivered, picked, returned, erpCategory}> from the
+ * ERP mirror. Empty map when nothing has been polled yet — UI shows
+ * "pending".
+ *
+ * `erpCategory` is the raw ERP `category` string ("bookkit" / "uniform"
+ * / etc.) — it's the only join key we have to per-category shipment
+ * state on `erp.outward_shipments.item_category`.
  */
 export async function dispatchQtysByItemCode(
   orderErpName: string
 ): Promise<
-  Map<string, { deliveredQty: number; pickedQty: number; returnedQty: number }>
+  Map<
+    string,
+    {
+      deliveredQty: number;
+      pickedQty: number;
+      returnedQty: number;
+      erpCategory: string | null;
+    }
+  >
 > {
   const out = new Map<
     string,
-    { deliveredQty: number; pickedQty: number; returnedQty: number }
+    {
+      deliveredQty: number;
+      pickedQty: number;
+      returnedQty: number;
+      erpCategory: string | null;
+    }
   >();
   if (!orderErpName) return out;
   const r: any = await db.execute(sql`
     SELECT item_code,
            COALESCE(delivered_qty,0)::float8 AS delivered_qty,
            COALESCE(picked_qty,0)::float8    AS picked_qty,
-           COALESCE(returned_qty,0)::float8  AS returned_qty
+           COALESCE(returned_qty,0)::float8  AS returned_qty,
+           category
       FROM erp.sales_order_items
      WHERE order_erp_name = ${orderErpName}
   `);
@@ -121,6 +140,7 @@ export async function dispatchQtysByItemCode(
     delivered_qty: number;
     picked_qty: number;
     returned_qty: number;
+    category: string | null;
   }>;
   for (const row of rows) {
     if (!row.item_code) continue;
@@ -129,10 +149,12 @@ export async function dispatchQtysByItemCode(
       deliveredQty: 0,
       pickedQty: 0,
       returnedQty: 0,
+      erpCategory: row.category ?? null,
     };
     cur.deliveredQty += row.delivered_qty;
     cur.pickedQty += row.picked_qty;
     cur.returnedQty += row.returned_qty;
+    if (!cur.erpCategory && row.category) cur.erpCategory = row.category;
     out.set(row.item_code, cur);
   }
   return out;
@@ -150,6 +172,8 @@ function statusOf(
   return "pending";
 }
 
+export type FallbackState = "none" | "in_transit" | "delivered";
+
 /**
  * Group items by root category and roll up dispatch counts. Items with
  * no resolvable category fall into a single synthetic "Other" group.
@@ -157,9 +181,15 @@ function statusOf(
  * `fallback` covers orders where ERP records dispatch at the parcel /
  * shipment level only — `erp.sales_order_items.delivered_qty` etc. are
  * still zero, but the order has a dispatched shipment. We treat every
- * line whose counters are all zero as fully matching the order-level
- * shipping state ("delivered" or "in transit") so the customer doesn't
- * see "pending" next to an order they can already track.
+ * line whose counters are all zero as matching the *per-ERP-category*
+ * shipping state, so a bookkit shipment doesn't make the unshipped
+ * uniform lines also read as "in transit".
+ *
+ * `fallback` accepts either:
+ *   - a global enum (legacy local-orders path with no per-category data)
+ *   - a Map<erpCategory(lowercased), FallbackState> built from the
+ *     order's shipments. Items whose `erpCategory` isn't in the map
+ *     stay "pending".
  */
 export async function groupItemsByRootCategory(
   items: Array<{
@@ -170,9 +200,17 @@ export async function groupItemsByRootCategory(
     deliveredQty: number;
     pickedQty: number;
     returnedQty: number;
+    erpCategory?: string | null;
   }>,
-  fallback: "none" | "in_transit" | "delivered" = "none"
+  fallback: FallbackState | Map<string, FallbackState> = "none"
 ): Promise<CategoryGroup[]> {
+  const fallbackFor = (erpCategory: string | null | undefined): FallbackState => {
+    if (fallback instanceof Map) {
+      if (!erpCategory) return "none";
+      return fallback.get(erpCategory.toLowerCase()) ?? "none";
+    }
+    return fallback;
+  };
   const groups = new Map<string, CategoryGroup>();
   for (const raw of items) {
     const noLineData =
@@ -180,8 +218,9 @@ export async function groupItemsByRootCategory(
     let deliveredQty = raw.deliveredQty;
     let pickedQty = raw.pickedQty;
     if (noLineData) {
-      if (fallback === "delivered") deliveredQty = raw.qty;
-      else if (fallback === "in_transit") pickedQty = raw.qty;
+      const f = fallbackFor(raw.erpCategory);
+      if (f === "delivered") deliveredQty = raw.qty;
+      else if (f === "in_transit") pickedQty = raw.qty;
     }
     const it = { ...raw, deliveredQty, pickedQty };
     const root = await getRootCategoryFor(it.categoryId);

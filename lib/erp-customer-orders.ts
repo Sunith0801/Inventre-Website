@@ -512,11 +512,13 @@ export async function getParentOrderDetailFromErp(
     status: string | null;
     dispatched_at: string | null;
     delivered_at: string | null;
+    item_category: string | null;
   }>(
     await db.execute(sql`
       SELECT partner, tracking_number, status,
              dispatched_at::text AS dispatched_at,
-             delivered_at::text  AS delivered_at
+             delivered_at::text  AS delivered_at,
+             item_category
         FROM erp.outward_shipments
        WHERE order_erp_name = ${orderNo}
       UNION ALL
@@ -527,7 +529,8 @@ export async function getParentOrderDetailFromErp(
                ELSE status
              END AS status,
              dispatched_at::text AS dispatched_at,
-             NULL::text          AS delivered_at
+             NULL::text          AS delivered_at,
+             NULL::text          AS item_category
         FROM erp.packing_units
        WHERE order_erp_name = ${orderNo}
          AND status IN ('sealed','dispatched')
@@ -588,27 +591,34 @@ export async function getParentOrderDetailFromErp(
   ]);
   // Audit records dispatch at the shipment/parcel level only for many
   // orders — per-line counters stay at 0 even after a parcel is
-  // shipped. When that happens, fall back to the shipment-level state
-  // so the customer sees "in transit" / "delivered" instead of the
-  // misleading "pending" chip.
-  const fallback: "delivered" | "in_transit" | "none" =
-    shipments.some((s) => (s.status ?? "").toLowerCase() === "delivered")
-      ? "delivered"
-      : shipments.some(
-            (s) =>
-              !!s.dispatched_at ||
-              ["shipped", "in_transit", "dispatched", "packed"].includes(
-                (s.status ?? "").toLowerCase()
-              )
-          )
-        ? "in_transit"
-        : "none";
+  // shipped. When that happens, fall back to the *per-category*
+  // shipment state. A bookkit-only parcel in transit must NOT make
+  // unshipped uniform lines also read as "in transit", which is what
+  // the old single-enum fallback did.
+  const fallbackByErpCategory = new Map<
+    string,
+    "delivered" | "in_transit"
+  >();
+  for (const s of shipments) {
+    const cat = (s.item_category ?? "").toLowerCase().trim();
+    if (!cat) continue;
+    const status = (s.status ?? "").toLowerCase();
+    const isDelivered = status === "delivered";
+    const isInTransit =
+      !!s.dispatched_at ||
+      ["shipped", "in_transit", "dispatched", "packed"].includes(status);
+    const prev = fallbackByErpCategory.get(cat);
+    if (isDelivered) fallbackByErpCategory.set(cat, "delivered");
+    else if (isInTransit && prev !== "delivered")
+      fallbackByErpCategory.set(cat, "in_transit");
+  }
   const categoryGroups = await groupItemsByRootCategory(
     items.map((it) => {
       const qtys = (it.sku && qtysByCode.get(it.sku)) || {
         deliveredQty: 0,
         pickedQty: 0,
         returnedQty: 0,
+        erpCategory: null as string | null,
       };
       return {
         id: String(it.id),
@@ -618,9 +628,10 @@ export async function getParentOrderDetailFromErp(
         deliveredQty: qtys.deliveredQty,
         pickedQty: qtys.pickedQty,
         returnedQty: qtys.returnedQty,
+        erpCategory: qtys.erpCategory,
       };
     }),
-    fallback
+    fallbackByErpCategory
   );
   const pollPending =
     !pollMeta?.erp_last_polled_at &&
@@ -814,8 +825,16 @@ export async function getParentOrderDetailLocal(
     ? await dispatchQtysByItemCode(o.erpSoName)
     : new Map<
         string,
-        { deliveredQty: number; pickedQty: number; returnedQty: number }
+        {
+          deliveredQty: number;
+          pickedQty: number;
+          returnedQty: number;
+          erpCategory: string | null;
+        }
       >();
+  // Local-only branch: no ERP shipment rows to map by category, so we
+  // keep the order-level enum. (When ERP catches up, the call switches
+  // to getParentOrderDetailFromErpMirror with per-category data.)
   const fallback: "delivered" | "in_transit" | "none" = o.deliveredAt
     ? "delivered"
     : o.shippedAt
@@ -828,6 +847,7 @@ export async function getParentOrderDetailLocal(
         deliveredQty: 0,
         pickedQty: 0,
         returnedQty: 0,
+        erpCategory: null as string | null,
       };
       return {
         id: l.id,
@@ -837,6 +857,7 @@ export async function getParentOrderDetailLocal(
         deliveredQty: qtys.deliveredQty,
         pickedQty: qtys.pickedQty,
         returnedQty: qtys.returnedQty,
+        erpCategory: qtys.erpCategory,
       };
     }),
     fallback

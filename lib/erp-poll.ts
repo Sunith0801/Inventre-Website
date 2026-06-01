@@ -124,9 +124,18 @@ export type ErpShipmentResp = {
   partner?: string | null;
   tracking_number?: string | null;
   status?: string | null;
+  partner_raw_status?: string | null;
   dispatched_at?: string | null;
   delivered_at?: string | null;
   updated_at?: string | null;
+  /** What's in this parcel. Audit populates these so a single parcel
+   *  can declare itself "bookkit only" / "uniform only" / a specific
+   *  SKU / a parent item, instead of implying the whole order. */
+  item_category?: string | null;
+  parent_item_code?: string | null;
+  item_code?: string | null;
+  description?: string | null;
+  auto_assumed_full_order?: boolean | null;
   events?: Array<{
     id?: number;
     status?: string | null;
@@ -1151,7 +1160,10 @@ export async function upsertShipmentMirror(
   await db
     .execute(sql`
       INSERT INTO erp.outward_shipments (id, order_erp_name, partner,
-                                         tracking_number, status, qty,
+                                         tracking_number, status,
+                                         partner_raw_status, qty,
+                                         item_category, parent_item_code,
+                                         item_code, description,
                                          dispatched_at, delivered_at,
                                          is_deleted, updated_at)
       VALUES (
@@ -1160,22 +1172,32 @@ export async function upsertShipmentMirror(
         ${partner},
         ${sh.tracking_number ?? null},
         ${sh.status ?? "dispatched"},
+        ${sh.partner_raw_status ?? null},
         ${qty},
+        ${sh.item_category ?? null},
+        ${sh.parent_item_code ?? null},
+        ${sh.item_code ?? null},
+        ${sh.description ?? null},
         ${sh.dispatched_at ?? null}::timestamp,
         ${sh.delivered_at ?? null}::timestamp,
         ${isDeleted},
         now()
       )
       ON CONFLICT (id) DO UPDATE SET
-        order_erp_name  = EXCLUDED.order_erp_name,
-        partner         = EXCLUDED.partner,
-        tracking_number = EXCLUDED.tracking_number,
-        status          = EXCLUDED.status,
-        qty             = EXCLUDED.qty,
-        dispatched_at   = EXCLUDED.dispatched_at,
-        delivered_at    = EXCLUDED.delivered_at,
-        is_deleted      = EXCLUDED.is_deleted,
-        updated_at      = now()
+        order_erp_name          = EXCLUDED.order_erp_name,
+        partner                 = EXCLUDED.partner,
+        tracking_number         = EXCLUDED.tracking_number,
+        status                  = EXCLUDED.status,
+        partner_raw_status      = EXCLUDED.partner_raw_status,
+        qty                     = EXCLUDED.qty,
+        item_category           = EXCLUDED.item_category,
+        parent_item_code        = EXCLUDED.parent_item_code,
+        item_code               = EXCLUDED.item_code,
+        description             = EXCLUDED.description,
+        dispatched_at           = EXCLUDED.dispatched_at,
+        delivered_at            = EXCLUDED.delivered_at,
+        is_deleted              = EXCLUDED.is_deleted,
+        updated_at              = now()
     `)
     .catch((e) => {
       console.warn(
@@ -1220,7 +1242,7 @@ export async function upsertItemsMirror(
         INSERT INTO erp.sales_order_items (
           erp_name, order_erp_name, item_code, item_name,
           qty, rate, amount, uom, warehouse,
-          delivered_qty, picked_qty, returned_qty, gst_hsn_code
+          delivered_qty, picked_qty, returned_qty, gst_hsn_code, category
         )
         VALUES (
           ${lineName},
@@ -1235,7 +1257,8 @@ export async function upsertItemsMirror(
           ${get<number>("delivered_qty")},
           ${get<number>("picked_qty")},
           ${get<number>("returned_qty")},
-          ${get<string>("gst_hsn_code")}
+          ${get<string>("gst_hsn_code")},
+          ${get<string>("category")}
         )
         ON CONFLICT (erp_name) DO UPDATE SET
           order_erp_name = EXCLUDED.order_erp_name,
@@ -1249,7 +1272,8 @@ export async function upsertItemsMirror(
           delivered_qty  = EXCLUDED.delivered_qty,
           picked_qty     = EXCLUDED.picked_qty,
           returned_qty   = EXCLUDED.returned_qty,
-          gst_hsn_code   = EXCLUDED.gst_hsn_code
+          gst_hsn_code   = EXCLUDED.gst_hsn_code,
+          category       = EXCLUDED.category
       `)
       .catch((e) => {
         console.warn(
