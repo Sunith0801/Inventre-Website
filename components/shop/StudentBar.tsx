@@ -219,22 +219,35 @@ export function StudentBar() {
             )}
           </div>
 
-          {school && (
+          {school && (() => {
+            // Resolved banner image. Render only when we actually have a
+            // school-specific source — previously this fell back to a
+            // hardcoded TSUS banner, which made every school whose banner
+            // wasn't yet uploaded *look like* TSUS Chennai on the
+            // storefront. Better to show the dark gradient backdrop with
+            // the school name in white than impersonate another school.
+            //
+            // Source order:
+            //   1. bannerUrl (full R2 URL, admin-uploaded).
+            //   2. logoUrl (full R2 URL, admin-uploaded).
+            //   3. schoolLogoUrl, only when it's a full https:// URL —
+            //      legacy /files/* paths pointed at the retired ERPNext
+            //      (erp.inventre.in) and 404 today, so they're skipped.
+            const bannerSrc =
+              school.bannerUrl ||
+              school.logoUrl ||
+              (school.schoolLogoUrl?.startsWith("http") ? school.schoolLogoUrl : null);
+            return (
             <div className="relative rounded-2xl overflow-hidden border border-ink-100 bg-ink-900 min-h-[260px] lg:min-h-[340px]">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={
-                  school.bannerUrl ||
-                  school.logoUrl ||
-                  // schoolLogoUrl is an ERP-relative path (/files/…) — only
-                  // usable as an image src when it's a full https:// URL.
-                  (school.schoolLogoUrl?.startsWith("http") ? school.schoolLogoUrl : null) ||
-                  "https://pub-d46aef8f98ef4da0a1834fb6f554ae2c.r2.dev/images/school_banner2.jpg"
-                }
-                alt={school.name}
-                loading="lazy"
-                className="absolute inset-0 h-full w-full object-cover"
-              />
+              {bannerSrc ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={bannerSrc}
+                  alt={school.name}
+                  loading="lazy"
+                  className="absolute inset-0 h-full w-full object-cover"
+                />
+              ) : null}
               <div className="absolute inset-0 bg-gradient-to-t from-ink-900/85 via-ink-900/20 to-transparent" />
               <div className="relative h-full p-6 flex flex-col justify-between text-white">
                 <span className="self-start rounded-full bg-white/15 backdrop-blur border border-white/25 px-3 py-1.5 text-[10px] font-bold tracking-[0.16em] uppercase">
@@ -257,7 +270,8 @@ export function StudentBar() {
                 </div>
               </div>
             </div>
-          )}
+            );
+          })()}
         </div>
       </div>
     </section>
