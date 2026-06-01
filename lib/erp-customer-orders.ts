@@ -25,6 +25,7 @@ import {
 import {
   categoryIdBySku,
   dispatchQtysByItemCode,
+  groupItemsByAuditCategory,
   groupItemsByRootCategory,
   type CategoryGroup,
 } from "@/lib/order-category-tracking";
@@ -407,6 +408,7 @@ export async function getParentOrderDetailFromErp(
     dispatched_pu: number;
     enrollment: string | null;
     local_ship: Record<string, unknown> | null;
+    derived_by_category: Record<string, string> | null;
   }>(
     await db.execute(sql`
       SELECT so.erp_name AS order_no, so.customer_name, so.contact_mobile,
@@ -427,7 +429,8 @@ export async function getParentOrderDetailFromErp(
                 WHERE pu.order_erp_name = so.erp_name AND pu.status = 'dispatched')::int
                AS dispatched_pu,
              c.custom_enrollment_number AS enrollment,
-             lo.shipping_address AS local_ship
+             lo.shipping_address AS local_ship,
+             so.raw->'derived_delivery_by_category' AS derived_by_category
       FROM erp.sales_orders so
       LEFT JOIN erp.customers c ON c.erp_name = so.customer
       LEFT JOIN orders lo ON lo.erp_so_name = so.erp_name
@@ -589,50 +592,60 @@ export async function getParentOrderDetailFromErp(
         created_at: string;
       } | undefined),
   ]);
-  // Audit records dispatch at the shipment/parcel level only for many
-  // orders — per-line counters stay at 0 even after a parcel is
-  // shipped. When that happens, fall back to the *per-category*
-  // shipment state. A bookkit-only parcel in transit must NOT make
-  // unshipped uniform lines also read as "in transit", which is what
-  // the old single-enum fallback did.
-  const fallbackByErpCategory = new Map<
-    string,
-    "delivered" | "in_transit"
-  >();
-  for (const s of shipments) {
-    const cat = (s.item_category ?? "").toLowerCase().trim();
-    if (!cat) continue;
-    const status = (s.status ?? "").toLowerCase();
-    const isDelivered = status === "delivered";
-    const isInTransit =
-      !!s.dispatched_at ||
-      ["shipped", "in_transit", "dispatched", "packed"].includes(status);
-    const prev = fallbackByErpCategory.get(cat);
-    if (isDelivered) fallbackByErpCategory.set(cat, "delivered");
-    else if (isInTransit && prev !== "delivered")
-      fallbackByErpCategory.set(cat, "in_transit");
+  // Audit is the source of truth for per-category tracking. Its
+  // /api/orders/{name} header gives a `derived_delivery_by_category`
+  // map (e.g. {"bookkit":"In Transit","uniform":"Pending"}) which is
+  // exactly what the customer's card should show. We mirror that
+  // verbatim and only fall back to the older per-shipment derivation
+  // when the audit field is missing (very old polled orders).
+  const itemsForGrouping = items.map((it) => {
+    const qtys = (it.sku && qtysByCode.get(it.sku)) || {
+      deliveredQty: 0,
+      pickedQty: 0,
+      returnedQty: 0,
+      erpCategory: null as string | null,
+    };
+    return {
+      id: String(it.id),
+      name: it.item_name ?? "Item",
+      qty: it.qty ?? 0,
+      categoryId: it.sku ? catBySku.get(it.sku) ?? null : null,
+      deliveredQty: qtys.deliveredQty,
+      pickedQty: qtys.pickedQty,
+      returnedQty: qtys.returnedQty,
+      erpCategory: qtys.erpCategory,
+    };
+  });
+
+  let categoryGroups: Awaited<ReturnType<typeof groupItemsByRootCategory>>;
+  const auditCat = o.derived_by_category ?? null;
+  if (auditCat && Object.keys(auditCat).length > 0) {
+    categoryGroups = groupItemsByAuditCategory(itemsForGrouping, auditCat);
+  } else {
+    // Pre-mirror orders (no derived_delivery_by_category on audit yet).
+    // Fall back to the per-shipment derivation so the card isn't blank.
+    const fallbackByErpCategory = new Map<
+      string,
+      "delivered" | "in_transit"
+    >();
+    for (const s of shipments) {
+      const cat = (s.item_category ?? "").toLowerCase().trim();
+      if (!cat) continue;
+      const status = (s.status ?? "").toLowerCase();
+      const isDelivered = status === "delivered";
+      const isInTransit =
+        !!s.dispatched_at ||
+        ["shipped", "in_transit", "dispatched", "packed"].includes(status);
+      const prev = fallbackByErpCategory.get(cat);
+      if (isDelivered) fallbackByErpCategory.set(cat, "delivered");
+      else if (isInTransit && prev !== "delivered")
+        fallbackByErpCategory.set(cat, "in_transit");
+    }
+    categoryGroups = await groupItemsByRootCategory(
+      itemsForGrouping,
+      fallbackByErpCategory
+    );
   }
-  const categoryGroups = await groupItemsByRootCategory(
-    items.map((it) => {
-      const qtys = (it.sku && qtysByCode.get(it.sku)) || {
-        deliveredQty: 0,
-        pickedQty: 0,
-        returnedQty: 0,
-        erpCategory: null as string | null,
-      };
-      return {
-        id: String(it.id),
-        name: it.item_name ?? "Item",
-        qty: it.qty ?? 0,
-        categoryId: it.sku ? catBySku.get(it.sku) ?? null : null,
-        deliveredQty: qtys.deliveredQty,
-        pickedQty: qtys.pickedQty,
-        returnedQty: qtys.returnedQty,
-        erpCategory: qtys.erpCategory,
-      };
-    }),
-    fallbackByErpCategory
-  );
   const pollPending =
     !pollMeta?.erp_last_polled_at &&
     !!pollMeta?.created_at &&

@@ -175,6 +175,119 @@ function statusOf(
 export type FallbackState = "none" | "in_transit" | "delivered";
 
 /**
+ * Audit's per-category status text → our 4-state UI enum.
+ * Audit uses strings like "In Transit", "Dispatched", "Delivered",
+ * "Pending", "Partial Dispatch", "Not Yet Delivered", "Returned".
+ */
+function mapAuditStatus(raw: string | null | undefined): CategoryGroupStatus {
+  const s = (raw ?? "").toLowerCase().trim();
+  if (!s) return "pending";
+  if (s.includes("deliver") && !s.includes("not")) return "delivered";
+  if (s.includes("return")) return "returned";
+  if (
+    s.includes("transit") ||
+    s.includes("dispatch") ||
+    s.includes("shipped") ||
+    s.includes("packed") ||
+    s.includes("partial")
+  )
+    return "in transit";
+  return "pending";
+}
+
+function titleCaseCategory(key: string): string {
+  // Audit gives lowercase tokens ("bookkit", "uniform"); render them
+  // capitalised on the customer card.
+  if (!key) return "Other";
+  return key
+    .split(/[\s_-]+/)
+    .filter(Boolean)
+    .map((w) => w[0].toUpperCase() + w.slice(1))
+    .join(" ");
+}
+
+/**
+ * Build category cards directly from audit's
+ * `derived_delivery_by_category` map on the order header. This is the
+ * source of truth for storefront tracking — we mirror what audit says.
+ *
+ * Items are placed into a card by their ERP `category` (mirrored on
+ * erp.sales_order_items). Orphan items (no category mirrored) are
+ * matched into a card if the category key appears as a substring of
+ * the item name; otherwise they go to "Other".
+ */
+export function groupItemsByAuditCategory(
+  items: Array<{
+    id: string;
+    name: string;
+    qty: number;
+    erpCategory?: string | null;
+  }>,
+  derivedByCategory: Record<string, string> | null | undefined
+): CategoryGroup[] {
+  const entries = Object.entries(derivedByCategory ?? {});
+  if (entries.length === 0) return [];
+
+  // One group per audit category, in the order audit lists them.
+  const groups = new Map<string, CategoryGroup>();
+  for (const [key, statusText] of entries) {
+    const k = key.toLowerCase();
+    groups.set(k, {
+      rootCategoryId: null,
+      rootCategoryName: titleCaseCategory(key),
+      totalQty: 0,
+      deliveredQty: 0,
+      pickedQty: 0,
+      returnedQty: 0,
+      status: mapAuditStatus(statusText),
+      items: [],
+    });
+  }
+  const otherGroup: CategoryGroup = {
+    rootCategoryId: null,
+    rootCategoryName: OTHER_LABEL,
+    totalQty: 0,
+    deliveredQty: 0,
+    pickedQty: 0,
+    returnedQty: 0,
+    status: "pending",
+    items: [],
+  };
+
+  const keys = [...groups.keys()];
+  for (const it of items) {
+    const erpCat = (it.erpCategory ?? "").toLowerCase().trim();
+    let target = erpCat ? groups.get(erpCat) : undefined;
+    if (!target) {
+      // Orphan: best-effort match by item-name substring against a
+      // category key.
+      const lcName = it.name.toLowerCase();
+      const matchKey = keys.find((k) => k && lcName.includes(k));
+      target = matchKey ? groups.get(matchKey) : undefined;
+    }
+    if (!target) target = otherGroup;
+    // Quantity bookkeeping mirrors the audit status — we don't have
+    // per-line counters here, so the card shows "N / N <status>".
+    target.totalQty += it.qty;
+    if (target.status === "delivered") target.deliveredQty += it.qty;
+    else if (target.status === "in transit") target.pickedQty += it.qty;
+    else if (target.status === "returned") target.returnedQty += it.qty;
+    target.items.push({
+      id: it.id,
+      name: it.name,
+      qty: it.qty,
+      deliveredQty: target.status === "delivered" ? it.qty : 0,
+      pickedQty: target.status === "in transit" ? it.qty : 0,
+      returnedQty: target.status === "returned" ? it.qty : 0,
+    });
+  }
+
+  const out = [...groups.values()];
+  if (otherGroup.items.length > 0) out.push(otherGroup);
+  return out;
+}
+
+/**
  * Group items by root category and roll up dispatch counts. Items with
  * no resolvable category fall into a single synthetic "Other" group.
  *
