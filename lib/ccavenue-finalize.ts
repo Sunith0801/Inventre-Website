@@ -297,7 +297,21 @@ export async function finalizeOrderPayment(args: {
 
   await clearCart(snap.parentId);
   void notifyOrderStatus(orderId, "confirmed");
-  void enqueueOrderEvent(orderId, "order.created");
+  // Multi-school baskets settle one CCAvenue payment against multiple
+  // sibling orders sharing an orderGroupId (see the update block above).
+  // Audit needs to learn about each sibling, not just the primary; missing
+  // siblings used to silently vanish from audit.inventre.in.
+  if (primary?.orderGroupId) {
+    const siblings = await db
+      .select({ id: orders.id })
+      .from(orders)
+      .where(eq(orders.orderGroupId, primary.orderGroupId));
+    for (const sib of siblings) {
+      void enqueueOrderEvent(sib.id, "order.created");
+    }
+  } else {
+    void enqueueOrderEvent(orderId, "order.created");
+  }
   // Auto-generate the GST invoice now that payment is confirmed. Wrapped
   // in fire-and-forget so a transient invoice-gen failure (e.g. tax
   // calculation hiccup) doesn't roll back the customer-visible
