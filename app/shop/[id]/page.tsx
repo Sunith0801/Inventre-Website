@@ -315,7 +315,7 @@ export default function ProductPage() {
 
   // Language-switching state for kit PDPs — avoids full page navigation.
   const [activeLangSlug, setActiveLangSlug] = useState<string>(id);
-  const [langData, setLangData] = useState<Map<string, { bundleTree: BundleNode[]; price: number; name: string; img: string | null }>>(new Map());
+  const [langData, setLangData] = useState<Map<string, { bundleTree: BundleNode[]; price: number; name: string; img: string | null; variantId: string | null }>>(new Map());
   // Template-variant language pairs (Grade 7 style: language options stored as product_variants)
   const [templateLangPairs, setTemplateLangPairs] = useState<LangPair[] | null>(null);
   const [selectedTemplateLang, setSelectedTemplateLang] = useState<LangPair | null>(null);
@@ -428,8 +428,14 @@ export default function ProductPage() {
           }
 
           // Seed the current page's data into langData.
-          const initialMap = new Map<string, { bundleTree: BundleNode[]; price: number; name: string; img: string | null }>();
-          initialMap.set(id, { bundleTree: initialTree, price: p.product.price, name: p.product.name, img: p.product.img ?? null });
+          const initialMap = new Map<string, { bundleTree: BundleNode[]; price: number; name: string; img: string | null; variantId: string | null }>();
+          initialMap.set(id, {
+            bundleTree: initialTree,
+            price: p.product.price,
+            name: p.product.name,
+            img: p.product.img ?? null,
+            variantId: p.product.variants?.[0]?.id ?? null,
+          });
           setLangData(initialMap);
 
           // Prefetch bundle trees for all language variants in parallel.
@@ -452,6 +458,7 @@ export default function ProductPage() {
                       price: data.product.price,
                       name: data.product.name,
                       img: data.product.img ?? null,
+                      variantId: data.product.variants?.[0]?.id ?? null,
                     });
                   }
                 }
@@ -882,9 +889,24 @@ export default function ProductPage() {
                             onClick={async () => {
                               if (addBusy) return;
                               setAddBusy(true);
+                              // Kit-with-language PDPs: the current `product`
+                              // is the template (0 variants of its own). Each
+                              // sibling language ships its own single variant
+                              // id via the prefetch into `langData`. Prefer
+                              // that over the legacy size-based lookup, which
+                              // can never resolve for kits (no real size axis).
+                              const langVariantId = langData.get(activeLangSlug)?.variantId ?? null;
+                              const kitFallbackVariantId =
+                                product.kind === "kit" || product.isKit === true
+                                  ? Object.values(product.variantIds ?? {})[0] ?? null
+                                  : null;
                               const r = matchedVariant
                                 ? await addByVariantId(matchedVariant.id, 1)
-                                : await addToCart(product, product.sizes[0] ?? "");
+                                : langVariantId
+                                  ? await addByVariantId(langVariantId, 1)
+                                  : kitFallbackVariantId
+                                    ? await addByVariantId(kitFallbackVariantId, 1)
+                                    : await addToCart(product, product.sizes[0] ?? "");
                               setAddBusy(false);
                               if (!r.ok && r.error) setAddError(r.error);
                               else setAddError(null);
@@ -1117,7 +1139,16 @@ export default function ProductPage() {
                           onClick={async () => {
                             if (addBusy) return;
                             setAddBusy(true);
-                            const r = await addToCart(product, product.sizes[0] ?? "");
+                            // Same kit single-variant shortcut as above —
+                            // skip the size-based lookup for bookkits whose
+                            // "size" is just the "Standard" placeholder.
+                            const kitFallbackVariantId =
+                              product.kind === "kit" || product.isKit === true
+                                ? Object.values(product.variantIds ?? {})[0] ?? null
+                                : null;
+                            const r = kitFallbackVariantId
+                              ? await addByVariantId(kitFallbackVariantId, 1)
+                              : await addToCart(product, product.sizes[0] ?? "");
                             setAddBusy(false);
                             if (!r.ok && r.error) setAddError(r.error);
                             else setAddError(null);

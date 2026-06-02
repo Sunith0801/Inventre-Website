@@ -147,36 +147,57 @@ export function BuyBox({
   // the size and ignores colour, which is what produced the wrong-colour-
   // in-cart bug. Find the variant whose attributes match every current
   // selection across all axes (size + non-size).
-  const sizeAxisName = useMemo(() => {
-    const g = (product.attributeGroups ?? []).find((g) => /size|sizes/i.test(g.name));
-    return g?.name ?? null;
-  }, [product.attributeGroups]);
+  const sizeAxis = useMemo(
+    () => (product.attributeGroups ?? []).find((g) => /size|sizes/i.test(g.name)) ?? null,
+    [product.attributeGroups]
+  );
+  const sizeAxisName = sizeAxis?.name ?? null;
   const resolvedAttrVariantId = useMemo<string | null>(() => {
     if (nonSizeAttrGroups.length === 0) return null;
     const map = product.variantsByAttributeKey ?? {};
     if (Object.keys(map).length === 0) return null;
     const sel: Record<string, string> = { ...attrSel };
-    if (sizeAxisName && size) {
-      // size pills store with a single-letter prefix (e.g. "V28") but
-      // product_attribute_values.value carries the clean form. Mirror the
-      // strip logic the picker uses for display.
-      const stripped = /^[A-Z][A-Z0-9-]/i.test(size) ? size.slice(1) : size;
-      sel[sizeAxisName] = stripped;
+    if (sizeAxisName && size && sizeAxis) {
+      // size pills may be stored with a single-letter prefix (e.g. "V28")
+      // but product_attribute_values.value carries the clean form. Resolve
+      // against the axis's known values: exact match first (so "XL" stays
+      // "XL"), then strip a single-char prefix only if the result is itself
+      // a known value. An indiscriminate strip turned "XL" → "L" before.
+      const clean =
+        sizeAxis.values.includes(size)
+          ? size
+          : sizeAxis.values.includes(size.slice(1))
+            ? size.slice(1)
+            : size;
+      sel[sizeAxisName] = clean;
     }
     const key = buildAttributeKey(sel);
     return map[key] ?? null;
-  }, [nonSizeAttrGroups.length, attrSel, size, sizeAxisName, product.variantsByAttributeKey]);
+  }, [nonSizeAttrGroups.length, attrSel, size, sizeAxisName, sizeAxis, product.variantsByAttributeKey]);
 
   const handleAdd = async () => {
     if (!canAdd || addBusy) return;
     setAddBusy(true);
     setAddError(null);
+    // Bookkits / book sets carry a single SKU with no real size axis
+    // (variant size is the placeholder "Standard" and there are no
+    // product_variant_attributes rows). The legacy size-based variant
+    // lookup at /api/shop/variant can't resolve them, so use the variant
+    // id the PDP DTO already ships in `variantIds`.
+    const kitVariantId =
+      product.kind === "kit" || product.isKit === true
+        ? product.variantIds?.[size] ??
+          Object.values(product.variantIds ?? {})[0] ??
+          null
+        : null;
     const adder =
       useMultiAxisPicker && resolvedVariantId
         ? () => addByVariantId(resolvedVariantId, 1)
         : resolvedAttrVariantId
           ? () => addByVariantId(resolvedAttrVariantId, 1)
-          : () => add(product, size);
+          : kitVariantId
+            ? () => addByVariantId(kitVariantId, 1)
+            : () => add(product, size);
     const results = await Promise.all(Array.from({ length: qty }, adder));
     setAddBusy(false);
     const failed = results.find((r) => !r.ok);
@@ -650,6 +671,23 @@ function AttributeGroupPicker({
 }) {
   const value = isSize ? selectedSize : attrValue ?? values[0] ?? "";
   const setValue = isSize ? onSelectSize : (onAttrChange ?? (() => {}));
+  // Sizes are displayed clean (e.g. "28", "2XL", "L", "XL", "34-22") but some
+  // products store them prefixed in product_variants ("V28", "L2XL", "Q34-22").
+  // Resolve the active clean value against the actual `values` list: prefer
+  // an exact match (so "XL" stays "XL"); only fall back to single-char strip
+  // when the stripped form is itself one of the known values. Without this
+  // an indiscriminate strip turned "XL" → "L" and lit up both pills.
+  const cleanValue = isSize
+    ? values.includes(value)
+      ? value
+      : value && values.includes(value.slice(1))
+        ? value.slice(1)
+        : value
+    : value;
+  const prefix =
+    isSize && selectedSize.length > cleanValue.length
+      ? selectedSize.slice(0, selectedSize.length - cleanValue.length)
+      : "";
   return (
     <div className="mt-7">
       <p className="text-[11px] font-semibold tracking-[0.18em] uppercase text-ink-900">
@@ -657,19 +695,7 @@ function AttributeGroupPicker({
       </p>
       <div className="mt-2.5 flex flex-wrap gap-2">
         {values.map((v) => {
-          // Sizes are displayed clean (e.g. "28", "2XL", "34-22") but
-          // stored prefixed in product_variants ("V28", "L2XL", "Q34-22").
-          // Tolerate any single-letter prefix on read; on click re-add
-          // whichever prefix the existing selection uses.
-          const stripped = (s: string) =>
-            /^[A-Z][A-Z0-9-]/i.test(s) ? s.slice(1) : s;
-          const active =
-            value === v ||
-            stripped(value) === v ||
-            value?.slice(1) === v ||
-            value?.startsWith(v) === false && stripped(value) === v;
-          const prefix =
-            /^[A-Z][A-Z0-9-]/i.test(selectedSize) ? selectedSize[0] : "";
+          const active = v === cleanValue;
           return (
             <button
               key={v}
