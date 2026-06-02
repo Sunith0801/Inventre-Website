@@ -21,4 +21,9 @@ CRON_TOKEN=REPLACE_ME
 # Poller — pulls ERP status updates every 60s.
 */1 * * * * root  curl -fsS -m 60 -X POST -H "Authorization: Bearer $CRON_TOKEN" http://127.0.0.1:3000/api/cron/erp-poll  >> /var/log/inventre-erp-poll.log  2>&1
 
-# Optional: nightly logrotate is recommended for the two log files above.
+# Reconciler — catches any paid+confirmed order whose code path forgot to
+# enqueue an order.created event. Re-enqueues anything older than 10 min
+# with no erp_so_name and no in-flight queue/DLQ row. Idempotent.
+*/10 * * * * root  curl -fsS -m 60 -X POST -H "Authorization: Bearer $CRON_TOKEN" http://127.0.0.1:3000/api/cron/erp-reconcile >> /var/log/inventre-erp-reconcile.log 2>&1
+
+# Optional: nightly logrotate is recommended for the log files above.
