@@ -141,11 +141,30 @@ export async function buildErpOrderPayload(
     .where(eq(schools.id, order.schoolId))
     .limit(1);
 
-  const [payment] = await db
+  // Multi-school baskets only attach the basket's payment row to the
+  // PRIMARY order (see app/api/checkout/ccavenue/create-order/route.ts).
+  // Siblings sharing the same orderGroupId have no payment row of their
+  // own, so a naive WHERE order_id = sibling.id returns nothing and audit
+  // ends up with empty `custom_payment_status` / `_mode` / `_flow` columns
+  // — those rows are then hidden by audit's UI filters. Fall back to any
+  // paid payment row in the same orderGroupId so siblings ship the
+  // basket's payment metadata.
+  let [payment] = await db
     .select()
     .from(payments)
     .where(eq(payments.orderId, orderId))
     .limit(1);
+  if (!payment && order.orderGroupId) {
+    const siblingPayments = await db
+      .select({ p: payments })
+      .from(payments)
+      .innerJoin(orders, eq(orders.id, payments.orderId))
+      .where(
+        sql`${orders.orderGroupId} = ${order.orderGroupId} AND ${payments.status} = 'paid'`
+      )
+      .limit(1);
+    payment = siblingPayments[0]?.p;
+  }
 
   const addr: any = (order.shippingAddress as any) || {};
   const display = [
