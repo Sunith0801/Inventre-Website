@@ -15,6 +15,7 @@ import {
   resolveAppliedCoupon,
   clearAppliedCoupon,
 } from "@/lib/cart-coupon";
+import { enqueueOrderEvent } from "@/lib/erp-bridge";
 
 /**
  * Sibling of /api/checkout/create-order, but routes through CCAvenue.
@@ -267,6 +268,14 @@ export async function POST(req: Request) {
     try {
       await clearCart(me.id);
     } catch {}
+    // Mirror the CCAvenue-finalize side-effect: enqueue an `order.created`
+    // event for every sibling in the basket so audit.inventre.in sees
+    // these zero-value orders. Without this the complimentary short-circuit
+    // bypasses both the gateway *and* the audit notification — see
+    // lib/ccavenue-finalize.ts:300 for the paid-flow counterpart.
+    for (const sib of created) {
+      void enqueueOrderEvent(sib.id, "order.created");
+    }
     return NextResponse.json({
       orderId: primary.id,
       orderNumber: primary.orderNumber,
