@@ -15,7 +15,7 @@
  * Not `server-only`: also imported by tsx admin tools that run outside
  * the Next.js runtime, same convention as lib/repos/product-attribute-groups.
  */
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import {
   orders,
@@ -204,8 +204,12 @@ export async function finalizeOrderPayment(args: {
       method: "ccavenue",
       paymentMode: normalized.paymentMode ?? "CCAvenue",
       paymentDate: normalized.paymentDate ?? formatPaymentDate(now),
-      paidAmount:
-        normalized.paidAmount ?? ((snap.orderTotal ?? 0) / 100).toFixed(2),
+      // Always use the primary order's own total for paid_amount, never the
+      // gateway-reported amount (which is the basket total in multi-sibling
+      // baskets — would inflate the primary's per-order display).
+      // payment.amount stays per-order too (see create-order/route.ts:308),
+      // so SUM across the group still equals the gateway capture.
+      paidAmount: ((snap.orderTotal ?? 0) / 100).toFixed(2),
       paidCurrency: "INR",
       gatewayProvider: "CCAVENUE",
       gatewayTrackingId: normalized.trackingId,
@@ -215,6 +219,42 @@ export async function finalizeOrderPayment(args: {
       lastStatusPollAt: source === "callback" ? undefined : new Date(),
     })
     .where(eq(payments.orderId, orderId));
+
+  // Fan the captured payment out to every sibling order in the basket.
+  // The order-status update above already flips each sibling to
+  // paid+confirmed, but historically only the primary got a `payments`
+  // row — siblings ended up with "No payment row recorded yet" in the
+  // admin and zero CCAvenue trace (root cause of the missing-payment-
+  // row reports on 2026-06-04). Copy the primary's gateway fields onto
+  // a per-sibling row, scoped to the sibling's own order_id, total, and
+  // order_number. NOT EXISTS keeps the insert idempotent against the
+  // race where two finalize callers (callback + status-poll) fire
+  // concurrently.
+  if (primary?.orderGroupId) {
+    await db.execute(sql`
+      INSERT INTO payments (
+        order_id, provider, gateway_provider, gateway_order_id,
+        internal_payment_reference, amount, status, payment_flow,
+        method, payment_mode, payment_date, paid_amount, paid_currency,
+        gateway_tracking_id, gateway_response_message, payment_finalized,
+        refund_status, payment_attempt_count, payment_retry_count, raw
+      )
+      SELECT
+        sib.id, 'ccavenue', 'CCAVENUE', sib.order_number,
+        ${orderId}, sib.total, 'paid'::payment_status, 'ONLINE',
+        'ccavenue', ${normalized.paymentMode ?? "CCAvenue"},
+        ${normalized.paymentDate ?? formatPaymentDate(now)},
+        to_char(sib.total::numeric / 100, 'FM999999990.00'), 'INR',
+        ${normalized.trackingId ?? null},
+        ${`sibling-of:${orderId} success:${normalized.trackingId ?? ""} (via ${source})`},
+        true, 'NOT_REQUESTED', 1, 0,
+        ${normalized.rawResponse ?? null}::jsonb
+      FROM orders sib
+      WHERE sib.order_group_id = ${primary.orderGroupId}
+        AND sib.id <> ${orderId}
+        AND NOT EXISTS (SELECT 1 FROM payments p WHERE p.order_id = sib.id)
+    `);
+  }
 
   // Atomic stock decrement. Failures (negative stock, missing warehouse,
   // ledger constraint) are logged for ops but DO NOT downgrade the order

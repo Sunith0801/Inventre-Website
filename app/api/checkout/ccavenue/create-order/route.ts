@@ -240,26 +240,34 @@ export async function POST(req: Request) {
         confirmedAt: now,
       })
       .where(eq(orders.orderGroupId, orderGroupId));
-    await db.insert(payments).values({
-      orderId: primary.id,
-      provider: "complimentary",
-      amount: 0,
-      status: "paid",
-      paymentFlow: "ONLINE",
-      gatewayProvider: "COMPLIMENTARY",
-      gatewayOrderId: primary.orderNumber,
-      internalPaymentReference: primary.orderNumber,
-      paidAmount: "0.00",
-      paidCurrency: "INR",
-      paymentDate: now.toISOString().slice(0, 10),
-      refundStatus: "NOT_REQUESTED",
-      paymentAttemptCount: 1,
-      paymentRetryCount: 0,
-      paymentFinalized: true,
-      method: "complimentary",
-      paymentMode: "Complimentary",
-      gatewayResponseMessage: "Zero-value basket — gateway bypassed",
-    });
+    // One payment row per order in the basket — the admin order page
+    // reads `payments` per-order, so siblings without a row showed up
+    // as "No payment row recorded yet" (root cause of the missing-CC-
+    // avenue-details reports on 2026-06-04). Even though every comp
+    // order is ₹0, each sibling gets its own row keyed to its order_id.
+    for (const sib of created) {
+      await db.insert(payments).values({
+        orderId: sib.id,
+        provider: "complimentary",
+        amount: 0,
+        status: "paid",
+        paymentFlow: "ONLINE",
+        gatewayProvider: "COMPLIMENTARY",
+        gatewayOrderId: sib.orderNumber,
+        internalPaymentReference:
+          sib.id === primary.id ? primary.orderNumber : `sibling-of:${primary.id}`,
+        paidAmount: "0.00",
+        paidCurrency: "INR",
+        paymentDate: now.toISOString().slice(0, 10),
+        refundStatus: "NOT_REQUESTED",
+        paymentAttemptCount: 1,
+        paymentRetryCount: 0,
+        paymentFinalized: true,
+        method: "complimentary",
+        paymentMode: "Complimentary",
+        gatewayResponseMessage: "Zero-value basket — gateway bypassed",
+      });
+    }
     if (resolvedCoupon) {
       try {
         await clearAppliedCoupon(me.id);
@@ -290,14 +298,18 @@ export async function POST(req: Request) {
     });
   }
 
-  // CCAvenue payment captures the BASKET total. We attach it to the
-  // PRIMARY order (first child) for the gateway round-trip; the finalize
-  // step propagates the captured payment record to every sibling order
-  // sharing the orderGroupId.
+  // CCAvenue physically captures the BASKET total in one transaction
+  // (tracking id shared across the group). But each order — primary or
+  // sibling — gets its OWN payments row stamped with that order's own
+  // total, so the admin order page can display per-kid amounts truthfully
+  // instead of inflating the primary's row with the basket sum.
+  // SUM(payment.amount) across the group still equals the basket charge,
+  // so the CCAvenue admin GMV aggregate is unchanged. Finalize-time
+  // sibling propagation lives in lib/ccavenue-finalize.ts.
   await db.insert(payments).values({
     orderId: primary.id,
     provider: "ccavenue",
-    amount: basketTotalP,
+    amount: primary.total,
     status: "pending",
     paymentFlow: "ONLINE",
     gatewayProvider: "CCAVENUE",

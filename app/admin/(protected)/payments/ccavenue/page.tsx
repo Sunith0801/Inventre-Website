@@ -200,13 +200,12 @@ export default async function CCAvenuePaymentLogsPage({
               AND p.payment_finalized = false
               AND o.created_at < now() - interval '${sql.raw(String(STUCK_MINUTES))} minutes'
           )::int AS stuck,
-          -- Sum payment.amount (the basket total CCAvenue actually
-          -- charged), not orders.total. They diverge when a single
-          -- CCAvenue transaction paid for multiple sibling orders in
-          -- the same orderGroup — the payment row is attached only to
-          -- the primary order, so summing o.total per payment row
-          -- misses the sibling order values. Summing p.amount gives
-          -- the true gateway collection, matching dashboard GMV.
+          -- Sum payment.amount: now per-order on every row (post 2026-06-04
+          -- multi-sibling split). Each sibling order has its own payment
+          -- row stamped with its own total, so SUM(p.amount) across the
+          -- group still equals the basket total CCAvenue actually charged
+          -- (gateway capture = sum of per-order totals). Total across all
+          -- groups equals true GMV without double-counting.
           COALESCE(SUM(CASE WHEN p.status = 'paid' THEN p.amount ELSE 0 END), 0)::bigint AS collected_paise
           FROM payments p
           JOIN orders o ON o.id = p.order_id
