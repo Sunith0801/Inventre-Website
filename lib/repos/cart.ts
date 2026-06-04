@@ -611,6 +611,38 @@ async function getProductMoq(variantId: string): Promise<number> {
   return row?.minOrderQty ?? 1;
 }
 
+/**
+ * Re-derive each bundleSelection's `size` field from the variant's actual
+ * `pv.size` in DB at write time, so the stored JSON can never disagree
+ * with the variant_id. Defensive against any client-side picker bug that
+ * sends an inconsistent (variantId, size) pair — symptom was users picking
+ * one size in the Magic Box configurator and seeing a different one in the
+ * cart (2026-06-04). The variantId remains authoritative; only the display
+ * string is corrected. Warn-logs every mismatch with enough context that
+ * we can trace back to the configurator path.
+ */
+async function canonicalizeBundleSizes(
+  bundleSelections: BundleSelection[]
+): Promise<BundleSelection[]> {
+  const ids = Array.from(new Set(bundleSelections.map((s) => s.variantId)));
+  if (ids.length === 0) return bundleSelections;
+  const rows = await db
+    .select({ id: productVariants.id, size: productVariants.size })
+    .from(productVariants)
+    .where(inArray(productVariants.id, ids));
+  const sizeById = new Map(rows.map((r) => [r.id, r.size]));
+  return bundleSelections.map((s) => {
+    const dbSize = sizeById.get(s.variantId);
+    if (dbSize == null) return s;
+    if (s.size && s.size !== dbSize) {
+      console.warn(
+        `[cart] bundleSelection size mismatch: variantId=${s.variantId} clientSize=${JSON.stringify(s.size)} dbSize=${JSON.stringify(dbSize)} product=${s.name}`
+      );
+    }
+    return { ...s, size: dbSize };
+  });
+}
+
 export async function addToCart(
   parentId: string,
   variantId: string,
@@ -626,9 +658,10 @@ export async function addToCart(
   // Configurable Magic Box line: one fixed-price line. Set qty (don't
   // increment) and persist the component picks. Re-adding re-configures.
   if (bundleSelections !== undefined) {
+    const canonical = await canonicalizeBundleSizes(bundleSelections);
     await redis.hset(k, variantId, qty);
     await redis.expire(k, CART_TTL);
-    await mirrorWriteToDb(parentId, variantId, qty, bundleSelections, studentId);
+    await mirrorWriteToDb(parentId, variantId, qty, canonical, studentId);
     return;
   }
 

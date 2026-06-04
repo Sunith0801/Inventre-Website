@@ -147,20 +147,27 @@ export function MultiAttributePicker({
 
   const [selection, setSelection] = useState<Record<string, string>>(initialSelection);
 
-  // Compute the resolved variant id whenever selection / map changes.
-  useEffect(() => {
-    const isComplete = groups.every((g) => Boolean(selection[g.name]));
+  // Resolve a selection → variantId. Pure, called both from useEffect on
+  // mount and synchronously from pick() so a rapid Add-to-Cart click after
+  // a size click never reads a stale pickedVariantId in the parent.
+  const resolveSelection = (sel: Record<string, string>) => {
+    const isComplete = groups.every((g) => Boolean(sel[g.name]));
     if (!isComplete) {
       onResolve(null);
     } else {
-      const key = buildAttributeKey(selection);
+      const key = buildAttributeKey(sel);
       onResolve(variantsByAttributeKey[key] ?? null);
     }
-    onSelectionChange?.(selection);
-    // onResolve / onSelectionChange identities can flap; we only want to
-    // fire on real selection changes.
+    onSelectionChange?.(sel);
+  };
+
+  // Initial / external-change resolution. Pick handler resolves
+  // synchronously below, so this effect's job is the mount-time pass and
+  // any external prop-driven change.
+  useEffect(() => {
+    resolveSelection(selection);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selection, variantsByAttributeKey, groups]);
+  }, [variantsByAttributeKey, groups]);
 
   // Index of the first unfilled multi-value axis — anything after this
   // is disabled until the user fills it.
@@ -178,20 +185,24 @@ export function MultiAttributePicker({
   // UI reflects an internally consistent selection (and the resolver
   // never reports a non-existent combination).
   const pick = (axisName: string, value: string) => {
-    setSelection((cur) => {
-      const next: Record<string, string> = { ...cur, [axisName]: value };
-      // Re-validate every other axis against the new selection. If a
-      // previously-picked value is no longer reachable, drop it.
-      const newAvail = computeAvailableByAxis(next, variantsByAttributeKey, groups);
-      for (const g of groups) {
-        if (g.name === axisName) continue;
-        const v = next[g.name];
-        if (v && !newAvail[g.name].has(v)) {
-          delete next[g.name];
-        }
+    const next: Record<string, string> = { ...selection, [axisName]: value };
+    // Re-validate every other axis against the new selection. If a
+    // previously-picked value is no longer reachable, drop it.
+    const newAvail = computeAvailableByAxis(next, variantsByAttributeKey, groups);
+    for (const g of groups) {
+      if (g.name === axisName) continue;
+      const v = next[g.name];
+      if (v && !newAvail[g.name].has(v)) {
+        delete next[g.name];
       }
-      return next;
-    });
+    }
+    setSelection(next);
+    // Resolve synchronously — don't wait for the useEffect tick to flush
+    // onResolve to the parent. If the user clicks Add to Cart before the
+    // effect runs, the parent's pickedVariantId could otherwise still be
+    // the previous selection's variant (root cause of the picker-30-but-
+    // cart-shows-28 symptom observed 2026-06-04).
+    resolveSelection(next);
   };
 
   const mandateAxisName = mandatesByAxis?.axisName;
