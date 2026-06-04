@@ -60,17 +60,36 @@ if [ "$MODE" = "full" ]; then
   # crashes migrations with `getaddrinfo EAI_AGAIN postgres`. The connect
   # is a no-op when the attachment is already present.
   docker network connect inventre-deploy_default inventre-deploy-app 2>/dev/null || true
-else
-  # Fast mode: container stays in place. We still need it stopped while we
-  # overwrite /app, otherwise the running node process holds open file
-  # handles and we'd be racing it.
-  echo "▶ Stopping container in place (fast mode)…"
-  docker stop inventre-deploy-app 2>/dev/null || true
 fi
+
+# Ensure container is running so we can stream tar through `docker exec`.
+# In fast mode it's whatever state it was in (probably running); in full
+# mode it was just force-recreated with --no-start, so it's Created.
+# `docker start` is a no-op if already running.
+docker start inventre-deploy-app >/dev/null 2>&1 || true
 
 echo "▶ Syncing build into container…"
 # Standalone output → /app (server.js, .next/server/, node_modules/)
-docker cp .next/standalone/. inventre-deploy-app:/app/
+#
+# We stream tar through `docker exec tar -x --overwrite` rather than
+# `docker cp`. Two reasons:
+#
+#  1. The standalone tree contains pnpm-style symlinks
+#     (node_modules/@aws-sdk/client-s3 → ../.pnpm/@aws-sdk+…) which
+#     `docker cp` packs as symlink entries; the daemon's tar extractor
+#     then rejects them when the destination already has a real dir at
+#     the same path ("cannot overwrite directory … with non-directory").
+#  2. Even with -h to dereference, the new build's pnpm layout often has
+#     leaf files where the previous build had subdirs (or vice-versa);
+#     `docker cp`'s extractor errors on those conflicts, but GNU tar's
+#     `--overwrite` deletes the conflicting target first and proceeds.
+#
+# Running tar inside the container also avoids the daemon-side tar
+# extractor entirely, so we get to pick the conflict policy ourselves.
+# Node holds previously-loaded modules in memory, so overlaying its own
+# source files mid-flight is safe — we restart at the end anyway.
+( cd .next/standalone && tar -ch --hard-dereference -f - . ) \
+  | docker exec -i -u 0 inventre-deploy-app tar -xf - --overwrite -C /app
 
 # @node-rs/bcrypt ships per-platform native bindings; the build host is
 # glibc (linux-x64-gnu) but the container is Alpine (musl). npm skips
@@ -100,12 +119,18 @@ docker cp /tmp/_deploy_scripts inventre-deploy-app:/app/scripts
 # Migration SQL files (referenced at runtime by migrate.js)
 docker cp db/migrations inventre-deploy-app:/app/db/migrations
 
-echo "▶ Starting…"
-docker start inventre-deploy-app
+echo "▶ Restarting to load synced code…"
+# Container was running through the sync (so we could docker-exec tar -x);
+# its node process is still holding the previous build's loaded modules.
+# Restart picks up the freshly-synced files. Capture the restart timestamp
+# so the ready-signal check below only looks at NEW logs — otherwise it
+# would match "Ready in …" from the pre-sync boot and return instantly.
+RESTART_TS=$(date +%s)
+docker restart inventre-deploy-app >/dev/null
 
 echo "▶ Waiting for ready signal…"
 for i in $(seq 1 30); do
-  if docker logs inventre-deploy-app --tail 5 2>&1 | grep -q "Ready in\|started server\|Listening"; then
+  if docker logs inventre-deploy-app --since "$RESTART_TS" 2>&1 | grep -q "Ready in\|started server\|Listening"; then
     break
   fi
   sleep 2
