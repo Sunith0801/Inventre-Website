@@ -293,13 +293,25 @@ async function main() {
             unmatchedSubs += subs.length;
             continue;
           }
-          const bundleSelections = subs.map((s) => ({
-            item_code: typeof s.item_code === "string" ? s.item_code : null,
-            qty: typeof s.qty === "number" ? s.qty : null,
-            item_name: typeof s.item_name === "string" ? s.item_name : null,
-            item_group: typeof s.item_group === "string" ? s.item_group : null,
-            parent_item_code: parentItemCode,
-          }));
+          // Storefront /shop/orders/[id] renders these via the cast in
+          // lib/erp-customer-orders.ts (both ERP-mirror and local paths
+          // expect { name, qty, size, variantId, attributes } — we
+          // don't have a local variantId for ERP item_codes, so size
+          // doubles as the unique key. attributes is enriched at read
+          // time from product_variant_attributes; we leave it empty.
+          const bundleSelections = subs.map((s) => {
+            const code = typeof s.item_code === "string" ? s.item_code : "";
+            const name = (typeof s.item_name === "string" && s.item_name) || code;
+            return {
+              componentProductId: null,
+              name,
+              qty: typeof s.qty === "number" ? s.qty : 1,
+              variantId: code,
+              size: code,
+              item_group: typeof s.item_group === "string" ? s.item_group : null,
+              parent_item_code: parentItemCode,
+            };
+          });
           await db
             .update(orderItems)
             .set({ bundleSelections })
