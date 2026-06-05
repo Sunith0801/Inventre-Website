@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import bcrypt from "@node-rs/bcrypt";
+import { eq } from "drizzle-orm";
+import { db } from "@/db/client";
+import { parents } from "@/db/schema";
 import { createParentSession } from "@/lib/session";
 import { rateLimit } from "@/lib/rate-limit";
 import { resolveFamilyParent } from "@/lib/parent-lookup";
@@ -48,18 +51,14 @@ export async function POST(req: Request) {
     );
   }
 
-  // First-time accounts must verify OTP + set their own password first.
-  if (parent.firstTimeLogin) {
-    return NextResponse.json(
-      {
-        error:
-          "First-time sign-in: verify OTP and set your password to continue.",
-        firstTime: true,
-      },
-      { status: 409 }
-    );
-  }
-
+  // Password check is the auth gate. The previous firstTimeLogin
+  // pre-check returned 409 even for parents whose password was already
+  // set (admin bulk-setup), forcing them through OTP even though they
+  // had a valid password — confusing 409 instead of a clean login.
+  // (~9k parents in this state on 2026-06-05). We let the password
+  // compare below decide auth; flipping the stale first_time_login
+  // flag after a successful match is a side effect of finally
+  // proving they own the password.
   const ok = await bcrypt.compare(body.password, parent.passwordHash);
   if (!ok) {
     return NextResponse.json(
@@ -72,6 +71,15 @@ export async function POST(req: Request) {
       { error: "Account is inactive. Contact support." },
       { status: 403 }
     );
+  }
+
+  // Clear the stale first-time flag now that we've proven the parent
+  // knows their password. Idempotent — no-op when already false.
+  if (parent.firstTimeLogin) {
+    await db
+      .update(parents)
+      .set({ firstTimeLogin: false })
+      .where(eq(parents.id, parent.id));
   }
 
   await createParentSession(parent.id, body.phone);
