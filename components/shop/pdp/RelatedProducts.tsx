@@ -1,6 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
+import { useSearchParams } from "next/navigation";
 import { Product } from "@/lib/products";
 
 export function RelatedProducts({
@@ -10,6 +11,11 @@ export function RelatedProducts({
   current: Product;
   all: Product[];
 }) {
+  const searchParams = useSearchParams();
+  const studentId = searchParams?.get("studentId") ?? "";
+  const studentQuery = studentId
+    ? `?studentId=${encodeURIComponent(studentId)}`
+    : "";
   const related = all.filter((p) => p.id !== current.id).slice(0, 3);
   return (
     <section className="mt-16 lg:mt-24">
@@ -30,7 +36,7 @@ export function RelatedProducts({
         {related.map((p, i) => (
           <motion.a
             key={p.id}
-            href={`/shop/${p.slug ?? p.id}`}
+            href={`/shop/${p.slug ?? p.id}${studentQuery}`}
             initial={{ opacity: 0, y: 12 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true, margin: "-40px" }}

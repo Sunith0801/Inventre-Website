@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useParams, useSearchParams } from "next/navigation";
+import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
+import { auth } from "@/lib/auth";
 import { useFocusRefetch } from "@/lib/use-focus-refetch";
 import { ChevronRight, ArrowLeft } from "lucide-react";
 import { Nav } from "@/components/Nav";
@@ -290,11 +291,38 @@ function cardDtoToProduct(d: ProductCardDto): Product {
 
 export default function ProductPage() {
   const { id } = useParams<{ id: string }>();
+  const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const studentId = searchParams.get("studentId") ?? "";
   const studentQuery = studentId
     ? `?studentId=${encodeURIComponent(studentId)}`
     : "";
+
+  // Backfill `?studentId=` from localStorage when the URL has none.
+  // StudentBar does this on /shop, but PDP is reachable by deep link,
+  // browser refresh, or external nav — without this, addToCart fires
+  // with no studentId and `/api/cart` POST now rejects the request
+  // (see app/api/cart/route.ts). Validates against the parent's actual
+  // student list so a stale id never sticks.
+  useEffect(() => {
+    if (studentId) return;
+    if (typeof window === "undefined") return;
+    const saved = window.localStorage.getItem("inv:lastStudentId");
+    if (!saved) return;
+    let cancelled = false;
+    auth.me().then((me) => {
+      if (cancelled) return;
+      if (!me || me.kind !== "parent") return;
+      if (!me.students.some((s) => s.id === saved)) return;
+      const sp = new URLSearchParams(Array.from(searchParams.entries()));
+      sp.set("studentId", saved);
+      router.replace(`${pathname}?${sp.toString()}`);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [studentId, searchParams, pathname, router]);
   const [product, setProduct] = useState<Product | null>(null);
   const [bundleTree, setBundleTree] = useState<BundleNode[]>([]);
   const [isMagicBox, setIsMagicBox] = useState(false);

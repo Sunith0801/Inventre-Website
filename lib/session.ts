@@ -179,7 +179,12 @@ export const getCurrentParent = cache(async (): Promise<CurrentParent | null> =>
         eq(students.enabled, true),
         eq(students.status, "active"),
       )
-    );
+    )
+    // Deterministic order so `me.students[0]` (the silent fallback target
+    // for GET /api/cart and the checkout anchor) doesn't shuffle between
+    // requests. Older enrollments first — siblings re-enrol every year,
+    // so the oldest enrollment_number is the most stable "primary" pick.
+    .orderBy(asc(students.enrollmentNumber), asc(students.id));
 
   // Resolve the guardian to greet per student. Two-tier:
   //   1. Prefer the guardian whose phone equals the family's PRIMARY

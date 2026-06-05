@@ -6,12 +6,14 @@ import {
   products,
   productVariants,
   productSchool,
+  productGrades,
   carts,
   cartItems,
   orders,
   orderItems,
   schools,
 } from "@/db/schema";
+import { normalizeGrade } from "@/lib/grade-filter";
 
 // Schools where free (0-price) bookkits are limited to 1 per student ever.
 const FREE_BOOKKIT_RESTRICTED_SCHOOL_CODES = ["SMSAW"];
@@ -31,6 +33,33 @@ function resolveActive(me: CurrentParent, requestedId: string | null | undefined
     if (match) return match;
   }
   return me.students[0];
+}
+
+/**
+ * Mutation guard for /api/cart POST/PATCH. The bug we're fixing: when a
+ * client omits or sends a stale `studentId`, `resolveActive` silently
+ * falls back to `me.students[0]`, so the cart line lands on whichever
+ * sibling Postgres happens to return first. That caused multi-grade
+ * baskets where a UKG box landed on a Nursery sibling's order
+ * (SAL-ORD-2026-29243 and friends, 2026-06-05).
+ *
+ * GET intentionally still uses the silent fallback — it's a read of the
+ * parent's whole cart and the "active" student is just for grade-sweep
+ * scoping; rejecting reads would break the cart header for any tab that
+ * lost its URL param. Writes must be explicit.
+ */
+function requireActiveStudent(
+  me: CurrentParent,
+  requestedId: string | null | undefined
+): { ok: true; student: NonNullable<ReturnType<typeof resolveActive>> } | { ok: false; error: string } {
+  if (!requestedId) {
+    return { ok: false, error: "Missing studentId — please pick a child before adding to cart." };
+  }
+  const match = me.students.find((s) => s.id === requestedId);
+  if (!match) {
+    return { ok: false, error: "That child is no longer on your account — please pick another." };
+  }
+  return { ok: true, student: match };
 }
 
 /**
@@ -204,12 +233,55 @@ export async function POST(req: Request) {
   const body = await parseJson(req, PostBody);
   if (body instanceof NextResponse) return body;
 
-  const active = resolveActive(me, body.studentId);
-  const schoolId = active?.school.id;
+  const guard = requireActiveStudent(me, body.studentId);
+  if (!guard.ok) {
+    return NextResponse.json({ error: guard.error }, { status: 400 });
+  }
+  const active = guard.student;
+  const schoolId = active.school.id;
 
-  const bookkitError = await checkBookkitLimit(me.id, active?.id ?? null, schoolId, body.variantId, body.qty);
+  const bookkitError = await checkBookkitLimit(me.id, active.id, schoolId, body.variantId, body.qty);
   if (bookkitError) {
     return NextResponse.json({ error: bookkitError }, { status: 409 });
+  }
+
+  // Grade-mismatch guard. The cart's grade-mismatch sweep is non-destructive
+  // by policy (lib/repos/cart.ts:466-480) — it only HIDES wrong-grade lines
+  // from the active sibling's view but leaves them in cart_items. At
+  // checkout the per-student grouping then ships them into a real order
+  // (root cause for SAL-ORD-2026-30077 / -30167, where a Grade 1 / Grade 11
+  // box landed on a Nursery / Grade 8 sibling's order). Refuse at write
+  // time so the wrong row never enters cart_items in the first place.
+  //
+  // Universal products (no product_grades rows) pass through, matching
+  // filterProductsByGrade()'s semantics in lib/grade-filter.ts.
+  const activeGrade = normalizeGrade(active.grade ?? null);
+  if (activeGrade) {
+    const variantRow = await db
+      .select({ productId: productVariants.productId })
+      .from(productVariants)
+      .where(eq(productVariants.id, body.variantId))
+      .limit(1);
+    const productId = variantRow[0]?.productId;
+    if (productId) {
+      const gradeRows = await db
+        .select({ grade: productGrades.grade })
+        .from(productGrades)
+        .where(eq(productGrades.productId, productId));
+      if (gradeRows.length > 0) {
+        const allowed = new Set(
+          gradeRows.map((r) => normalizeGrade(r.grade) ?? r.grade)
+        );
+        if (!allowed.has(activeGrade)) {
+          return NextResponse.json(
+            {
+              error: `This item isn't available for ${active.grade}. Please switch to the right child before adding.`,
+            },
+            { status: 409 }
+          );
+        }
+      }
+    }
   }
 
   await addToCart(
@@ -217,15 +289,15 @@ export async function POST(req: Request) {
     body.variantId,
     body.qty,
     body.bundleSelections,
-    active?.id ?? null
+    active.id
   );
   const cart = await readCart(
     me.id,
     schoolId,
-    active?.grade ?? null,
-    active?.schoolGivenGrade ?? active?.grade ?? null,
+    active.grade ?? null,
+    active.schoolGivenGrade ?? active.grade ?? null,
     allSiblingSchoolIds(me),
-    active?.id ?? null
+    active.id
   );
   return NextResponse.json(cart);
 }
@@ -242,16 +314,24 @@ export async function PATCH(req: Request) {
   const body = await parseJson(req, PatchBody);
   if (body instanceof NextResponse) return body;
 
-  const active = resolveActive(me, body.studentId);
-  const schoolId = active?.school.id;
-
-  // Only check if increasing qty (qty=0 means remove, which is always fine)
+  // qty=0 is a delete keyed by variantId and is student-agnostic, so the
+  // strict guard only applies to writes that increase qty. The read after
+  // still uses resolveActive's silent fallback for scoping the snapshot.
+  let active: ReturnType<typeof resolveActive>;
   if (body.qty > 0) {
-    const bookkitError = await checkBookkitLimit(me.id, active?.id ?? null, schoolId, body.variantId, body.qty);
+    const guard = requireActiveStudent(me, body.studentId);
+    if (!guard.ok) {
+      return NextResponse.json({ error: guard.error }, { status: 400 });
+    }
+    active = guard.student;
+    const bookkitError = await checkBookkitLimit(me.id, active.id, active.school.id, body.variantId, body.qty);
     if (bookkitError) {
       return NextResponse.json({ error: bookkitError }, { status: 409 });
     }
+  } else {
+    active = resolveActive(me, body.studentId);
   }
+  const schoolId = active?.school.id;
 
   await setCartQty(me.id, body.variantId, body.qty);
   const cart = await readCart(
