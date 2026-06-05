@@ -33,7 +33,7 @@ config({ path: path.resolve(process.cwd(), ".env") });
 
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/db/client";
-import { orderItems, orders, payments } from "@/db/schema";
+import { orderItems, orders, payments, productVariants } from "@/db/schema";
 
 type Flags = { apply: boolean; limit?: number; order?: string; csvPath: string };
 
@@ -72,7 +72,18 @@ type ErpSubItem = {
   [k: string]: unknown;
 };
 
+type ErpLine = {
+  item_code?: string | null;
+  item_name?: string | null;
+  qty?: number | null;
+  rate?: number | null;
+  amount?: number | null;
+  gst_hsn_code?: string | null;
+  [k: string]: unknown;
+};
+
 type ErpSoFetch = {
+  items: ErpLine[];
   subItems: ErpSubItem[];
   grandTotal: number | null;
   netTotal: number | null;
@@ -106,7 +117,9 @@ async function fetchErpSo(orderNumber: string): Promise<ErpSoFetch | null> {
   const json = (await res.json()) as { data?: Record<string, unknown> };
   const d = json?.data ?? {};
   const subs = (d as { custom_sub_items?: unknown }).custom_sub_items;
+  const items = (d as { items?: unknown }).items;
   return {
+    items: Array.isArray(items) ? (items as ErpLine[]) : [],
     subItems: Array.isArray(subs) ? (subs as ErpSubItem[]) : [],
     grandTotal: typeof d.grand_total === "number" ? (d.grand_total as number) : null,
     netTotal: typeof d.net_total === "number" ? (d.net_total as number) : null,
@@ -214,7 +227,45 @@ async function main() {
       const erpSubs = erpData.subItems;
       erpSubsCount = erpSubs.length;
 
-      const lines = await loadLocalLines(orderRow.id);
+      let lines = await loadLocalLines(orderRow.id);
+
+      // If the local order has zero line items but ERPNext does, insert
+      // them from the SO doc's items[] array so sub-items have parent
+      // rows to attach to. Only when missing locally — we never delete
+      // or modify existing line items here.
+      if (lines.length === 0 && erpData.items.length > 0 && flags.apply) {
+        const linesToInsert = await Promise.all(
+          erpData.items.map(async (it) => {
+            const code = typeof it.item_code === "string" ? it.item_code : null;
+            let variantId: string | null = null;
+            if (code) {
+              const [v] = await db
+                .select({ id: productVariants.id })
+                .from(productVariants)
+                .where(eq(productVariants.sku, code))
+                .limit(1);
+              variantId = v?.id ?? null;
+            }
+            return {
+              orderId: orderRow.id,
+              variantId,
+              nameSnapshot: (typeof it.item_name === "string" ? it.item_name : code) ?? "—",
+              imageSnapshot: null,
+              size: code ?? "—",
+              qty: Math.round(typeof it.qty === "number" ? it.qty : 1),
+              unitPrice: Math.round((typeof it.rate === "number" ? it.rate : 0) * 100),
+              total: Math.round((typeof it.amount === "number" ? it.amount : 0) * 100),
+              hsnCodeSnapshot: typeof it.gst_hsn_code === "string" ? it.gst_hsn_code : null,
+              gstTreatmentSnapshot: null,
+            };
+          }),
+        );
+        if (linesToInsert.length > 0) {
+          await db.insert(orderItems).values(linesToInsert);
+          lines = await loadLocalLines(orderRow.id);
+        }
+      }
+
       localLinesCount = lines.length;
 
       // Group sub-items by parent_item_code
