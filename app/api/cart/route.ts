@@ -63,6 +63,88 @@ function requireActiveStudent(
 }
 
 /**
+ * One magic box per student, lifetime. Applies regardless of price
+ * (₹0 complimentary or full-price) and across magic_box products —
+ * a parent who placed an UKG box for a Nursery sibling can't go back
+ * and add a Nursery box later. Cancelled orders DO NOT burn the
+ * quota (the box never reached the family).
+ *
+ * Returns the error string if the add should be blocked, null otherwise.
+ */
+async function checkMagicBoxLimit(
+  parentId: string,
+  studentId: string | null,
+  variantId: string,
+  qty: number,
+): Promise<string | null> {
+  if (!studentId) return null;
+
+  const [variantRow] = await db
+    .select({ kind: products.kind })
+    .from(productVariants)
+    .innerJoin(products, eq(products.id, productVariants.productId))
+    .where(eq(productVariants.id, variantId))
+    .limit(1);
+  if (variantRow?.kind !== "magic_box") return null;
+
+  if (qty > 1) {
+    return "Only 1 Magic Box can be added per student.";
+  }
+
+  // Cart side: any OTHER magic_box variant already tagged to this
+  // student. We exclude the same variantId so a parent re-clicking
+  // "Add" on the box they already added doesn't see this error
+  // (the regular qty merge in mirrorWriteToDb handles that path).
+  const [cartRow] = await db
+    .select({ id: carts.id })
+    .from(carts)
+    .where(eq(carts.parentId, parentId))
+    .limit(1);
+  if (cartRow) {
+    const cartMagicBoxes = await db
+      .select({ id: cartItems.id })
+      .from(cartItems)
+      .innerJoin(productVariants, eq(productVariants.id, cartItems.variantId))
+      .innerJoin(products, eq(products.id, productVariants.productId))
+      .where(
+        and(
+          eq(cartItems.cartId, cartRow.id),
+          eq(cartItems.studentId, studentId),
+          eq(products.kind, "magic_box"),
+          ne(cartItems.variantId, variantId),
+        ),
+      )
+      .limit(1);
+    if (cartMagicBoxes.length > 0) {
+      return "A Magic Box is already in your cart for this student. Only 1 Magic Box per student is allowed.";
+    }
+  }
+
+  // Order history side: any non-cancelled past order for this student
+  // that contains a magic_box line. Paid or ₹0, doesn't matter.
+  const priorMagicBoxes = await db
+    .select({ id: orderItems.id })
+    .from(orderItems)
+    .innerJoin(orders, eq(orders.id, orderItems.orderId))
+    .innerJoin(productVariants, eq(productVariants.id, orderItems.variantId))
+    .innerJoin(products, eq(products.id, productVariants.productId))
+    .where(
+      and(
+        eq(orders.parentId, parentId),
+        eq(orders.studentId, studentId),
+        eq(products.kind, "magic_box"),
+        ne(orders.status, "cancelled"),
+      ),
+    )
+    .limit(1);
+  if (priorMagicBoxes.length > 0) {
+    return "A Magic Box has already been placed for this student. Only 1 Magic Box per student is allowed.";
+  }
+
+  return null;
+}
+
+/**
  * Resolve the effective price (in paise) for a product given the parent's school.
  * Priority: school override → product base price.
  */
@@ -245,6 +327,11 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: bookkitError }, { status: 409 });
   }
 
+  const magicBoxError = await checkMagicBoxLimit(me.id, active.id, body.variantId, body.qty);
+  if (magicBoxError) {
+    return NextResponse.json({ error: magicBoxError }, { status: 409 });
+  }
+
   // Grade-mismatch guard. The cart's grade-mismatch sweep is non-destructive
   // by policy (lib/repos/cart.ts:466-480) — it only HIDES wrong-grade lines
   // from the active sibling's view but leaves them in cart_items. At
@@ -327,6 +414,10 @@ export async function PATCH(req: Request) {
     const bookkitError = await checkBookkitLimit(me.id, active.id, active.school.id, body.variantId, body.qty);
     if (bookkitError) {
       return NextResponse.json({ error: bookkitError }, { status: 409 });
+    }
+    const magicBoxError = await checkMagicBoxLimit(me.id, active.id, body.variantId, body.qty);
+    if (magicBoxError) {
+      return NextResponse.json({ error: magicBoxError }, { status: 409 });
     }
   } else {
     active = resolveActive(me, body.studentId);
