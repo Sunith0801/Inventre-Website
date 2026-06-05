@@ -309,14 +309,22 @@ export default function ProductPage() {
     if (studentId) return;
     if (typeof window === "undefined") return;
     const saved = window.localStorage.getItem("inv:lastStudentId");
-    if (!saved) return;
     let cancelled = false;
     auth.me().then((me) => {
       if (cancelled) return;
       if (!me || me.kind !== "parent") return;
-      if (!me.students.some((s) => s.id === saved)) return;
+      if (me.students.length === 0) return;
+      // Prefer the previously-selected child; fall back to me.students[0]
+      // (deterministic post-c58d7fe — oldest enrollment first) when the
+      // saved id is missing or stale. Single-child families with a fresh
+      // browser were hitting "Missing studentId" 400s on Add-to-cart
+      // because the saved id was null and we returned without setting
+      // the URL.
+      const validSaved =
+        saved && me.students.some((s) => s.id === saved) ? saved : null;
+      const targetId = validSaved ?? me.students[0].id;
       const sp = new URLSearchParams(Array.from(searchParams.entries()));
-      sp.set("studentId", saved);
+      sp.set("studentId", targetId);
       router.replace(`${pathname}?${sp.toString()}`);
     });
     return () => {

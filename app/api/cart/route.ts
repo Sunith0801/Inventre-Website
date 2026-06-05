@@ -53,6 +53,14 @@ function requireActiveStudent(
   requestedId: string | null | undefined
 ): { ok: true; student: NonNullable<ReturnType<typeof resolveActive>> } | { ok: false; error: string } {
   if (!requestedId) {
+    // Single-child families: a missing studentId is unambiguous — the
+    // only child IS the active child, no risk of cross-sibling tagging.
+    // Belt-and-braces for the StudentBar/PDP defaulting fix; covers
+    // deep-links from non-storefront contexts where the URL never went
+    // through StudentBar (Gyanveer Bojja / 22BP1184 case, 2026-06-05).
+    if (me.students.length === 1) {
+      return { ok: true, student: me.students[0] };
+    }
     return { ok: false, error: "Missing studentId — please pick a child before adding to cart." };
   }
   const match = me.students.find((s) => s.id === requestedId);

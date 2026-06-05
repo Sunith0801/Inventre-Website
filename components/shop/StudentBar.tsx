@@ -62,11 +62,19 @@ export function StudentBar() {
     if (!me || me.kind !== "parent") return;
     if (studentIdParam) return;
     if (typeof window === "undefined") return;
+    if (me.students.length === 0) return;
+    // Prefer the previously-selected child from localStorage; fall back
+    // to me.students[0] (deterministic post-c58d7fe — oldest enrollment
+    // first). Either way we push to the URL so every downstream link
+    // (PDP, /api/cart POST) carries studentId. Without this, a parent
+    // on a fresh browser would click Add and hit the new server-side
+    // "Missing studentId" 400.
     const saved = window.localStorage.getItem("inv:lastStudentId");
-    if (!saved) return;
-    if (!me.students.some((s) => s.id === saved)) return;
+    const validSaved =
+      saved && me.students.some((s) => s.id === saved) ? saved : null;
+    const targetId = validSaved ?? me.students[0].id;
     const sp = new URLSearchParams(Array.from(searchParams.entries()));
-    sp.set("studentId", saved);
+    sp.set("studentId", targetId);
     router.replace(`${pathname}?${sp.toString()}`);
   }, [me, studentIdParam, searchParams, pathname, router]);
 
