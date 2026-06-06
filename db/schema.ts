@@ -1229,6 +1229,13 @@ export const returns = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // ─── Phase: customer-raised exchange flow (migration 0051) ───
+    // `kind` distinguishes refund rows from exchange rows so admin code
+    // and storefront queries can branch without scanning reason text.
+    kind: text("kind").notNull().default("refund"),
+    // `pickup_date` is set only on exchange rows; refund rows leave it
+    // NULL. See lib/date.ts → firstPickupSaturday for the rule.
+    pickupDate: date("pickup_date"),
     // ──────────────────────────────────────────────────────────────
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
@@ -1237,6 +1244,7 @@ export const returns = pgTable(
   (t) => ({
     returnNumberIdx: uniqueIndex("returns_number_idx").on(t.returnNumber),
     orderIdx: index("returns_order_idx").on(t.orderId),
+    parentStatusIdx: index("returns_parent_status_idx").on(t.parentId, t.status),
   })
 );
 

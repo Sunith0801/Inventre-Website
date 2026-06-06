@@ -14,6 +14,8 @@ import {
   webhookDeliveries,
   webhookEndpoints,
   erpOutboundQueue,
+  returns,
+  returnItems,
 } from "@/db/schema";
 import { getErpConfig, isErpBridgeConfigured } from "@/lib/erp-config";
 
@@ -24,7 +26,12 @@ export type ErpEventType =
   | "payment.updated"
   | "student.upserted"
   | "guardian.upserted"
-  | "address.upserted";
+  | "address.upserted"
+  // Customer-raised exchange flow (gated to EXCHANGE_TESTER_PHONES today).
+  // Emitted on creation; the audit-side DocType "Exchange Request" is
+  // the inbound target. Status flips come back via the inbound webhook
+  // receiver at /api/erp/webhooks/exchange.
+  | "exchange.requested";
 
 /**
  * ERP bridge — non-blocking emitter that ships canonical ERPNext-shaped
@@ -623,5 +630,108 @@ export async function emitAddressEvent(addressId: string): Promise<void> {
     await postErpEvent("address.upserted", `address:${addressId}`, data);
   } catch (e) {
     console.error(`[erp-bridge] address.upserted ${addressId} failed:`, e);
+  }
+}
+
+// ─── Customer-raised exchange flow ──────────────────────────────────
+//
+// Phase 1 (tester-gated, see lib/exchange-gate.ts). Exchange events
+// don't go through the outbound buffer queue — the row in `returns` is
+// the durable record, so a failed emit can be replayed from
+// /admin/erp-sync. Direct emit keeps the parent's submit-to-confirmation
+// turnaround under a second.
+
+export async function buildExchangePayload(
+  returnId: string
+): Promise<{ exchange: Record<string, unknown> } | null> {
+  const [ret] = await db
+    .select()
+    .from(returns)
+    .where(eq(returns.id, returnId))
+    .limit(1);
+  if (!ret) return null;
+  if (ret.kind !== "exchange") return null;
+
+  const [order] = await db
+    .select()
+    .from(orders)
+    .where(eq(orders.id, ret.orderId))
+    .limit(1);
+  if (!order) return null;
+
+  const [parent] = ret.parentId
+    ? await db.select().from(parents).where(eq(parents.id, ret.parentId)).limit(1)
+    : [null as any];
+
+  const lineRows = await db
+    .select({
+      ri: returnItems,
+      oi: orderItems,
+      variant: productVariants,
+      product: products,
+    })
+    .from(returnItems)
+    .innerJoin(orderItems, eq(orderItems.id, returnItems.orderItemId))
+    .innerJoin(productVariants, eq(productVariants.id, returnItems.variantId))
+    .innerJoin(products, eq(products.id, productVariants.productId))
+    .where(eq(returnItems.returnId, returnId));
+
+  const resolveItemCode = (
+    variant: { id: string; erpName: string | null; sku: string | null },
+    product: { erpName: string | null; itemCode: string | null }
+  ): string =>
+    variant.erpName ?? variant.sku ?? product.erpName ?? product.itemCode ?? variant.id;
+
+  const items = lineRows.map(({ ri, oi, variant, product }) => ({
+    order_item_id: oi.id,
+    item_code: resolveItemCode(variant, product),
+    item_name: oi.nameSnapshot,
+    delivered_size: variant.size ?? null,
+    qty: ri.qty,
+    condition: ri.condition ?? null,
+    line_reason: ri.reason ?? null,
+  }));
+
+  const photos = Array.isArray(ret.photos) ? ret.photos : [];
+
+  return {
+    exchange: {
+      id: ret.id,
+      return_number: ret.returnNumber,
+      kind: ret.kind,
+      status: ret.status,
+      reason: ret.reason,
+      notes: ret.notes,
+      pickup_date: ret.pickupDate, // 'YYYY-MM-DD' or null
+      requested_at: isoDate(ret.createdAt),
+      order: {
+        id: order.id,
+        order_number: order.orderNumber,
+        erp_so_name: order.erpSoName ?? null,
+      },
+      customer: parent
+        ? {
+            name: `CUST-${(parent.customerCode ?? parent.id).slice(0, 32)}`,
+            display_name: parent.name ?? null,
+            mobile: parent.phone ?? null,
+            email: parent.email ?? null,
+          }
+        : null,
+      items,
+      photos,
+    },
+  };
+}
+
+export async function emitExchangeEvent(
+  returnId: string,
+  eventType: Extract<ErpEventType, `exchange.${string}`>
+): Promise<void> {
+  try {
+    const data = await buildExchangePayload(returnId);
+    if (!data) return;
+    await postErpEvent(eventType, `exchange:${returnId}`, data);
+  } catch (e) {
+    console.error(`[erp-bridge] ${eventType} ${returnId} failed:`, e);
   }
 }

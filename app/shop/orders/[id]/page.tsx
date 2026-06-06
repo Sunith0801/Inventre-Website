@@ -6,6 +6,8 @@ import { useFocusRefetch } from "@/lib/use-focus-refetch";
 import { ArrowLeft, CheckCircle2, Package } from "lucide-react";
 import { Nav } from "@/components/Nav";
 import { Footer } from "@/components/Footer";
+import { ExchangeStatusBanner } from "@/components/shop/orders/exchange/ExchangeStatusBanner";
+import { ExchangeButton } from "@/components/shop/orders/exchange/ExchangeButton";
 
 /**
  * Some legacy addresses were stored with literal "<br>" / "<br/>" inside the
@@ -111,12 +113,27 @@ export default function OrderDetailPage() {
   // entirely inside the effect so we don't re-fetch the order DTO until
   // CCAvenue actually has news for us.
   const [polling, setPolling] = useState(false);
+  // Exchange-flow surface — phone-gated server-side. Non-allowlisted
+  // parents always see `canExchange=false` and `activeExchange=null`,
+  // so the banner and button render nothing for them.
+  const [canExchange, setCanExchange] = useState(false);
+  const [activeExchange, setActiveExchange] = useState<{
+    id: string;
+    returnNumber: string | null;
+    status: string;
+    pickupDate: string | null;
+    createdAt: string;
+  } | null>(null);
 
   const refetchOrder = useCallback(
     () =>
       fetch(`/api/orders/${id}`, { cache: "no-store" })
         .then((r) => (r.ok ? r.json() : null))
-        .then((d) => setOrder(d?.order ?? null)),
+        .then((d) => {
+          setOrder(d?.order ?? null);
+          setCanExchange(Boolean(d?.canExchange));
+          setActiveExchange(d?.activeExchange ?? null);
+        }),
     [id]
   );
 
@@ -239,6 +256,11 @@ export default function OrderDetailPage() {
             </div>
           </div>
         )}
+
+        {/* Exchange status banner — renders nothing when there is no
+            active exchange (which is always the case for non-allowlisted
+            phones, since the API never returns `activeExchange` for them). */}
+        <ExchangeStatusBanner orderId={id} activeExchange={activeExchange} />
 
         <div className="mt-6 flex items-end justify-between flex-wrap gap-3">
           <div>
@@ -484,6 +506,16 @@ export default function OrderDetailPage() {
                     ₹{it.total.toLocaleString()}
                   </p>
                 </div>
+                {/* Exchange button — gated server-side via canExchange.
+                    Hidden if there's already an active exchange on this
+                    order (the banner takes over). For non-allowlisted
+                    phones canExchange is always false, so this renders
+                    nothing. */}
+                <ExchangeButton
+                  orderId={id}
+                  orderItemId={it.id}
+                  hidden={!canExchange || activeExchange !== null}
+                />
                 {it.bundleSelections && it.bundleSelections.length > 0 && (
                   <div className="mt-2 rounded-lg border border-ink-100 bg-cream-50/60 px-3 py-2">
                     <p className="text-[10.5px] font-semibold uppercase tracking-wide text-ink-500 mb-1.5">
