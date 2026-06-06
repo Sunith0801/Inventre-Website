@@ -158,33 +158,102 @@ export const getCurrentParent = cache(async (): Promise<CurrentParent | null> =>
   // against legacy / disabled records (e.g. MCB-prefixed entries that
   // sneak in via the phone-fallback backfill) ever surfacing.
   //
-  // Picker membership is the UNION of:
-  //   (a) students whose parent_id points at me (primary owner), AND
-  //   (b) students linked to my phone via student_guardian_links (the
-  //       "guardian" relationship — e.g. mother on a father-primary
-  //       record). The partial unique index on (student_id, right10(phone))
-  //       guarantees no double-counting.
+  // Picker membership is the transitive closure of the family's phone
+  // graph. Seed with the primary phone (parents.phone); expand once via the
+  // bridge of "any guardian phone tied to any already-visible student" so a
+  // sibling whose only link is a secondary/co-guardian number (e.g. Kid B
+  // only carries the mother's number, while Kid A carries father+mother)
+  // still shows up. Plus students whose parent_id already points at me
+  // (the canonical link maintained by the migration-0023 trigger).
+  //
+  // One expansion pass is sufficient in practice: every sibling shares at
+  // least one phone with at least one already-visible sibling. We bound
+  // depth in the recursive CTE as a safety net.
   const myPhone10 = last10(parent.phone);
-  const rows = await db
-    .select({ student: students, school: schools })
-    .from(students)
-    .innerJoin(schools, eq(schools.id, students.schoolId))
-    .where(
-      and(
-        sql`(${students.parentId} = ${parent.id} OR EXISTS (
-          SELECT 1 FROM ${studentGuardianLinks} gl
-           WHERE gl.student_id = ${students.id}
-             AND right(regexp_replace(coalesce(gl.phone_no, ''), '\D', '', 'g'), 10) = ${myPhone10}
-        ))`,
-        eq(students.enabled, true),
-        eq(students.status, "active"),
-      )
+  const rows = await db.execute(sql`
+    WITH RECURSIVE family_phones AS (
+      SELECT ${myPhone10}::text AS p, 0 AS depth
+      UNION
+      SELECT DISTINCT right(regexp_replace(coalesce(gl2.phone_no, ''), '\D', '', 'g'), 10), fp.depth + 1
+      FROM family_phones fp
+      JOIN student_guardian_links gl1
+        ON right(regexp_replace(coalesce(gl1.phone_no, ''), '\D', '', 'g'), 10) = fp.p
+      JOIN student_guardian_links gl2 ON gl2.student_id = gl1.student_id
+      WHERE fp.depth < 4
     )
-    // Deterministic order so `me.students[0]` (the silent fallback target
-    // for GET /api/cart and the checkout anchor) doesn't shuffle between
-    // requests. Older enrollments first — siblings re-enrol every year,
-    // so the oldest enrollment_number is the most stable "primary" pick.
-    .orderBy(asc(students.enrollmentNumber), asc(students.id));
+    SELECT
+      s.id, s.school_id, s.name, s.class, s.grade, s.section,
+      s.enrollment_number, s.is_new_student, s.gender, s.date_of_birth,
+      s.parent_id, s.enabled, s.status,
+      sc.id AS sc_id, sc.name AS sc_name, sc.slug AS sc_slug,
+      sc.banner_url AS sc_banner_url, sc.logo_url AS sc_logo_url,
+      sc.school_logo_url AS sc_school_logo_url
+    FROM students s
+    INNER JOIN schools sc ON sc.id = s.school_id
+    WHERE s.enabled = true
+      AND s.status = 'active'
+      AND (
+        s.parent_id = ${parent.id}
+        OR EXISTS (
+          SELECT 1 FROM student_guardian_links gl
+           WHERE gl.student_id = s.id
+             AND right(regexp_replace(coalesce(gl.phone_no, ''), '\D', '', 'g'), 10)
+                 IN (SELECT p FROM family_phones)
+        )
+      )
+    ORDER BY s.enrollment_number ASC, s.id ASC
+  `) as unknown as Array<{
+    id: string;
+    school_id: string;
+    name: string;
+    class: string | null;
+    grade: string | null;
+    section: string | null;
+    enrollment_number: string | null;
+    is_new_student: boolean;
+    gender: string | null;
+    date_of_birth: string | null;
+    parent_id: string | null;
+    enabled: boolean;
+    status: string;
+    sc_id: string;
+    sc_name: string;
+    sc_slug: string;
+    sc_banner_url: string | null;
+    sc_logo_url: string | null;
+    sc_school_logo_url: string | null;
+  }>;
+  // Reshape raw rows back into the original { student, school } pair so the
+  // downstream guardian-name / school-given-grade lookups stay unchanged.
+  const reshapedRows = rows.map((r) => ({
+    student: {
+      id: r.id,
+      schoolId: r.school_id,
+      name: r.name,
+      class: r.class,
+      grade: r.grade,
+      section: r.section,
+      enrollmentNumber: r.enrollment_number,
+      isNewStudent: r.is_new_student,
+      gender: r.gender,
+      dateOfBirth: r.date_of_birth,
+      parentId: r.parent_id,
+      enabled: r.enabled,
+      status: r.status,
+    } as typeof students.$inferSelect,
+    school: {
+      id: r.sc_id,
+      name: r.sc_name,
+      slug: r.sc_slug,
+      bannerUrl: r.sc_banner_url,
+      logoUrl: r.sc_logo_url,
+      schoolLogoUrl: r.sc_school_logo_url,
+    } as Pick<typeof schools.$inferSelect, "id" | "name" | "slug" | "bannerUrl" | "logoUrl" | "schoolLogoUrl">,
+  }));
+  // Deterministic order is enforced inside the raw query above
+  // (`ORDER BY s.enrollment_number ASC, s.id ASC`) so `me.students[0]`
+  // (the silent fallback target for GET /api/cart and the checkout
+  // anchor) stays stable across requests.
 
   // Resolve the guardian to greet per student. Two-tier:
   //   1. Prefer the guardian whose phone equals the family's PRIMARY
@@ -195,7 +264,7 @@ export const getCurrentParent = cache(async (): Promise<CurrentParent | null> =>
   //   2. Fall back to the lowest row_idx — used when no link matches
   //      the primary number (e.g. an admin-added phone that has no
   //      guardian record linked yet).
-  const studentIds = rows.map((r) => r.student.id);
+  const studentIds = reshapedRows.map((r) => r.student.id);
   const primaryPhone10 = last10(parent.phone);
 
   const linkRows = studentIds.length
@@ -274,7 +343,7 @@ export const getCurrentParent = cache(async (): Promise<CurrentParent | null> =>
   // the uniform "Grade 6" row (school-given "Grade 3") and the header
   // would read "Class 3" instead of "Class 6".
   const gradeLabel = new Map<string, string>();
-  const mapKeys = rows
+  const mapKeys = reshapedRows
     .map((r) => ({ schoolId: r.student.schoolId, grade: r.student.grade }))
     .filter((k) => k.grade);
   if (mapKeys.length) {
@@ -307,7 +376,7 @@ export const getCurrentParent = cache(async (): Promise<CurrentParent | null> =>
     email: parent.email,
     tcAcceptedAt: parent.tcAcceptedAt ?? null,
     tcAcceptedVersion: parent.tcAcceptedVersion ?? null,
-    students: rows.map((r) => ({
+    students: reshapedRows.map((r) => ({
       id: r.student.id,
       name: r.student.name,
       class: erpGradeToReal(r.student.class) ?? r.student.class,

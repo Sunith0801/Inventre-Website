@@ -51,40 +51,60 @@ export default async function StudentDetailPage({
       displayName: schoolGradeMappings.schoolGivenGradeName,
       sections: schoolGradeMappings.sections,
     }).from(schoolGradeMappings).orderBy(asc(schoolGradeMappings.rowIdx)),
-    // Auto-detected siblings: every OTHER student under the same parent_id.
-    // Populated by the guardian-link route when admin adds an existing
-    // guardian's phone (which attaches the new student to that family's
-    // parent_id). No DB writes here — the relationship is rendered live
-    // from the canonical parent_id graph.
-    s.parentId
-      ? db
-          .select({
-            id: students.id,
-            name: students.name,
-            firstName: students.firstName,
-            lastName: students.lastName,
-            enrollmentNumber: students.enrollmentNumber,
-            schoolCode: students.schoolCode,
-            grade: students.grade,
-            section: students.section,
-            gender: students.gender,
-            dateOfBirth: students.dateOfBirth,
-            isVerified: students.isVerified,
-          })
-          .from(students)
-          // Same filter as the storefront student-picker — disabled /
-          // blocked siblings (e.g. Removed-from-family) must not count
-          // toward the "Relations (N)" tab label or render in the
-          // siblings table.
-          .where(
-            and(
-              eq(students.parentId, s.parentId),
-              eq(students.enabled, true),
-              eq(students.status, "active"),
-            )
-          )
-          .orderBy(asc(students.enrollmentNumber))
-      : Promise.resolve([] as Array<{ id: string; name: string; firstName: string | null; lastName: string | null; enrollmentNumber: string | null; schoolCode: string | null; grade: string | null; section: string | null; gender: string | null; dateOfBirth: string | null; isVerified: boolean }>),
+    // Auto-detected siblings: every OTHER ACTIVE student sharing this
+    // family's guardian-phone graph. We expand transitively from THIS
+    // student's own guardian phones so split-parents-row cases (the same
+    // family ended up with 2+ `parents` rows when different guardians
+    // logged in first) still surface every sibling.
+    //
+    // Strict `parent_id =` is insufficient: e.g. 24BP1238 carries
+    // [9502926367, 9063039470, 8639765107] and 25BP0935 only [9063039470].
+    // They're siblings via the bridge phone 9063039470, but they live on
+    // two `parents` rows; the parent_id-only query showed each one zero
+    // siblings. Mirrors `getCurrentParent()` in lib/session.ts.
+    db.execute(sql`
+      WITH RECURSIVE family_phones AS (
+        SELECT right(regexp_replace(coalesce(gl.phone_no, ''), '\D', '', 'g'), 10) AS p, 0 AS depth
+          FROM student_guardian_links gl
+         WHERE gl.student_id = ${id}
+        UNION
+        SELECT DISTINCT right(regexp_replace(coalesce(gl2.phone_no, ''), '\D', '', 'g'), 10), fp.depth + 1
+          FROM family_phones fp
+          JOIN student_guardian_links gl1
+            ON right(regexp_replace(coalesce(gl1.phone_no, ''), '\D', '', 'g'), 10) = fp.p
+          JOIN student_guardian_links gl2 ON gl2.student_id = gl1.student_id
+         WHERE fp.depth < 4
+      )
+      SELECT s.id, s.name, s.first_name AS "firstName", s.last_name AS "lastName",
+             s.enrollment_number AS "enrollmentNumber", s.school_code AS "schoolCode",
+             s.grade, s.section, s.gender, s.date_of_birth AS "dateOfBirth",
+             s.is_verified AS "isVerified"
+        FROM students s
+       WHERE s.enabled = true
+         AND s.status  = 'active'
+         AND (
+           (${s.parentId ?? null}::uuid IS NOT NULL AND s.parent_id = ${s.parentId ?? null}::uuid)
+           OR EXISTS (
+             SELECT 1 FROM student_guardian_links gl
+              WHERE gl.student_id = s.id
+                AND right(regexp_replace(coalesce(gl.phone_no, ''), '\D', '', 'g'), 10)
+                    IN (SELECT p FROM family_phones)
+           )
+         )
+       ORDER BY s.enrollment_number ASC NULLS LAST, s.id ASC
+    `) as unknown as Promise<Array<{
+      id: string;
+      name: string;
+      firstName: string | null;
+      lastName: string | null;
+      enrollmentNumber: string | null;
+      schoolCode: string | null;
+      grade: string | null;
+      section: string | null;
+      gender: string | null;
+      dateOfBirth: string | null;
+      isVerified: boolean;
+    }>>,
   ]);
   // Drop self from linkedChildren — the SQL filter is "same parent_id",
   // which trivially includes the current student.

@@ -106,7 +106,54 @@ type InitialData = {
   total: number;
   counts: { mcb_branch: string; n: number }[];
   rows: (MasterRow | FeeRow)[];
+  /** Pipeline heartbeat. Surfaced as pills in the dashboard header so ops
+   *  can spot silent drift the next morning instead of after a parent
+   *  complaint. Hydrated by app/admin/(protected)/mcb/page.tsx. */
+  syncStatus?: {
+    studentsLastSynced: string | null;
+    feesLastSynced: string | null;
+    feesLastPaymentDate: string | null;
+    feesRowsLast24h: number;
+  };
 };
+
+function hoursSince(iso: string | null): number | null {
+  if (!iso) return null;
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return null;
+  return (Date.now() - t) / 3600_000;
+}
+function fmtRelative(iso: string | null): string {
+  if (!iso) return "never";
+  const h = hoursSince(iso);
+  if (h == null) return "never";
+  if (h < 1) return `${Math.round(h * 60)}m ago`;
+  if (h < 36) return `${Math.round(h)}h ago`;
+  return `${Math.round(h / 24)}d ago`;
+}
+function SyncPill({
+  label,
+  iso,
+  warnAfterH,
+  failAfterH,
+  detail,
+}: {
+  label: string;
+  iso: string | null;
+  warnAfterH: number;
+  failAfterH: number;
+  detail?: string;
+}) {
+  const h = hoursSince(iso);
+  const tone: "success" | "warning" | "danger" =
+    h == null || h >= failAfterH ? "danger" : h >= warnAfterH ? "warning" : "success";
+  return (
+    <Badge tone={tone} size="sm">
+      {label}: {fmtRelative(iso)}
+      {detail ? ` · ${detail}` : ""}
+    </Badge>
+  );
+}
 
 export default function McbDashboard({ initialData }: { initialData: InitialData }) {
   const today = todayIst();
@@ -267,6 +314,34 @@ export default function McbDashboard({ initialData }: { initialData: InitialData
             : `Fee payments ${rangeLabel} · page ${data.page}/${lastPage}`
         }
       />
+
+      {/* Pipeline heartbeat. Students sync goes green within 36h, amber 36–48h,
+          red beyond. Fees sync similarly but with a smaller wider band — we
+          also surface the latest payment_date MCB has returned, since fees
+          may be back-stamped weeks late (see import-from-mcb.ts window). */}
+      {initialData.syncStatus ? (
+        <div className="flex flex-wrap gap-2 mb-4">
+          <SyncPill
+            label="Students last synced"
+            iso={initialData.syncStatus.studentsLastSynced}
+            warnAfterH={30}
+            failAfterH={48}
+          />
+          <SyncPill
+            label="Fees last synced"
+            iso={initialData.syncStatus.feesLastSynced}
+            warnAfterH={30}
+            failAfterH={48}
+            detail={`${initialData.syncStatus.feesRowsLast24h} rows / 24h`}
+          />
+          <SyncPill
+            label="Newest fee payment"
+            iso={initialData.syncStatus.feesLastPaymentDate}
+            warnAfterH={72}
+            failAfterH={168}
+          />
+        </div>
+      ) : null}
 
       {/* top tabs */}
       <div className="flex gap-2 mb-4">

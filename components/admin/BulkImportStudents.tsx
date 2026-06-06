@@ -143,7 +143,7 @@ export function BulkImport() {
                   <span className="ml-2 text-red-600 font-semibold">required</span>
                 )}
                 {h === "schoolCode" && <span className="ml-2 text-ink-500">— e.g. SMSAW, KLINK, SAMYU</span>}
-                {h === "grade" && <span className="ml-2 text-ink-500">— e.g. "Grade 5", "Nursery", "UKG"</span>}
+                {h === "grade" && <span className="ml-2 text-ink-500">— type the actual grade (Nursery, LKG, UKG, Grade 1 – Grade 12). No conversion is applied; the cell is stored verbatim.</span>}
                 {h === "guardianMobile" && <span className="ml-2 text-ink-500">— 10 digits, spaces / +91 / dashes are stripped</span>}
               </li>
             ))}

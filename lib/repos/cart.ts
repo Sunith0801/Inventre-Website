@@ -131,35 +131,33 @@ async function mirrorWriteToDb(
       .where(and(eq(cartItems.cartId, cartId), eq(cartItems.variantId, variantId)));
     return;
   }
-  // upsert
-  const [existing] = await db
-    .select()
-    .from(cartItems)
-    .where(and(eq(cartItems.cartId, cartId), eq(cartItems.variantId, variantId)))
-    .limit(1);
-  if (existing) {
-    await db
-      .update(cartItems)
-      .set({
+  // Atomic upsert against the (cart_id, variant_id) unique index added in
+  // migration 0050. The old SELECT-then-INSERT/UPDATE pattern raced under
+  // rapid double-clicks and produced duplicate cart_items rows (visible
+  // for ~275 cart lines pre-cleanup, 2026-06-06). ON CONFLICT collapses
+  // the race to a single statement and keeps the most recent qty/student.
+  await db
+    .insert(cartItems)
+    .values({
+      cartId,
+      variantId,
+      qty,
+      bundleSelections: bundleSelections ?? null,
+      studentId: studentId ?? null,
+    })
+    .onConflictDoUpdate({
+      target: [cartItems.cartId, cartItems.variantId],
+      set: {
         qty,
+        // Only overwrite the JSON / studentId binding when the caller
+        // supplied a fresh value. Re-adds with `undefined` (e.g. quantity
+        // bumps via PATCH) preserve the original binding so we don't
+        // accidentally null out a Magic Box's component picks or move a
+        // line to the wrong sibling.
         ...(bundleSelections !== undefined ? { bundleSelections } : {}),
-        // Keep the original studentId binding; only overwrite when the
-        // caller supplies one explicitly (e.g. parent re-adds the same
-        // variant for a different sibling — second one wins).
         ...(studentId !== undefined ? { studentId } : {}),
-      })
-      .where(eq(cartItems.id, existing.id));
-  } else {
-    await db
-      .insert(cartItems)
-      .values({
-        cartId,
-        variantId,
-        qty,
-        bundleSelections: bundleSelections ?? null,
-        studentId: studentId ?? null,
-      });
-  }
+      },
+    });
 }
 
 async function mirrorClearDb(parentId: string) {
@@ -377,10 +375,24 @@ export async function readCart(
     }
     if (schoolMismatchVariantIds.size > 0) {
       const ids = Array.from(schoolMismatchVariantIds);
+      // Per-variant breadcrumbs: when a parent reports "items dropped",
+      // grep this log for their parentId — each hidden line will list its
+      // productId + the schools it IS linked to. That tells you whether
+      // the product is unlinked entirely (data gap) or linked to a school
+      // the active sibling doesn't attend (admin-moved student).
+      const hiddenDetails = ids.map((vid) => {
+        const v = variants.find((x) => x.id === vid);
+        const productId = v?.productId ?? null;
+        const linkedSchools = psRows
+          .filter((r) => r.productId === productId)
+          .map((r) => r.schoolId);
+        return { variantId: vid, productId, linkedSchools };
+      });
       console.warn("[cart] school-mismatched lines hidden", {
         parentId,
+        activeStudentId: activeStudentId ?? null,
         allowedSchoolIds: Array.from(allowedSchools),
-        variantIds: ids,
+        hidden: hiddenDetails,
       });
       // Non-destructive: items belonging to a sibling at another school
       // are filtered out of THIS response (the active student's cart view)
@@ -469,10 +481,17 @@ export async function readCart(
         (id) => !schoolMismatchVariantIds.has(id)
       );
       if (onlyGradeMismatched.length > 0) {
+        const hiddenDetails = onlyGradeMismatched.map((vid) => {
+          const v = variants.find((x) => x.id === vid);
+          const productId = v?.productId ?? null;
+          const grades = productId ? Array.from(allowed.get(productId) ?? []) : [];
+          return { variantId: vid, productId, allowedGrades: grades };
+        });
         console.warn("[cart] grade-mismatched lines hidden", {
           parentId,
+          activeStudentId: activeStudentId ?? null,
           activeGrade,
-          variantIds: onlyGradeMismatched,
+          hidden: hiddenDetails,
         });
         // Non-destructive (same reasoning as the school-mismatch sweep
         // above): hide from the current student's view, leave in storage.

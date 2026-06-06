@@ -6,6 +6,11 @@ import { requirePermission, isResponse } from "@/lib/admin-guard";
  * page. Headers must match the keys the import route's Zod schema expects
  * (camelCase) so the parser at /admin/students/import can post them
  * straight through without renaming.
+ *
+ * Grade column: type the **actual** grade you want shown — Nursery, LKG,
+ * UKG, or "Grade 1" through "Grade 12". The import route stores the cell
+ * verbatim (no ERP→Real -3 shift). One non-numeric example below to make
+ * that obvious.
  */
 
 const HEADERS = [
@@ -50,7 +55,8 @@ const EXAMPLES: Record<(typeof HEADERS)[number], string>[] = [
     firstName: "Rohan",
     middleName: "K",
     lastName: "Patel",
-    grade: "Grade 3",
+    // Non-numeric grade — proves the importer doesn't try to "convert" it.
+    grade: "UKG",
     section: "B",
     gender: "Male",
     studentEmail: "",

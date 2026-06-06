@@ -66,6 +66,44 @@ export async function POST(req: Request) {
   const denied = assertSchoolAccess(guard, body.schoolId);
   if (denied) return denied;
 
+  // Pre-flight duplicate check against the DB-level partial unique index
+  // `students_school_enrolment_uq` on (school_id, enrollment_number). The
+  // index already prevents duplicates from ever being persisted; this
+  // check turns the otherwise-opaque DB constraint violation into a
+  // clear 409 the admin UI can display in the enrollment-number field.
+  // Skipped when `enrollment_number` is empty — duplicate-by-NULL is
+  // allowed (and the unique index ignores NULLs anyway).
+  if (body.enrollmentNumber && body.enrollmentNumber.trim()) {
+    const enrol = body.enrollmentNumber.trim();
+    // Match on the alphanumeric-normalised form too, not just literal,
+    // so a stray paren / space / period in either side doesn't sneak a
+    // duplicate past the (school_id, enrollment_number) unique index.
+    // See 2026-06-06 incident in scripts/audit-student-duplicates.ts.
+    const enrolNormalized = enrol.replace(/[^A-Za-z0-9]/g, "");
+    const [dupe] = await db
+      .select({ id: students.id, name: students.name })
+      .from(students)
+      .where(
+        and(
+          eq(students.schoolId, body.schoolId),
+          sql`regexp_replace(${students.enrollmentNumber}, '[^A-Za-z0-9]', '', 'g') = ${enrolNormalized}`,
+        ),
+      )
+      .limit(1);
+    if (dupe) {
+      return NextResponse.json(
+        {
+          error: "A student with this enrollment number already exists at this school.",
+          fields: {
+            enrollmentNumber: `Already used by "${dupe.name}". Pick a different enrollment number or open the existing student record.`,
+          },
+          existingStudentId: dupe.id,
+        },
+        { status: 409 },
+      );
+    }
+  }
+
   // Guardian is optional. Treat "any guardian field present" as a request to
   // attach a guardian — and in that case require name + phone together.
   const wantsGuardian = Boolean(

@@ -1,6 +1,6 @@
 import "server-only";
 import crypto from "crypto";
-import { eq, sql } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import {
   orders,
@@ -179,9 +179,14 @@ export async function buildErpOrderPayload(
     .filter(Boolean)
     .join(", ");
 
+  const resolveItemCode = (
+    variant: { id: string; erpName: string | null; sku: string | null },
+    product: { erpName: string | null; itemCode: string | null }
+  ): string =>
+    variant.erpName ?? variant.sku ?? product.erpName ?? product.itemCode ?? variant.id;
+
   const items = rawItems.map(({ item, variant, product }) => ({
-    item_code:
-      variant.erpName ?? variant.sku ?? product.erpName ?? product.itemCode ?? variant.id,
+    item_code: resolveItemCode(variant, product),
     item_name: item.nameSnapshot,
     qty: item.qty,
     rate: item.unitPrice, // paise (ERP converts via rupees())
@@ -190,24 +195,71 @@ export async function buildErpOrderPayload(
     hsn: item.hsnCodeSnapshot ?? product.hsnCode ?? null,
   }));
 
-  // Pre-exploded sub-items: ecommerce explodes bundles up front (per
-  // Decision 1). For now we emit an empty list; bundle-explosion lives
-  // in a separate path (bundle_selections JSON on order_items).
-  const subItems: any[] = [];
+  // Sub-items: every magic-box / bundle order_item carries its component
+  // picks as JSONB on `order_items.bundle_selections`. The configurator
+  // writes `{ variantId, name, size, qty, attributes }` per pick — we
+  // resolve each variantId to its ERP item_code using the same fallback
+  // chain as the parent line, then ship the full BOM so audit can
+  // reconcile fulfilment against the variant-level picks the parent made.
+  const componentVariantIds = new Set<string>();
   for (const { item } of rawItems) {
     const sels: any = item.bundleSelections;
-    if (Array.isArray(sels)) {
-      for (const s of sels) {
-        if (s?.item_code) {
-          subItems.push({
-            parent_item_code: s.parent_item_code ?? null,
-            item_code: s.item_code,
-            qty: s.qty ?? 1,
-          });
-        }
-      }
+    if (!Array.isArray(sels)) continue;
+    for (const s of sels) {
+      if (typeof s?.variantId === "string") componentVariantIds.add(s.variantId);
     }
   }
+
+  const componentLookup = new Map<
+    string,
+    { item_code: string; item_name: string | null }
+  >();
+  if (componentVariantIds.size > 0) {
+    const rows = await db
+      .select({ variant: productVariants, product: products })
+      .from(productVariants)
+      .innerJoin(products, eq(products.id, productVariants.productId))
+      .where(inArray(productVariants.id, Array.from(componentVariantIds)));
+    for (const { variant, product } of rows) {
+      componentLookup.set(variant.id, {
+        item_code: resolveItemCode(variant, product),
+        item_name: product.itemCode ?? product.erpName ?? null,
+      });
+    }
+  }
+
+  const subItems: any[] = [];
+  for (const { item, variant, product } of rawItems) {
+    const sels: any = item.bundleSelections;
+    if (!Array.isArray(sels) || sels.length === 0) continue;
+    const parentItemCode = resolveItemCode(variant, product);
+    for (const s of sels) {
+      const resolved = typeof s?.variantId === "string"
+        ? componentLookup.get(s.variantId)
+        : undefined;
+      if (!resolved) {
+        console.warn(
+          `[erp-bridge] could not resolve variantId for bundle selection on order ${orderId}: ${JSON.stringify(s)}`
+        );
+        continue;
+      }
+      const attrs = Array.isArray(s?.attributes) ? s.attributes : [];
+      const variantLabel = attrs
+        .map((a: any) => a?.value)
+        .filter((v: unknown) => typeof v === "string" && v.length > 0)
+        .join(" · ");
+      subItems.push({
+        parent_item_code: parentItemCode,
+        item_code: resolved.item_code,
+        item_name: typeof s?.name === "string" ? s.name : resolved.item_name,
+        qty: typeof s?.qty === "number" ? s.qty : 1,
+        size: typeof s?.size === "string" && s.size.length > 0 ? s.size : null,
+        variant_label: variantLabel.length > 0 ? variantLabel : null,
+      });
+    }
+  }
+
+  const hasMagicBox = rawItems.some(({ product }) => product.kind === "magic_box");
 
   const paymentBlock = payment
     ? {
@@ -241,7 +293,7 @@ export async function buildErpOrderPayload(
       school_code: school?.schoolCode ?? null,
       school_name: order.schoolNameSnapshot ?? school?.name ?? null,
       grade: order.gradeSnapshot ?? student?.grade ?? null,
-      magic_box: false,
+      magic_box: hasMagicBox,
       customer: {
         name: parent
           ? `CUST-${(parent.customerCode ?? parent.id).slice(0, 32)}`

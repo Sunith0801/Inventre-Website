@@ -23,7 +23,7 @@ export default async function McbPage() {
   // Tiny initial payload — master tab, default school (SASKS), access=all, page 1.
   // After mount, the client component takes over and every interaction is a
   // small JSON fetch to /api/admin/mcb/data instead of a full RSC roundtrip.
-  const [counts, total, rows] = await Promise.all([
+  const [counts, total, rows, syncStatusRows] = await Promise.all([
     db.execute(sql`
       SELECT school_name AS mcb_branch, count(*)::int AS n
       FROM mcb_students WHERE school_name IS NOT NULL GROUP BY school_name
@@ -42,7 +42,26 @@ export default async function McbPage() {
       ORDER BY student_name
       LIMIT ${PAGE_SIZE} OFFSET 0
     `),
+    // Heartbeat for the MCB → admin pipeline. Surfaced as pills in the
+    // dashboard header so ops notices silent drift (e.g. fees window too
+    // narrow, MCB-side back-stamping, credential expiry) within a day
+    // instead of after a parent complaint. Cron runs at 01:30 IST nightly.
+    db.execute(sql`
+      SELECT
+        (SELECT MAX(synced_at) FROM mcb_students)                    AS students_last_synced,
+        (SELECT MAX(synced_at) FROM mcb_fee_payments)                AS fees_last_synced,
+        (SELECT MAX(payment_date) FROM mcb_fee_payments)             AS fees_last_payment_date,
+        (SELECT COUNT(*)::int   FROM mcb_fee_payments
+           WHERE synced_at > now() - INTERVAL '24 hours')            AS fees_rows_last_24h
+    `),
   ]);
+
+  const [s] = rowsOf<{
+    students_last_synced: string | null;
+    fees_last_synced: string | null;
+    fees_last_payment_date: string | null;
+    fees_rows_last_24h: number | null;
+  }>(syncStatusRows);
 
   return (
     <McbDashboard
@@ -52,6 +71,12 @@ export default async function McbPage() {
         total: Number(rowsOf<{ n: number }>(total)[0]?.n ?? 0),
         counts: rowsOf<{ mcb_branch: string; n: number }>(counts),
         rows: rowsOf(rows),
+        syncStatus: {
+          studentsLastSynced: s?.students_last_synced ?? null,
+          feesLastSynced: s?.fees_last_synced ?? null,
+          feesLastPaymentDate: s?.fees_last_payment_date ?? null,
+          feesRowsLast24h: Number(s?.fees_rows_last_24h ?? 0),
+        },
       }}
     />
   );

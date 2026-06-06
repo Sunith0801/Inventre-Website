@@ -288,6 +288,21 @@ async function main() {
       process.exit(0);
     }
     console.log(`[import-mcb] fees: fetched ${feesFetched} total rows`);
+    if (feesFetched === 0) {
+      // Grep-able heartbeat warning so a multi-day zero streak is visible
+      // in the cron log without having to compute counts per run. Picked
+      // up by the /admin/mcb dashboard's `fees_rows_last_24h` query, which
+      // turns the "Fees last synced" pill amber when this fires.
+      console.warn(
+        `[import-mcb] WARN: zero fee rows fetched across all branches ` +
+          `(window ${fromDate}..${toDate}). ` +
+          `Likely upstream MCB has no posted receipts in window, OR the ` +
+          `window is too narrow for MCB's back-stamped entries. ` +
+          `If this fires N days in a row, widen MCB_FEE_WINDOW_DAYS in ` +
+          `.env.deploy or run a one-shot recovery via ` +
+          `MCB_FEE_WINDOW_DAYS=90 npx tsx scripts/import-from-mcb.ts.`
+      );
+    }
 
     // Dedupe fee rows by primary key (enrolment_number, payment_date,
     // receipt_no) — same receipt can appear if a date range straddles two

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import {
   parents,
@@ -8,7 +8,6 @@ import {
   schools,
 } from "@/db/schema";
 import { requirePermission, isResponse } from "@/lib/admin-guard";
-import { makeTargetedGradeResolver } from "@/lib/repos/grades";
 import { upsertGuardianLink } from "@/lib/repos/guardians";
 import { last10 } from "@/lib/phone";
 
@@ -101,10 +100,6 @@ export async function POST(req: Request) {
     .from(schools)
     .where(inArray(schools.schoolCode, distinctSchoolCodes));
   const schoolByCode = new Map(schoolRows.map((s) => [s.schoolCode!, s.id]));
-  const gradeResolvers = new Map<string, (g: string) => string | null>();
-  for (const s of schoolRows) {
-    gradeResolvers.set(s.schoolCode!, await makeTargetedGradeResolver(s.id));
-  }
 
   let inserted = 0;
   let skipped = 0;
@@ -137,17 +132,33 @@ export async function POST(req: Request) {
 
       // Skip duplicates by (schoolCode, enrollmentNumber). Same rule the
       // ERP-sync adoption path uses, so re-running the import is safe.
+      //
+      // Hardened (2026-06-06): also match a STRAY-CHAR variant of the
+      // enrollment. Real example: ERP imported "26CAG20012)" (trailing
+      // paren) on May 18; a clean re-import later passed "26CAG20012",
+      // didn't match the exact string, and inserted a duplicate row that
+      // the (school_id, enrollment_number) unique index couldn't catch
+      // because the two strings literally differ. Normalising via
+      // regexp_replace catches paren / space / period / comma typos.
+      const enrolNormalized = enrollment.replace(/[^A-Za-z0-9]/g, "");
       const [dupe] = await db
-        .select({ id: students.id })
+        .select({ id: students.id, name: students.name, enrollmentNumber: students.enrollmentNumber })
         .from(students)
         .where(
           and(
             eq(students.schoolCode, sc),
-            eq(students.enrollmentNumber, enrollment)
+            sql`regexp_replace(${students.enrollmentNumber}, '[^A-Za-z0-9]', '', 'g') = ${enrolNormalized}`,
           )
         )
         .limit(1);
       if (dupe) {
+        // If the stored enrollment was a typo variant (e.g. trailing
+        // paren), heal it in place to the clean value the admin uploaded.
+        if (dupe.enrollmentNumber !== enrollment) {
+          await db.update(students)
+            .set({ enrollmentNumber: enrollment })
+            .where(eq(students.id, dupe.id));
+        }
         skipped++;
         continue;
       }
@@ -188,9 +199,14 @@ export async function POST(req: Request) {
       // with `ADMIN-` so the sync path can recognise & adopt the row.
       const erpName = `ADMIN-${sc}-${enrollment}-${displayName.slice(0, 40)}`;
 
-      // ERP-uniform → Targeted grade (storefront filters on Targeted).
-      const resolve = gradeResolvers.get(sc);
-      const grade = (resolve ? resolve(row.grade) : null) ?? row.grade;
+      // Grade is stored exactly as the sheet says — no ERP→Real (-3) shift.
+      // Per ops directive 2026-06-06: admins type the actual grade they want
+      // shown (Nursery, LKG, UKG, Grade 1 … Grade 12) and that string lands
+      // verbatim in both `students.grade` and `students.class`. The storefront
+      // grade filter normalises both sides via `normalizeGrade()`, so a
+      // sheet that says "Grade 5" matches `product_grades.grade = "Grade 5"`
+      // directly. Data-entry discipline now lives with the sheet author.
+      const grade = row.grade.trim();
 
       await db.insert(students).values({
         erpName,
