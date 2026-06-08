@@ -432,9 +432,17 @@ export async function getParentOrderDetailFromErp(
              c.custom_enrollment_number AS enrollment,
              lo.shipping_address AS local_ship,
              so.raw->'derived_delivery_by_category' AS derived_by_category,
+             -- Guard against the value being a jsonb scalar (incl. jsonb
+             -- null), which COALESCE does NOT replace — only SQL NULL
+             -- does. Without the type check, jsonb_array_elements_text
+             -- crashes with "cannot extract elements from a scalar" (seen
+             -- on SAL-ORD-2026-31886 after audit-side delivery flip).
              ARRAY(SELECT jsonb_array_elements_text(
-                            COALESCE((so.raw::jsonb)->'derived_delivery_categories_present',
-                                     '[]'::jsonb)))
+                            CASE
+                              WHEN jsonb_typeof((so.raw::jsonb)->'derived_delivery_categories_present') = 'array'
+                              THEN (so.raw::jsonb)->'derived_delivery_categories_present'
+                              ELSE '[]'::jsonb
+                            END))
                AS derived_categories_present
       FROM erp.sales_orders so
       LEFT JOIN erp.customers c ON c.erp_name = so.customer
