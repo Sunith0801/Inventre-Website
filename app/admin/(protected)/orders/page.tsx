@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ShoppingBag } from "lucide-react";
+import { Download, ShoppingBag } from "lucide-react";
 import { db } from "@/db/client";
 import { sql } from "drizzle-orm";
 import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
@@ -10,6 +10,7 @@ import {
   Toolbar,
   SearchInput,
   EmptyState,
+  Button,
 } from "@/components/admin/ui/primitives";
 import { SyncFromErpButton } from "@/components/admin/SyncFromErpButton";
 import { OrdersBulkRefresh } from "@/components/admin/OrdersBulkRefresh";
@@ -366,7 +367,24 @@ export default async function AdminOrdersPage({
         title="Sales Orders"
         description={`${total.toLocaleString("en-IN")} orders to deliver — from ERPNext (Inventre Edu Services Pvt Ltd).`}
         actions={
-          guard.role === "super" ? <SyncFromErpButton /> : undefined
+          <div className="flex items-center gap-2">
+            <a
+              href={`/admin/orders/export${(() => {
+                const p = new URLSearchParams();
+                if (term) p.set("q", term);
+                if (statusBucket) p.set("statusBucket", statusBucket);
+                if (dateRange) p.set("dateRange", dateRange);
+                if (from) p.set("from", from);
+                if (to) p.set("to", to);
+                return p.toString() ? `?${p}` : "";
+              })()}`}
+            >
+              <Button variant="secondary" icon={<Download className="h-3.5 w-3.5" />}>
+                Export CSV
+              </Button>
+            </a>
+            {guard.role === "super" ? <SyncFromErpButton /> : null}
+          </div>
         }
       />
 
