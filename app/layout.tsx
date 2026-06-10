@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Plus_Jakarta_Sans } from "next/font/google";
 import { AuthGate } from "@/components/auth/AuthGate";
+import { SupportViewBanner } from "@/components/SupportViewBanner";
 import "./globals.css";
 
 const jakarta = Plus_Jakarta_Sans({
@@ -24,6 +25,8 @@ export default function RootLayout({
   return (
     <html lang="en" className={jakarta.variable}>
       <body className="font-sans bg-cream text-ink-900 antialiased">
+        {/* Renders nothing unless a valid support-view cookie is present. */}
+        <SupportViewBanner />
         <AuthGate />
         {children}
       </body>

@@ -30,6 +30,7 @@ import {
   productVariants,
   productVariantAttributes,
 } from "@/db/schema";
+import { normalizeAttributeName } from "@/lib/normalize-attribute-name";
 
 export type AttributeGroupJson = { name: string; values: string[] };
 
@@ -104,29 +105,55 @@ export async function refreshProductAttributeGroups(
     return [];
   }
 
+  // Bucket by the *normalised* attribute name so two rows like "Size" +
+  // "Sizes" collapse into one axis. Keying by `attributeId` was the
+  // historical bug — it preserved both buckets and the PDP rendered the
+  // duplicate. We retain a Set of attribute IDs per bucket purely for
+  // logging the collapse so admin can spot bad catalog data.
   type Bucket = {
-    attributeId: string;
-    name: string;
+    normalizedKey: string;
+    displayName: string;
+    attributeIds: Set<string>;
     sortKey: number;
     valueRows: Array<{ value: string; sort: number }>;
     seen: Set<string>;
   };
-  const byAttribute = new Map<string, Bucket>();
+  const byNormalisedName = new Map<string, Bucket>();
   for (const r of rows) {
-    let bucket = byAttribute.get(r.attributeId);
+    const key = normalizeAttributeName(r.attributeName);
+    let bucket = byNormalisedName.get(key);
     if (!bucket) {
       bucket = {
-        attributeId: r.attributeId,
-        name: r.attributeName,
+        normalizedKey: key,
+        displayName: r.attributeName,
+        attributeIds: new Set<string>(),
         sortKey: r.bindingSort ?? r.attributeSort ?? 0,
         valueRows: [],
         seen: new Set<string>(),
       };
-      byAttribute.set(r.attributeId, bucket);
+      byNormalisedName.set(key, bucket);
     }
+    bucket.attributeIds.add(r.attributeId);
+    // Use the lowest sortKey across merged attributes so the merged axis
+    // doesn't jump position when one of its rows is renamed/re-sorted.
+    const thisSort = r.bindingSort ?? r.attributeSort ?? 0;
+    if (thisSort < bucket.sortKey) bucket.sortKey = thisSort;
     if (!bucket.seen.has(r.value)) {
       bucket.seen.add(r.value);
       bucket.valueRows.push({ value: r.value, sort: r.valueSort ?? 0 });
+    }
+  }
+
+  // Surface bad catalog data: any normalised axis backed by more than one
+  // attribute row is a signal that admin has equivalent attributes (e.g.
+  // "Size" + "Sizes") that should be merged into one. We keep the page
+  // working — the merge above produces the correct group — but log so the
+  // duplicate can be cleaned at the source.
+  for (const b of byNormalisedName.values()) {
+    if (b.attributeIds.size > 1) {
+      console.warn(
+        `[attribute-groups] product=${productId}: merged ${b.attributeIds.size} attribute rows into one '${b.displayName}' axis (normalized='${b.normalizedKey}', attribute_ids=${Array.from(b.attributeIds).join(",")})`,
+      );
     }
   }
 
@@ -137,16 +164,16 @@ export async function refreshProductAttributeGroups(
   //   2. Then by explicit sortOrder from bindings / attribute (mostly 0 in
   //      practice today; left as a hook for future admin-set ordering).
   //   3. Then by attribute name, which gives stable cross-render order.
-  const groups: AttributeGroupJson[] = Array.from(byAttribute.values())
+  const groups: AttributeGroupJson[] = Array.from(byNormalisedName.values())
     .sort((a, b) => {
       const aFixed = a.valueRows.length === 1 ? 0 : 1;
       const bFixed = b.valueRows.length === 1 ? 0 : 1;
       if (aFixed !== bFixed) return aFixed - bFixed;
       if (a.sortKey !== b.sortKey) return a.sortKey - b.sortKey;
-      return a.name.localeCompare(b.name);
+      return a.displayName.localeCompare(b.displayName);
     })
     .map((b) => ({
-      name: b.name,
+      name: b.displayName,
       values: b.valueRows
         .sort((x, y) => x.sort - y.sort || x.value.localeCompare(y.value))
         .map((v) => v.value),
@@ -158,17 +185,22 @@ export async function refreshProductAttributeGroups(
     .where(eq(products.id, productId));
 
   // Heal bindings so admin tooling + resolver agree with what variants
-  // actually use. No-op when the binding already exists.
-  for (const [attributeId, bucket] of byAttribute.entries()) {
-    await db
-      .insert(productAttributeBindings)
-      .values({
-        productId,
-        attributeId,
-        isRequired: true,
-        sortOrder: bucket.sortKey,
-      })
-      .onConflictDoNothing();
+  // actually use. No-op when the binding already exists. After the
+  // normalisation pass each bucket may track multiple attribute IDs that
+  // collapsed into one axis — we heal a binding for every underlying ID so
+  // the admin attribute editor still surfaces all of them (cleanup target).
+  for (const bucket of byNormalisedName.values()) {
+    for (const attributeId of bucket.attributeIds) {
+      await db
+        .insert(productAttributeBindings)
+        .values({
+          productId,
+          attributeId,
+          isRequired: true,
+          sortOrder: bucket.sortKey,
+        })
+        .onConflictDoNothing();
+    }
   }
 
   return groups;

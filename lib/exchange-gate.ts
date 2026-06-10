@@ -30,6 +30,10 @@ function getAllowlist(): Set<string> {
 }
 
 export function isExchangeTester(phone: string | null | undefined): boolean {
+  // Dev: gate is fully open so every parent can exercise exchange /
+  // missing on any delivered order. The phone allowlist is a
+  // production-only safety belt during early rollout.
+  if (process.env.NODE_ENV !== "production") return true;
   const norm = last10(phone);
   if (norm.length !== 10) return false;
   return getAllowlist().has(norm);

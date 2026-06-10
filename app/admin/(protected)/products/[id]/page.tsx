@@ -252,6 +252,40 @@ export default async function EditProductPage({
       ).map((i) => ({ id: i.id, code: i.code, name: i.name }))
     : [];
 
+  // Hoisted out of the JSX below to give Next.js's dev-mode source
+  // attribution a single, stable element to point at — inlining the
+  // ternary inside `<ProductBasicsForm afterBasics={…} />` produced a
+  // recurring "missing key" overlay warning on this exact line even
+  // though every list in either branch already had keys.
+  const afterBasicsContent = isBomKind ? (
+    <BomEditor
+      productId={product.id}
+      items={bomItemList}
+      initial={bomRows.map((r) => ({
+        productId: r.childId,
+        label: r.itemCode ? `${r.name} (${r.itemCode})` : r.name,
+        qty: Math.max(1, Math.round(Number(r.qty) || 1)),
+      }))}
+    />
+  ) : (
+    <ProductVariantsEditor
+      productId={product.id}
+      slug={product.slug}
+      colourOptions={colourOptions.map((c) => ({
+        id: c.id,
+        label: c.displayLabel ? `${c.value} (${c.displayLabel})` : c.value,
+      }))}
+      initial={variants.map((v) => ({
+        id: v.id,
+        size: v.size,
+        sku: v.sku,
+        stockQty: v.stockQty,
+        colorValueId: colourByVariant.get(v.id) ?? null,
+        price: priceByVariant.get(v.id) ?? null,
+      }))}
+    />
+  );
+
   return (
     <div>
       <PageHeader
@@ -372,38 +406,7 @@ export default async function EditProductPage({
               label: c.path,
               name: c.name,
             }))}
-            afterBasics={
-              isBomKind ? (
-                <BomEditor
-                  productId={product.id}
-                  items={bomItemList}
-                  initial={bomRows.map((r) => ({
-                    productId: r.childId,
-                    label: r.itemCode ? `${r.name} (${r.itemCode})` : r.name,
-                    qty: Math.max(1, Math.round(Number(r.qty) || 1)),
-                  }))}
-                />
-              ) : (
-                <ProductVariantsEditor
-                  productId={product.id}
-                  slug={product.slug}
-                  colourOptions={colourOptions.map((c) => ({
-                    id: c.id,
-                    label: c.displayLabel
-                      ? `${c.value} (${c.displayLabel})`
-                      : c.value,
-                  }))}
-                  initial={variants.map((v) => ({
-                    id: v.id,
-                    size: v.size,
-                    sku: v.sku,
-                    stockQty: v.stockQty,
-                    colorValueId: colourByVariant.get(v.id) ?? null,
-                    price: priceByVariant.get(v.id) ?? null,
-                  }))}
-                />
-              )
-            }
+            afterBasics={afterBasicsContent}
           />
 
           <ProductContentEditor

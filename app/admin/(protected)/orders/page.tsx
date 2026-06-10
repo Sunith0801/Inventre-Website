@@ -380,7 +380,7 @@ export default async function AdminOrdersPage({
               })()}`}
             >
               <Button variant="secondary" icon={<Download className="h-3.5 w-3.5" />}>
-                Export CSV
+                Export Excel
               </Button>
             </a>
             {guard.role === "super" ? <SyncFromErpButton /> : null}

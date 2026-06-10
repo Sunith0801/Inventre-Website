@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { sql, and, eq, count } from "drizzle-orm";
+import { failJson } from "@/lib/observability/fail-json";
 import { db } from "@/db/client";
 import {
   orders,
@@ -42,29 +43,38 @@ export async function POST(req: Request) {
     )
     .limit(1);
   if (!c)
-    return NextResponse.json(
-      { error: "Invalid or inactive coupon code" },
-      { status: 404 },
-    );
+    return failJson({
+      parentId: me.id, req, status: 404,
+      message: "Invalid or inactive coupon code",
+      details: { code }, kind: "rule.block",
+    });
 
   const now = new Date();
   if (c.startDatetime && c.startDatetime > now)
-    return NextResponse.json(
-      { error: "Coupon is not yet active" },
-      { status: 400 },
-    );
+    return failJson({
+      parentId: me.id, req, status: 400,
+      message: "Coupon is not yet active",
+      details: { code, startsAt: c.startDatetime?.toISOString() },
+      kind: "rule.block",
+    });
   if (c.endDatetime && c.endDatetime < now)
-    return NextResponse.json({ error: "Coupon has expired" }, { status: 400 });
+    return failJson({
+      parentId: me.id, req, status: 400,
+      message: "Coupon has expired",
+      details: { code, endedAt: c.endDatetime?.toISOString() },
+      kind: "rule.block",
+    });
 
   // Scope: school + student. If coupon is tied to a school, the parent's
   // active student must belong to that school; same for student-tied coupons.
   if (c.schoolId) {
     const ok = me.students.some((s) => s.school.id === c.schoolId);
     if (!ok)
-      return NextResponse.json(
-        { error: "Coupon is restricted to a different school" },
-        { status: 400 },
-      );
+      return failJson({
+        parentId: me.id, req, status: 400,
+        message: "Coupon is restricted to a different school",
+        details: { code, schoolId: c.schoolId }, kind: "rule.block",
+      });
   }
   // Grade restriction (local-only field, paired with school). Coupon is
   // valid only if the parent has a student in the linked school AND that
@@ -76,18 +86,20 @@ export async function POST(req: Request) {
         (!c.schoolId || s.school.id === c.schoolId),
     );
     if (!ok)
-      return NextResponse.json(
-        { error: `Coupon is restricted to grade ${c.grade}` },
-        { status: 400 },
-      );
+      return failJson({
+        parentId: me.id, req, status: 400,
+        message: `Coupon is restricted to grade ${c.grade}`,
+        details: { code, grade: c.grade }, kind: "rule.block",
+      });
   }
   if (c.studentId) {
     const ok = me.students.some((s) => s.id === c.studentId);
     if (!ok)
-      return NextResponse.json(
-        { error: "Coupon is restricted to a different student" },
-        { status: 400 },
-      );
+      return failJson({
+        parentId: me.id, req, status: 400,
+        message: "Coupon is restricted to a different student",
+        details: { code, restrictedStudentId: c.studentId }, kind: "rule.block",
+      });
   }
 
   // One-time-use: any redemption anywhere disqualifies further use.

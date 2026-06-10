@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import crypto from "crypto";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { db } from "@/db/client";
 import { returns } from "@/db/schema";
 import { getErpConfig } from "@/lib/erp-config";
@@ -48,6 +48,17 @@ interface Envelope {
     id?: string;
     return_number?: string;
     status?: string;
+    // Sent by audit when the transition is `rejected`. Captured in
+    // customer-care's reject form and shown verbatim to the customer
+    // on /shop/orders/[id]/exchange/[returnId]. Ignored for other
+    // transitions.
+    rejection_reason?: string;
+    // Sent with the `exchange.replacement_arrived` sub-state event when
+    // the warehouse → school dispatch leg lands. Doesn't change the
+    // exchange status; just stamps the timestamp so the customer page
+    // can render an intermediate "arrived at school" state between
+    // `approved` and the final pickup.
+    replacement_arrived_at?: string;
   };
 }
 
@@ -73,6 +84,38 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "invalid JSON body" }, { status: 400 });
   }
   const ex = env.exchange ?? {};
+
+  // Sub-state event: warehouse → school dispatch landed. Stamp
+  // `replacement_arrived_at` on the matching returns row without
+  // changing its status, so the customer page can render an
+  // intermediate "your replacement is at school" message without
+  // breaking the monotonic status machine.
+  if (env.event_type === "exchange.replacement_arrived") {
+    const arrivedAt = ex.replacement_arrived_at
+      ? new Date(ex.replacement_arrived_at)
+      : new Date();
+    let updated = 0;
+    if (ex.id && /^[0-9a-f-]{36}$/i.test(ex.id)) {
+      const res = await db
+        .update(returns)
+        .set({ replacementArrivedAt: arrivedAt, updatedAt: new Date() })
+        .where(and(eq(returns.id, ex.id), eq(returns.kind, "exchange")));
+      updated = res.rowCount ?? 0;
+    } else if (ex.return_number) {
+      const res = await db
+        .update(returns)
+        .set({ replacementArrivedAt: arrivedAt, updatedAt: new Date() })
+        .where(
+          and(eq(returns.returnNumber, ex.return_number), eq(returns.kind, "exchange"))
+        );
+      updated = res.rowCount ?? 0;
+    }
+    if (updated === 0) {
+      return NextResponse.json({ error: "Exchange not found" }, { status: 404 });
+    }
+    return NextResponse.json({ ok: true, sub_state: "replacement_arrived" });
+  }
+
   const status = ex.status;
   if (!isExchangeStatus(status)) {
     return NextResponse.json(
@@ -110,7 +153,11 @@ export async function POST(req: Request) {
     );
   }
 
-  const result = await transitionExchangeStatus(localId, status as ExchangeStatus);
+  const result = await transitionExchangeStatus(
+    localId,
+    status as ExchangeStatus,
+    ex.rejection_reason ?? null
+  );
   if (!result.ok) {
     return NextResponse.json(
       { error: result.error },

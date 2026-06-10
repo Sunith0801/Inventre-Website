@@ -42,13 +42,54 @@ export function ProductVariantsEditor({
     dirty();
   };
 
+  // Auto-SKU helpers. The `product_variants.sku` column has a GLOBAL
+  // unique constraint, so a multi-colour product like the sport polo
+  // cannot share an SKU like "SPORT-POLO-T-SHIRT-24" across green / red /
+  // white rows — each Colour × Size combination needs its own code. We
+  // suggest "<SLUG>-<COLOUR>-<SIZE>" automatically. The autoSku flows
+  // through the same input, so the admin can still override by typing.
+  const norm = (s: string) => s.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const colourLabelById = (id: string | null): string => {
+    if (!id) return "";
+    const o = colourOptions.find((c) => c.id === id);
+    return o?.label ?? "";
+  };
+  const autoSku = (colorValueId: string | null, size: string): string => {
+    const slugPart = norm(slug);
+    // Colour label may be "blue (B)" — take only the bare value before the
+    // parenthesis so the SKU stays compact.
+    const bareColour = colourLabelById(colorValueId).split(" (")[0].trim();
+    const parts = [slugPart, norm(bareColour), norm(size)].filter(Boolean);
+    return parts.join("-");
+  };
+
+  // Update colour or size and roll the SKU forward when it still matches
+  // what we'd have suggested before. If the admin has typed a custom SKU,
+  // we leave it alone.
+  const updateColour = (i: number, newColorValueId: string | null) => {
+    const v = variants[i];
+    const prevAuto = autoSku(v.colorValueId, v.size);
+    const nextAuto = autoSku(newColorValueId, v.size);
+    const sku = !v.sku || v.sku === prevAuto ? nextAuto : v.sku;
+    update(i, { colorValueId: newColorValueId, sku });
+  };
+  const updateSize = (i: number, newSize: string) => {
+    const v = variants[i];
+    const prevAuto = autoSku(v.colorValueId, v.size);
+    const nextAuto = autoSku(v.colorValueId, newSize);
+    const sku = !v.sku || v.sku === prevAuto ? nextAuto : v.sku;
+    update(i, { size: newSize, sku });
+  };
+
   const add = () => {
-    const seq = variants.length + 1;
+    // Start with an empty SKU; it will auto-fill when the admin sets
+    // colour and size. Falling back to a slug-sequence number invited
+    // the admin to hand-edit it into a colliding pattern.
     setVariants([
       ...variants,
       {
         size: "",
-        sku: `${slug.toUpperCase().replace(/[^A-Z0-9]/g, "")}-${seq}`,
+        sku: "",
         stockQty: 0,
         colorValueId: null,
         price: null,
@@ -97,7 +138,7 @@ export function ProductVariantsEditor({
     <Card>
       <CardHeader
         title="Variants"
-        description="Each row is one size/SKU combination. Stock here is the legacy column; for the live bin balance use the Stock page."
+        description="Each row is one Colour × Size SKU. Pick the colour from the dropdown and enter just the size value (e.g. 24, S, M) — don't combine them. Stock here is the legacy column; for live bin balance use the Stock page."
         actions={
           <Button
             type="button"
@@ -131,36 +172,55 @@ export function ProductVariantsEditor({
             </tr>
           </thead>
           <tbody>
-            {variants.map((v, i) => (
-              <tr key={v.id ?? `new-${i}`} className="border-t border-ink-100">
-                <td className="py-1.5 pr-3">
-                  {colourOptions.length > 0 ? (
-                    <select
-                      value={v.colorValueId ?? ""}
-                      onChange={(e) =>
-                        update(i, { colorValueId: e.target.value || null })
-                      }
-                      className="w-40 rounded-md border border-ink-200 px-2 py-1 text-[13px] bg-white outline-none focus:border-ink-900"
-                    >
-                      <option value="">—</option>
-                      {colourOptions.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.label}
-                        </option>
-                      ))}
-                    </select>
-                  ) : (
-                    <span className="text-ink-300">—</span>
-                  )}
-                </td>
-                <td className="py-1.5 pr-3">
-                  <input
-                    type="text"
-                    value={v.size}
-                    onChange={(e) => update(i, { size: e.target.value })}
-                    className="w-24 rounded-md border border-ink-200 px-2 py-1 text-[13px] outline-none focus:border-ink-900"
-                  />
-                </td>
+            {variants.map((v, i) => {
+              // Live warning when the typed size looks like "<colour> · <size>"
+              // — admins kept doing this on the sport-polo product because the
+              // input had no guidance. Server strips this on save too.
+              const looksPolluted =
+                /\s*[·\-–—]\s*/.test(v.size) && v.colorValueId !== null;
+              return (
+                <tr key={v.id ?? `new-${i}`} className="border-t border-ink-100">
+                  <td className="py-1.5 pr-3">
+                    {colourOptions.length > 0 ? (
+                      <select
+                        value={v.colorValueId ?? ""}
+                        onChange={(e) =>
+                          updateColour(i, e.target.value || null)
+                        }
+                        className="w-40 rounded-md border border-ink-200 px-2 py-1 text-[13px] bg-white outline-none focus:border-ink-900"
+                      >
+                        <option value="">—</option>
+                        {colourOptions.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.label}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <span className="text-ink-300">—</span>
+                    )}
+                  </td>
+                  <td className="py-1.5 pr-3">
+                    <div className="flex flex-col gap-0.5">
+                      <input
+                        type="text"
+                        value={v.size}
+                        placeholder="e.g. 24, S, M, L"
+                        onChange={(e) => updateSize(i, e.target.value)}
+                        className={
+                          "w-24 rounded-md border px-2 py-1 text-[13px] outline-none " +
+                          (looksPolluted
+                            ? "border-amber-400 focus:border-amber-600 bg-amber-50"
+                            : "border-ink-200 focus:border-ink-900")
+                        }
+                      />
+                      {looksPolluted ? (
+                        <span className="text-[10px] text-amber-700 leading-tight">
+                          Looks like the colour is in here. Enter just the size — colour is picked above.
+                        </span>
+                      ) : null}
+                    </div>
+                  </td>
                 <td className="py-1.5 pr-3">
                   <input
                     type="text"
@@ -205,9 +265,10 @@ export function ProductVariantsEditor({
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
-                </td>
-              </tr>
-            ))}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
         </div>

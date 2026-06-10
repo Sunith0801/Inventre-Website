@@ -16,6 +16,8 @@ import {
   erpOutboundQueue,
   returns,
   returnItems,
+  missingItemClaims,
+  missingItemClaimItems,
 } from "@/db/schema";
 import { getErpConfig, isErpBridgeConfigured } from "@/lib/erp-config";
 
@@ -31,7 +33,10 @@ export type ErpEventType =
   // Emitted on creation; the audit-side DocType "Exchange Request" is
   // the inbound target. Status flips come back via the inbound webhook
   // receiver at /api/erp/webhooks/exchange.
-  | "exchange.requested";
+  | "exchange.requested"
+  // Missing-item claim — customer never received the item, just needs
+  // a fresh dispatch. No reverse logistics. Same gating as exchange.
+  | "missing.requested";
 
 /**
  * ERP bridge — non-blocking emitter that ships canonical ERPNext-shaped
@@ -208,12 +213,22 @@ export async function buildErpOrderPayload(
   // resolve each variantId to its ERP item_code using the same fallback
   // chain as the parent line, then ship the full BOM so audit can
   // reconcile fulfilment against the variant-level picks the parent made.
+  // Legacy bundle_selections rows (pre-UUID-discipline) sometimes carry an
+  // item SKU string in `variantId` instead of a UUID. Passing those into
+  // `inArray(productVariants.id, …)` triggers a Postgres uuid-parse error
+  // and kills the whole drain attempt. Filter to well-formed UUIDs here;
+  // legacy entries are handled by the existing "could not resolve" warn
+  // below and just omit the sub-item from the envelope.
+  const UUID_RE =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   const componentVariantIds = new Set<string>();
   for (const { item } of rawItems) {
     const sels: any = item.bundleSelections;
     if (!Array.isArray(sels)) continue;
     for (const s of sels) {
-      if (typeof s?.variantId === "string") componentVariantIds.add(s.variantId);
+      if (typeof s?.variantId === "string" && UUID_RE.test(s.variantId)) {
+        componentVariantIds.add(s.variantId);
+      }
     }
   }
 
@@ -682,6 +697,41 @@ export async function buildExchangePayload(
   ): string =>
     variant.erpName ?? variant.sku ?? product.erpName ?? product.itemCode ?? variant.id;
 
+  // Per-item enrichment: each return_items row may carry its own reason
+  // bundle (post-0057). We surface every field so audit can render
+  // per-component cards without having to fall back to the head-row.
+  // For each row that has its own requested_variant_id, we resolve it to
+  // a small lookup so audit doesn't have to fetch separately.
+  const perItemRequestedVariantIds = Array.from(
+    new Set(
+      lineRows
+        .map(({ ri }) => (ri as { requestedVariantId?: string | null }).requestedVariantId ?? null)
+        .filter((v): v is string => !!v),
+    ),
+  );
+  const perItemVariantLookup = new Map<string, Record<string, unknown>>();
+  if (perItemRequestedVariantIds.length > 0) {
+    const rvRows = await db
+      .select({ variant: productVariants, product: products })
+      .from(productVariants)
+      .innerJoin(products, eq(products.id, productVariants.productId))
+      .where(inArray(productVariants.id, perItemRequestedVariantIds));
+    for (const { variant: v, product: p } of rvRows) {
+      perItemVariantLookup.set(v.id, {
+        variant_id: v.id,
+        item_code: resolveItemCode(v, p),
+        item_name: p.name,
+        size: v.size,
+        sku: v.sku,
+        image_url: v.imageUrl ?? null,
+      });
+    }
+  }
+
+  // items[] stays in the legacy shape so audit-dev's ingest schema
+  // accepts it unchanged. Per-item enrichment lives in a sibling
+  // `per_item_details` array (parallel index) for audit-side consumers
+  // that have been updated to read it. Old audit ignores it.
   const items = lineRows.map(({ ri, oi, variant, product }) => ({
     order_item_id: oi.id,
     item_code: resolveItemCode(variant, product),
@@ -691,8 +741,104 @@ export async function buildExchangePayload(
     condition: ri.condition ?? null,
     line_reason: ri.reason ?? null,
   }));
+  const perItemDetails = lineRows.map(({ ri, oi }) => {
+    const r = ri as {
+      subReason?: string | null;
+      damageLocation?: string | null;
+      replacementMode?: string | null;
+      requestedVariantId?: string | null;
+      requestedComponentPath?: Record<string, unknown> | null;
+      notes?: string | null;
+    };
+    return {
+      order_item_id: oi.id,
+      sub_reason: r.subReason ?? null,
+      damage_location: r.damageLocation ?? null,
+      replacement_mode: r.replacementMode ?? null,
+      requested_variant: r.requestedVariantId
+        ? perItemVariantLookup.get(r.requestedVariantId) ?? null
+        : null,
+      requested_component_path: r.requestedComponentPath ?? null,
+      notes: r.notes ?? null,
+    };
+  });
 
   const photos = Array.isArray(ret.photos) ? ret.photos : [];
+
+  // Phase-2 enrichment: surface the requested variant's attributes
+  // so audit + school staff can see EXACTLY what to hand over without
+  // looking it up. Best-effort — null if the variant has been archived
+  // since the customer submitted (we keep the row going regardless).
+  let requestedVariant: Record<string, unknown> | null = null;
+  if (ret.requestedVariantId) {
+    const [rv] = await db
+      .select({ variant: productVariants, product: products })
+      .from(productVariants)
+      .innerJoin(products, eq(products.id, productVariants.productId))
+      .where(eq(productVariants.id, ret.requestedVariantId))
+      .limit(1);
+    if (rv) {
+      requestedVariant = {
+        variant_id: rv.variant.id,
+        item_code: resolveItemCode(rv.variant, rv.product),
+        item_name: rv.product.name,
+        size: rv.variant.size,
+        sku: rv.variant.sku,
+        // Variant image — products has its primary image in the
+        // `product_images` join table which is too heavy to fetch
+        // inline here. Audit-side gets the variant override or null
+        // and renders a placeholder when absent.
+        image_url: rv.variant.imageUrl ?? null,
+      };
+    }
+  }
+
+  // Enrich requestedComponentPath with the resolved component item_code
+  // + display fields. For kit / Magic Box exchanges, the operational
+  // truth is "swap THIS component, not the whole box" — so the audit
+  // side needs the component's SKU + name to spawn the right
+  // packing_unit and surface the right item in the warehouse + school
+  // views. Without this enrichment, the audit side defaults to the
+  // kit's item_code (sending the warehouse to pack the entire box).
+  let enrichedComponentPath: Record<string, unknown> | null = null;
+  const rcp = ret.requestedComponentPath as
+    | { variantId?: string; componentName?: string | null;
+        attributes?: Array<{ name: string; value: string }>; }
+    | null;
+  if (rcp) {
+    enrichedComponentPath = {
+      variant_id: rcp.variantId ?? null,
+      component_name: rcp.componentName ?? null,
+      attributes: rcp.attributes ?? [],
+    };
+    if (rcp.variantId) {
+      const [cp] = await db
+        .select({ variant: productVariants, product: products })
+        .from(productVariants)
+        .innerJoin(products, eq(products.id, productVariants.productId))
+        .where(eq(productVariants.id, rcp.variantId))
+        .limit(1);
+      if (cp) {
+        Object.assign(enrichedComponentPath, {
+          item_code: resolveItemCode(cp.variant, cp.product),
+          item_name: cp.product.name,
+          size: cp.variant.size,
+          sku: cp.variant.sku,
+          image_url: cp.variant.imageUrl ?? null,
+        });
+      }
+    }
+  }
+
+  // CUST- prefix: parent.customerCode already starts with "CUST-" in
+  // every row written by our customer-number minter; the earlier code
+  // double-prefixed when it shouldn't. Pass-through when it already
+  // starts with the prefix, mint otherwise (legacy / orphan rows).
+  let customerCode: string | null = null;
+  if (parent) {
+    const code = parent.customerCode ?? parent.id;
+    customerCode = code.startsWith("CUST-") ? code.slice(0, 64) : `CUST-${code.slice(0, 32)}`;
+  }
 
   return {
     exchange: {
@@ -701,9 +847,17 @@ export async function buildExchangePayload(
       kind: ret.kind,
       status: ret.status,
       reason: ret.reason,
+      sub_reason: ret.subReason ?? null,
       notes: ret.notes,
+      damage_location: ret.damageLocation ?? null,
       pickup_date: ret.pickupDate, // 'YYYY-MM-DD' or null
       requested_at: isoDate(ret.createdAt),
+      requested_variant: requestedVariant,
+      requested_component_path: enrichedComponentPath,
+      // Honest record of what the customer chose. Audit reads
+      // `raw.replacement_mode` to render the right "Customer wants" copy
+      // — no silent inference, no hardcoded "fresh piece" text.
+      replacement_mode: (ret as { replacementMode?: string | null }).replacementMode ?? null,
       order: {
         id: order.id,
         order_number: order.orderNumber,
@@ -711,13 +865,17 @@ export async function buildExchangePayload(
       },
       customer: parent
         ? {
-            name: `CUST-${(parent.customerCode ?? parent.id).slice(0, 32)}`,
+            name: customerCode,
             display_name: parent.name ?? null,
             mobile: parent.phone ?? null,
             email: parent.email ?? null,
           }
         : null,
       items,
+      // Optional per-item enrichment (parallel to items[] by index).
+      // Old audit ingests ignore this key; updated ones can read it to
+      // render per-component reasons. Migration 0057 backed.
+      per_item_details: perItemDetails,
       photos,
     },
   };
@@ -733,5 +891,137 @@ export async function emitExchangeEvent(
     await postErpEvent(eventType, `exchange:${returnId}`, data);
   } catch (e) {
     console.error(`[erp-bridge] ${eventType} ${returnId} failed:`, e);
+  }
+}
+
+// ─── Missing-item claim payload + emit ──────────────────────────────
+
+export async function buildMissingClaimPayload(
+  claimId: string
+): Promise<{ claim: Record<string, unknown> } | null> {
+  const [cl] = await db
+    .select()
+    .from(missingItemClaims)
+    .where(eq(missingItemClaims.id, claimId))
+    .limit(1);
+  if (!cl) return null;
+
+  const [order] = await db
+    .select()
+    .from(orders)
+    .where(eq(orders.id, cl.orderId))
+    .limit(1);
+  if (!order) return null;
+
+  const [parent] = cl.parentId
+    ? await db.select().from(parents).where(eq(parents.id, cl.parentId)).limit(1)
+    : [null as any];
+
+  // Lines + enriched component info (mirror of buildExchangePayload's
+  // approach so the audit side gets resolved item_codes for any
+  // component-level claims).
+  const lineRows = await db
+    .select()
+    .from(missingItemClaimItems)
+    .where(eq(missingItemClaimItems.claimId, claimId));
+
+  const lines = await Promise.all(
+    lineRows.map(async (li) => {
+      // Pull the order_item to surface what was originally bought.
+      const [oi] = await db
+        .select({ oi: orderItems, variant: productVariants, product: products })
+        .from(orderItems)
+        .leftJoin(productVariants, eq(productVariants.id, orderItems.variantId))
+        .leftJoin(products, eq(products.id, productVariants.productId))
+        .where(eq(orderItems.id, li.orderItemId))
+        .limit(1);
+
+      const baseLineItemCode = oi && oi.variant && oi.product
+        ? oi.variant.erpName ?? oi.variant.sku ?? oi.product.erpName ?? oi.product.itemCode ?? oi.variant.id
+        : null;
+
+      // Enrich missing_component_path if the customer drilled into a kit.
+      let enrichedPath: Record<string, unknown> | null = null;
+      const mcp = li.missingComponentPath as
+        | { variantId?: string; componentName?: string | null;
+            attributes?: Array<{ name: string; value: string }>; }
+        | null;
+      if (mcp) {
+        enrichedPath = {
+          variant_id: mcp.variantId ?? null,
+          component_name: mcp.componentName ?? null,
+          attributes: mcp.attributes ?? [],
+        };
+        if (mcp.variantId) {
+          const [cp] = await db
+            .select({ variant: productVariants, product: products })
+            .from(productVariants)
+            .innerJoin(products, eq(products.id, productVariants.productId))
+            .where(eq(productVariants.id, mcp.variantId))
+            .limit(1);
+          if (cp) {
+            Object.assign(enrichedPath, {
+              item_code: cp.variant.erpName ?? cp.variant.sku ?? cp.product.erpName ?? cp.product.itemCode ?? cp.variant.id,
+              item_name: cp.product.name,
+              size: cp.variant.size,
+              sku: cp.variant.sku,
+              image_url: cp.variant.imageUrl ?? null,
+            });
+          }
+        }
+      }
+
+      return {
+        order_item_id: li.orderItemId,
+        item_code: baseLineItemCode,
+        item_name: oi?.oi.nameSnapshot ?? null,
+        qty_short: li.qtyShort,
+        missing_component_path: enrichedPath,
+        notes: li.notes,
+      };
+    })
+  );
+
+  // CUST- prefix (same logic as exchange payload).
+  let customerCode: string | null = null;
+  if (parent) {
+    const code = parent.customerCode ?? parent.id;
+    customerCode = code.startsWith("CUST-") ? code.slice(0, 64) : `CUST-${code.slice(0, 32)}`;
+  }
+
+  return {
+    claim: {
+      id: cl.id,
+      claim_number: cl.claimNumber,
+      status: cl.status,
+      notes: cl.notes,
+      pickup_date: cl.pickupDate,
+      requested_at: isoDate(cl.createdAt),
+      order: {
+        id: order.id,
+        order_number: order.orderNumber,
+        erp_so_name: order.erpSoName ?? null,
+      },
+      customer: {
+        name: customerCode,
+        display_name: parent ? `${parent.firstName ?? ""} ${parent.lastName ?? ""}`.trim() || null : null,
+        mobile: parent?.phone ?? null,
+      },
+      items: lines,
+      photos: Array.isArray(cl.photos) ? cl.photos : [],
+    },
+  };
+}
+
+export async function emitMissingClaimEvent(
+  claimId: string,
+  eventType: Extract<ErpEventType, `missing.${string}`>
+): Promise<void> {
+  try {
+    const data = await buildMissingClaimPayload(claimId);
+    if (!data) return;
+    await postErpEvent(eventType, `missing:${claimId}`, data);
+  } catch (e) {
+    console.error(`[erp-bridge] ${eventType} ${claimId} failed:`, e);
   }
 }

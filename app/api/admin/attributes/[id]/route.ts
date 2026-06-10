@@ -6,6 +6,7 @@ import { db } from "@/db/client";
 import { productAttributes } from "@/db/schema";
 import { isResponse, requirePermission } from "@/lib/admin-guard";
 import { invalidateCatalog } from "@/lib/cache";
+import { normalizeAttributeName } from "@/lib/normalize-attribute-name";
 
 const Body = z.object({
   name: z.string().min(1).optional(),
@@ -29,6 +30,32 @@ export async function PATCH(
   const parsed = await parseBody(req, Body);
   if (parsed instanceof NextResponse) return parsed;
   const body = parsed;
+
+  // Reject renames that would create a logical duplicate of another row
+  // (e.g. renaming attr A to "Sizes" when attr B is already "Size"). The
+  // POST endpoint enforces the same rule on create; without this guard,
+  // an admin could side-step it by renaming after the fact.
+  if (body.name !== undefined) {
+    const normalisedIncoming = normalizeAttributeName(body.name);
+    const allRows = await db
+      .select({ id: productAttributes.id, name: productAttributes.name })
+      .from(productAttributes);
+    const clash = allRows.find(
+      (r) =>
+        r.id !== id &&
+        normalizeAttributeName(r.name) === normalisedIncoming,
+    );
+    if (clash) {
+      return NextResponse.json(
+        {
+          error: `Another attribute named "${clash.name}" already exists (logically equivalent to "${body.name}"). Rename or delete it first.`,
+          conflictingAttribute: clash,
+        },
+        { status: 409 },
+      );
+    }
+  }
+
   const update: Record<string, unknown> = { updatedAt: new Date() };
   for (const [k, v] of Object.entries(body)) {
     if (v === undefined) continue;

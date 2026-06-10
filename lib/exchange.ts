@@ -2,7 +2,13 @@ import "server-only";
 
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { returns, returnItems, orderItems, orders } from "@/db/schema";
+import {
+  returns,
+  returnItems,
+  orderItems,
+  orders,
+  missingItemClaims,
+} from "@/db/schema";
 import { allocReturnNumber } from "@/lib/numbering";
 import { firstPickupSaturday, toDbDate } from "@/lib/date";
 import { emitExchangeEvent } from "@/lib/erp-bridge";
@@ -12,6 +18,47 @@ import {
   isExchangeStatus,
   type ExchangeStatus,
 } from "@/lib/exchange-shared";
+
+/**
+ * Cross-flow per-sale-order block.
+ *
+ * Business rule (2026-06-09): a parent gets ONE exchange request AND
+ * ONE missing-item claim per sale order. The moment either is created
+ * and not subsequently rejected, both buttons disappear on that order.
+ * Rejected requests don't count — the customer is free to retry after a
+ * "no" from customer-care.
+ *
+ * Returns the kind of blocker found (so callers can phrase the 409
+ * accurately), or null when the order is clear to file on.
+ */
+export async function findOpenRequestForOrder(
+  orderId: string,
+  parentId: string,
+): Promise<{ kind: "exchange" | "missing"; status: string } | null> {
+  const exRows = await db
+    .select({ status: returns.status, kind: returns.kind })
+    .from(returns)
+    .where(and(eq(returns.orderId, orderId), eq(returns.parentId, parentId)));
+  for (const r of exRows) {
+    if (r.kind !== "exchange") continue;
+    if (r.status === "rejected") continue;
+    return { kind: "exchange", status: r.status };
+  }
+  const mcRows = await db
+    .select({ status: missingItemClaims.status })
+    .from(missingItemClaims)
+    .where(
+      and(
+        eq(missingItemClaims.orderId, orderId),
+        eq(missingItemClaims.parentId, parentId),
+      ),
+    );
+  for (const r of mcRows) {
+    if (r.status === "rejected") continue;
+    return { kind: "missing", status: r.status };
+  }
+  return null;
+}
 
 /**
  * Server-side orchestrators for the customer-raised exchange flow.
@@ -26,14 +73,22 @@ import {
 // Re-export the client-safe surface so server code can keep importing
 // from "@/lib/exchange" without caring about the split.
 export {
+  DAMAGE_LOCATIONS,
   EXCHANGE_REASONS,
   EXCHANGE_STATUSES,
+  PHOTO_CATEGORIES,
+  SUB_REASONS,
   canTransition,
   formatPickupLabel,
   isExchangeReason,
   isExchangeStatus,
+  isValidSubReason,
 } from "@/lib/exchange-shared";
-export type { ExchangeReason, ExchangeStatus } from "@/lib/exchange-shared";
+export type {
+  ExchangePhoto,
+  ExchangeReason,
+  ExchangeStatus,
+} from "@/lib/exchange-shared";
 
 // ─── Pickup-date helper ────────────────────────────────────────────
 
@@ -49,19 +104,38 @@ export function computePickupDate(from: Date = new Date()): string {
 
 // ─── Server orchestrators ──────────────────────────────────────────
 
-export type ExchangePhoto = { url: string; key: string };
+// Server-side input shape — re-uses the client-safe ExchangePhoto from
+// exchange-shared so client + server agree on the photo schema.
+import type { ExchangePhoto as SharedExchangePhoto } from "@/lib/exchange-shared";
+
+/**
+ * Per-component reason payload. The customer can flag multiple components
+ * inside one order_item (e.g. a Magic Box) with different reasons; each
+ * lands as its own `return_items` row under one `returns` head.
+ */
+export interface CreateExchangeItem {
+  orderItemId: string;
+  qty: number;
+  condition: "unopened" | "opened" | "damaged" | null;
+  reason: string;
+  subReason: string | null;
+  damageLocation: string | null;
+  replacementMode: string | null;
+  requestedVariantId: string | null;
+  requestedComponentPath: Record<string, unknown> | null;
+  notes: string | null;
+}
 
 export interface CreateExchangeInput {
   parentId: string;
   orderId: string;
-  reason: string;
+  // Photos are at the request level — they belong to the whole RTN bundle.
+  photos: SharedExchangePhoto[];
+  // Optional free-form note from the customer (composed by the form from
+  // each tab's notes). Lands on the head row.
   notes: string | null;
-  photos: ExchangePhoto[];
-  items: {
-    orderItemId: string;
-    qty: number;
-    condition: "unopened" | "opened" | "damaged" | null;
-  }[];
+  // Per-component reasons. At least one required.
+  items: CreateExchangeItem[];
 }
 
 export type CreateExchangeResult =
@@ -127,22 +201,20 @@ export async function createExchange(
     };
   }
 
-  // 3. Block double-submit: parent should only have one *active* exchange
-  //    per order at a time. Active = not in a terminal state.
-  const existing = await db
-    .select({ id: returns.id, status: returns.status, kind: returns.kind })
-    .from(returns)
-    .where(and(eq(returns.orderId, input.orderId), eq(returns.parentId, input.parentId)));
-  const activeKinds: ExchangeStatus[] = ["requested", "approved"];
-  const hasActive = existing.some(
-    (r) =>
-      r.kind === "exchange" && (activeKinds as readonly string[]).includes(r.status)
-  );
-  if (hasActive) {
+  // 3. Cross-flow per-sale-order block. ONE exchange + ONE missing per
+  //    order, lifetime — until either is rejected. After rejection the
+  //    customer can retry.
+  const open = await findOpenRequestForOrder(input.orderId, input.parentId);
+  if (open) {
+    const msg =
+      open.kind === "exchange"
+        ? "An exchange request already exists for this order. Customer care will handle it; you can't raise another."
+        : "A missing-item claim is already in progress for this order — please wait for it to close before raising an exchange.";
     return {
       ok: false,
       status: 409,
-      error: "An exchange request for this order is already in progress.",
+      error: msg,
+      details: { existingKind: open.kind, existingStatus: open.status },
     };
   }
 
@@ -150,7 +222,11 @@ export async function createExchange(
   const returnNumber = await allocReturnNumber();
   const pickupDate = computePickupDate();
 
-  // 5. Transactional insert (return + return_items together).
+  // 5. Transactional insert (return + return_items together). Head-row
+  //    `returns` columns mirror the FIRST item's choices so audit's
+  //    list-view queries (which read off the head row) keep working
+  //    unchanged. Per-item truth lives on each `return_items` row.
+  const primary = input.items[0];
   const ret = await db.transaction(async (tx) => {
     const [created] = await tx
       .insert(returns)
@@ -160,11 +236,16 @@ export async function createExchange(
         returnNumber,
         kind: "exchange",
         pickupDate,
-        reason: input.reason,
+        reason: primary.reason,
+        subReason: primary.subReason,
         notes: input.notes,
         status: "requested",
         itemIds: ids,
         photos: input.photos,
+        requestedVariantId: primary.requestedVariantId,
+        requestedComponentPath: primary.requestedComponentPath,
+        damageLocation: primary.damageLocation,
+        replacementMode: primary.replacementMode,
       })
       .returning();
     await tx.insert(returnItems).values(
@@ -175,8 +256,14 @@ export async function createExchange(
           orderItemId: i.orderItemId,
           variantId: oi.variantId as string,
           qty: i.qty,
-          reason: input.reason,
+          reason: i.reason,
           condition: i.condition,
+          subReason: i.subReason,
+          damageLocation: i.damageLocation,
+          replacementMode: i.replacementMode,
+          requestedVariantId: i.requestedVariantId,
+          requestedComponentPath: i.requestedComponentPath,
+          notes: i.notes,
         };
       })
     );
@@ -200,10 +287,17 @@ export type TransitionResult =
  * Apply an inbound status transition (from the webhook or poller).
  * Monotonic — refuses to move backward. Updates the appropriate
  * timestamp column and best-effort notifies the parent.
+ *
+ * `rejectionReason` is honoured only when newStatus === "rejected" — it
+ * lands in returns.rejection_reason so the customer-facing status page
+ * can render the actual reason instead of generic "contact support"
+ * text. Audit's exchange_publish includes it in the webhook envelope;
+ * older callers that don't pass it just leave the column null.
  */
 export async function transitionExchangeStatus(
   returnId: string,
-  newStatus: ExchangeStatus
+  newStatus: ExchangeStatus,
+  rejectionReason: string | null = null
 ): Promise<TransitionResult> {
   const [row] = await db
     .select({
@@ -235,6 +329,9 @@ export async function transitionExchangeStatus(
   };
   if (newStatus === "approved") patch.approvedAt = new Date();
   if (newStatus === "received") patch.receivedAt = new Date();
+  if (newStatus === "rejected" && rejectionReason && rejectionReason.trim()) {
+    patch.rejectionReason = rejectionReason.trim();
+  }
 
   await db.update(returns).set(patch).where(eq(returns.id, returnId));
 

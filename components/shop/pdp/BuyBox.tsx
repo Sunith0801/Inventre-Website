@@ -11,6 +11,7 @@ import { QtyStepper } from "./QtyStepper";
 import { parseBookkitLangs, type LangPair } from "@/lib/bookkit-langs";
 import { MultiAttributePicker } from "./MultiAttributePicker";
 import { buildAttributeKey } from "@/lib/attribute-key";
+import { dedupeAttributeGroups } from "@/lib/normalize-attribute-name";
 
 const trust = [
   { icon: Award, label: "Branded for your school" },
@@ -55,6 +56,17 @@ export function BuyBox({
   const tplVariants = product.templateVariants ?? [];
   const hasTplVariants = tplVariants.length > 0;
 
+  // Defensive read-time dedupe of attribute_groups. The primary fix lives
+  // at the write site (re-derivation in product PATCH +
+  // refreshProductAttributeGroups) but for products whose JSON was written
+  // before the fix shipped, or by any path that bypasses the re-derivation,
+  // we collapse same-named axes here so the picker only renders once.
+  // `dedupeAttributeGroups` is a no-op when the data is already clean.
+  const effectiveAttributeGroups = useMemo(
+    () => dedupeAttributeGroups(product.attributeGroups ?? []),
+    [product.attributeGroups],
+  );
+
   // Multi-axis Item-Variant template (e.g. SMS Grade 11 Bookkit with
   // Mandate × Core × Elective). Activates for kits AND for any product
   // whose `sizes` array carries concatenated SKU strings (e.g.
@@ -62,7 +74,7 @@ export function BuyBox({
   // Mathematics") — those products are bookkits mis-classified as
   // `uniform` in admin and the legacy size picker would otherwise show
   // the garbled SKUs as size pills.
-  const multiAxisGroups = product.attributeGroups ?? [];
+  const multiAxisGroups = effectiveAttributeGroups;
   const variantMap = product.variantsByAttributeKey ?? {};
   const productNameLower = product.name.toLowerCase();
   const sizesLookLikeSkus = (product.sizes ?? []).some((s) => {
@@ -105,8 +117,8 @@ export function BuyBox({
   // component-local state was never read by add-to-cart — that bug shipped
   // the wrong colour variant for every uniform with a colour axis.
   const nonSizeAttrGroups = useMemo(
-    () => (product.attributeGroups ?? []).filter((g) => !/size|sizes/i.test(g.name)),
-    [product.attributeGroups]
+    () => effectiveAttributeGroups.filter((g) => !/size|sizes/i.test(g.name)),
+    [effectiveAttributeGroups]
   );
   const [attrSel, setAttrSel] = useState<Record<string, string>>(() => {
     const init: Record<string, string> = {};
@@ -148,10 +160,74 @@ export function BuyBox({
   // in-cart bug. Find the variant whose attributes match every current
   // selection across all axes (size + non-size).
   const sizeAxis = useMemo(
-    () => (product.attributeGroups ?? []).find((g) => /size|sizes/i.test(g.name)) ?? null,
-    [product.attributeGroups]
+    () => effectiveAttributeGroups.find((g) => /size|sizes/i.test(g.name)) ?? null,
+    [effectiveAttributeGroups]
   );
   const sizeAxisName = sizeAxis?.name ?? null;
+
+  // Per-axis availability map. For each non-size axis value (e.g. Colour
+  // = blue), the Set holds the sizes that actually exist as a variant. We
+  // use this to disable size pills that don't exist for the currently
+  // picked colour — a parent shopping for "blue" sees 20/22/24/26 active
+  // and the others greyed out when blue only stocks those, etc.
+  //
+  // Built from `variantsByAttributeKey` so it stays in sync with whatever
+  // the server resolved. Empty map → no filtering (legacy / single-axis
+  // products keep their previous behaviour).
+  const sizesByNonSizeAxisValue = useMemo(() => {
+    const out = new Map<string, Set<string>>();
+    if (!sizeAxisName || nonSizeAttrGroups.length === 0) return out;
+    const map = product.variantsByAttributeKey ?? {};
+    for (const key of Object.keys(map)) {
+      let pairs: [string, string][];
+      try {
+        pairs = JSON.parse(key) as [string, string][];
+      } catch {
+        continue;
+      }
+      const obj = Object.fromEntries(pairs);
+      const sz = obj[sizeAxisName];
+      if (!sz) continue;
+      for (const g of nonSizeAttrGroups) {
+        const v = obj[g.name];
+        if (!v) continue;
+        const mk = `${g.name}|${v}`;
+        let s = out.get(mk);
+        if (!s) {
+          s = new Set<string>();
+          out.set(mk, s);
+        }
+        s.add(sz);
+      }
+    }
+    return out;
+  }, [sizeAxisName, nonSizeAttrGroups, product.variantsByAttributeKey]);
+
+  // Set of sizes available for the *current* non-size selection. Null
+  // means "no filter" — show all sizes as enabled. Computed as the
+  // intersection across each non-size axis the customer has picked.
+  const availableSizes = useMemo<Set<string> | null>(() => {
+    if (nonSizeAttrGroups.length === 0 || sizesByNonSizeAxisValue.size === 0) {
+      return null;
+    }
+    let acc: Set<string> | null = null;
+    for (const g of nonSizeAttrGroups) {
+      const sel = attrSel[g.name];
+      if (!sel) continue;
+      const s = sizesByNonSizeAxisValue.get(`${g.name}|${sel}`);
+      if (!s) continue;
+      if (acc === null) {
+        acc = new Set<string>(s);
+      } else {
+        const next = new Set<string>();
+        for (const x of acc) {
+          if (s.has(x)) next.add(x);
+        }
+        acc = next;
+      }
+    }
+    return acc;
+  }, [nonSizeAttrGroups, attrSel, sizesByNonSizeAxisValue]);
   const resolvedAttrVariantId = useMemo<string | null>(() => {
     if (nonSizeAttrGroups.length === 0) return null;
     const map = product.variantsByAttributeKey ?? {};
@@ -223,12 +299,42 @@ export function BuyBox({
         )?.[0]
       : null;
   const priceKey = resolvedSize ?? size;
-  const activePrice =
-    (priceKey ? product.variantPrices?.[priceKey]?.price : undefined) ??
-    product.price;
+
+  // For products with a non-size axis (Colour, House, …), `variantPrices`
+  // keyed by `size` alone is ambiguous (green-24 / red-24 / white-24 all
+  // share the size string "24"). Read the resolved variant's price from
+  // `product.variants` directly so per-colour pricing actually surfaces.
+  // Falls back through the legacy variantPrices path for products that
+  // don't have a non-size axis.
+  const resolvedAxisVariant = useMemo(() => {
+    if (!resolvedAttrVariantId) return null;
+    return product.variants?.find((v) => v.id === resolvedAttrVariantId) ?? null;
+  }, [resolvedAttrVariantId, product.variants]);
+
+  // "From ₹X" headline — shown before the customer has picked enough
+  // axes for us to know which variant is theirs. Once the resolved
+  // variant is known, the headline flips to that variant's exact price.
+  const variantPriceRange = useMemo(() => {
+    if (!product.variants?.length) return null;
+    const prices = product.variants.map((v) =>
+      Math.round(v.pricePaise / 100),
+    );
+    return { min: Math.min(...prices), max: Math.max(...prices) };
+  }, [product.variants]);
+  const pricesVary =
+    variantPriceRange != null && variantPriceRange.min !== variantPriceRange.max;
+  const hasNonSizeAxis = nonSizeAttrGroups.length > 0;
+  const needsFullSelection = hasNonSizeAxis && !resolvedAxisVariant;
+
+  const activePrice = resolvedAxisVariant
+    ? Math.round(resolvedAxisVariant.pricePaise / 100)
+    : (priceKey ? product.variantPrices?.[priceKey]?.price : undefined) ??
+      (pricesVary && variantPriceRange ? variantPriceRange.min : product.price);
   const activeMrp =
-    (priceKey ? product.variantPrices?.[priceKey]?.mrp : undefined) ??
-    product.mrp;
+    resolvedAxisVariant && resolvedAxisVariant.mrpPaise != null
+      ? Math.round(resolvedAxisVariant.mrpPaise / 100)
+      : (priceKey ? product.variantPrices?.[priceKey]?.mrp : undefined) ??
+        product.mrp;
 
   const off = activeMrp
     ? Math.round((1 - activePrice / activeMrp) * 100)
@@ -299,6 +405,11 @@ export function BuyBox({
 
       {/* price */}
       <div className="mt-6 flex items-baseline gap-3">
+        {needsFullSelection && pricesVary ? (
+          <span className="text-[14px] font-semibold tracking-wide uppercase text-ink-500">
+            From
+          </span>
+        ) : null}
         <span className="font-display text-[34px] font-extrabold tracking-tight text-ink-900">
           ₹{activePrice.toLocaleString()}
         </span>
@@ -363,18 +474,22 @@ export function BuyBox({
       {/* Legacy multi-attribute selectors (Uniform Colors + Shirt Size,
           etc.) — kept for products whose variants don't have a complete
           attribute lookup map yet. */}
-      {!useMultiAxisPicker && (product.attributeGroups ?? []).map((group) => (
-        <AttributeGroupPicker
-          key={group.name}
-          name={group.name}
-          values={group.values}
-          isSize={/size|sizes/i.test(group.name)}
-          selectedSize={size}
-          onSelectSize={setSize}
-          attrValue={attrSel[group.name] ?? group.values[0] ?? ""}
-          onAttrChange={(v) => setAttrSel((s) => ({ ...s, [group.name]: v }))}
-        />
-      ))}
+      {!useMultiAxisPicker && effectiveAttributeGroups.map((group) => {
+        const isSize = /size|sizes/i.test(group.name);
+        return (
+          <AttributeGroupPicker
+            key={group.name}
+            name={group.name}
+            values={group.values}
+            isSize={isSize}
+            selectedSize={size}
+            onSelectSize={setSize}
+            attrValue={attrSel[group.name] ?? group.values[0] ?? ""}
+            onAttrChange={(v) => setAttrSel((s) => ({ ...s, [group.name]: v }))}
+            availableValues={isSize ? availableSizes : null}
+          />
+        );
+      })}
 
       {/* language / stream selector (template variants) */}
       {hasTplVariants && (() => {
@@ -473,7 +588,7 @@ export function BuyBox({
       {/* size selector (only when this product has size SKUs — Bookkits skip).
           Suppressed if attribute_groups already rendered the size picker
           or if the multi-axis Item-Variant picker is active. */}
-      {!hasTplVariants && !useMultiAxisPicker && (product.attributeGroups ?? []).every((g) => !/size|sizes/i.test(g.name)) && (
+      {!hasTplVariants && !useMultiAxisPicker && effectiveAttributeGroups.every((g) => !/size|sizes/i.test(g.name)) && (
       <div className="mt-7">
         <div className="flex items-center justify-between">
           <p className="text-[13px] font-semibold text-ink-900">
@@ -657,6 +772,7 @@ function AttributeGroupPicker({
   onSelectSize,
   attrValue,
   onAttrChange,
+  availableValues,
 }: {
   name: string;
   values: string[];
@@ -668,6 +784,10 @@ function AttributeGroupPicker({
    *  can read it. Required when isSize is false. */
   attrValue?: string;
   onAttrChange?: (v: string) => void;
+  /** When set, values NOT in this set are still rendered but disabled — so
+   *  a parent shopping for "blue" sees that "30" exists in the catalog but
+   *  isn't stocked in blue. Null = no filtering (all values enabled). */
+  availableValues?: Set<string> | null;
 }) {
   const value = isSize ? selectedSize : attrValue ?? values[0] ?? "";
   const setValue = isSize ? onSelectSize : (onAttrChange ?? (() => {}));
@@ -696,16 +816,24 @@ function AttributeGroupPicker({
       <div className="mt-2.5 flex flex-wrap gap-2">
         {values.map((v) => {
           const active = v === cleanValue;
+          const unavailable = availableValues != null && !availableValues.has(v);
           return (
             <button
               key={v}
               type="button"
-              onClick={() => setValue(isSize ? `${prefix}${v}` : v)}
+              onClick={() => {
+                if (unavailable) return;
+                setValue(isSize ? `${prefix}${v}` : v);
+              }}
+              disabled={unavailable}
+              title={unavailable ? "Not available for the selected colour" : undefined}
               className={
                 "h-11 min-w-11 px-4 rounded-md border text-[13px] font-semibold transition-all " +
-                (active
-                  ? "bg-ink-900 text-white border-ink-900"
-                  : "bg-white text-ink-800 border-ink-200 hover:border-ink-900")
+                (unavailable
+                  ? "bg-ink-50 text-ink-300 border-ink-100 line-through cursor-not-allowed"
+                  : active
+                    ? "bg-ink-900 text-white border-ink-900"
+                    : "bg-white text-ink-800 border-ink-200 hover:border-ink-900")
               }
             >
               {v}

@@ -159,6 +159,14 @@ export async function allocReturnNumber(date: Date = new Date()): Promise<string
   return `RTN-${year}-${pad(n, 5)}`;
 }
 
+export async function allocClaimNumber(date: Date = new Date()): Promise<string> {
+  // Missing-item claims — distinct prefix so customer care can tell at
+  // a glance whether a row is an exchange (RTN-) or a missing claim (MIS-).
+  const year = String(date.getFullYear());
+  const n = await nextNumber("MIS", year);
+  return `MIS-${year}-${pad(n, 5)}`;
+}
+
 export async function allocCustomerCode(date: Date = new Date()): Promise<string> {
   const year = String(date.getFullYear());
   const n = await nextNumber("CUST", year);

@@ -4,7 +4,7 @@ import { z } from "zod";
 import { db } from "@/db/client";
 import { productAttributes } from "@/db/schema";
 import { isResponse, requirePermission } from "@/lib/admin-guard";
-import { eq, sql } from "drizzle-orm";
+import { normalizeAttributeName } from "@/lib/normalize-attribute-name";
 
 const Body = z.object({
   name: z.string().min(1),
@@ -33,15 +33,25 @@ export async function POST(req: Request) {
   // AttributeAdder consumes the body to silently fall back to the
   // existing attribute (with its values) — same outcome as if the admin
   // had picked it from the dropdown.
-  const [existing] = await db
+  //
+  // The check is widened beyond an exact lowercase match to catch
+  // logically-equivalent names — "Size" vs "Sizes", "Colour" vs "Color".
+  // Without this, both could be created as distinct rows and end up
+  // bound to the same product's variants, which produced the doubled-
+  // Size symptom on inventre-dev. We pull all rows once (the table is
+  // small — tens to a few hundred rows) and compare in JS using the
+  // shared normaliser so the rule stays in one place.
+  const normalisedIncoming = normalizeAttributeName(body.name);
+  const allRows = await db
     .select({ id: productAttributes.id, name: productAttributes.name, type: productAttributes.type })
-    .from(productAttributes)
-    .where(eq(sql`lower(${productAttributes.name})`, body.name.trim().toLowerCase()))
-    .limit(1);
+    .from(productAttributes);
+  const existing = allRows.find(
+    (r) => normalizeAttributeName(r.name) === normalisedIncoming,
+  );
   if (existing) {
     return NextResponse.json(
       {
-        error: `An attribute named "${existing.name}" already exists. Reusing it instead of creating a duplicate.`,
+        error: `An attribute named "${existing.name}" already exists (logically equivalent to "${body.name}"). Reusing it instead of creating a duplicate.`,
         existing,
       },
       { status: 409 },

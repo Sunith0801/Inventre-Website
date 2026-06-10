@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
+import { failJson } from "@/lib/observability/fail-json";
 import { randomUUID } from "node:crypto";
 import { db } from "@/db/client";
 import { orders, orderItems, payments } from "@/db/schema";
@@ -37,12 +38,10 @@ const Body = z.object({
 });
 
 export async function POST(req: Request) {
-  if (!isCCAvenueConfigured()) {
-    return NextResponse.json(
-      { error: "CCAvenue not configured on this server" },
-      { status: 503 }
-    );
-  }
+  // CCAvenue config is only required for non-zero baskets — zero-value
+  // baskets short-circuit to a "complimentary" payment further down and
+  // never touch the gateway, so blocking unconfigured envs up-front would
+  // also block legitimate ₹0 orders (e.g. complimentary kits on dev).
 
   // Read the parent cookie directly; an unrelated admin cookie in the same
   // browser must not shadow the parent session for shop checkout.
@@ -51,7 +50,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   if (me.students.length === 0)
-    return NextResponse.json({ error: "No student attached" }, { status: 400 });
+    return failJson({
+      parentId: me.id, req, status: 400,
+      message: "No student attached", kind: "rule.block",
+    });
 
   const body = Body.parse(await req.json());
   // Read with the first student as the "active" anchor — the cart already
@@ -66,16 +68,24 @@ export async function POST(req: Request) {
     anchor.id
   );
   if (cart.lines.length === 0)
-    return NextResponse.json({ error: "Cart is empty" }, { status: 400 });
+    return failJson({
+      parentId: me.id, req, status: 400,
+      message: "Cart is empty", kind: "rule.block",
+    });
 
   for (const line of cart.lines) {
     if (line.qty > line.stockLeft) {
-      return NextResponse.json(
-        {
-          error: `Only ${line.stockLeft} of ${line.productName} (${line.size}) available`,
+      return failJson({
+        parentId: me.id, req, status: 409,
+        message: `Only ${line.stockLeft} of ${line.productName} (${line.size}) available`,
+        kind: "rule.block",
+        details: {
+          rule: "stock_block",
+          variantId: line.variantId,
+          requested: line.qty, available: line.stockLeft,
+          product: line.productName, size: line.size,
         },
-        { status: 409 }
-      );
+      });
     }
   }
 
@@ -345,6 +355,14 @@ export async function POST(req: Request) {
     try {
       await clearAppliedCoupon(me.id);
     } catch {}
+  }
+
+  // Only enforce gateway config when we actually need it (basket > 0).
+  if (!isCCAvenueConfigured()) {
+    return NextResponse.json(
+      { error: "CCAvenue not configured on this server" },
+      { status: 503 }
+    );
   }
 
   const redirectPayload = buildRedirectPayload({

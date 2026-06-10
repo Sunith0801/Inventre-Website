@@ -1282,9 +1282,11 @@ export async function upsertItemsMirror(
   for (const r of items) {
     const get = <T>(k: string): T | null =>
       r[k] === undefined || r[k] === null ? null : (r[k] as T);
+    // erp_name column is varchar(64). Audit's items don't ship an erp_name,
+    // so the fallback must stay short. orderErpName is ~18 chars; -NN keeps
+    // the synthetic key well under 64 even with 3-digit indices.
     const lineName =
-      get<string>("erp_name") ??
-      `${orderErpName}::${get<string>("item_code") ?? "x"}::${items.indexOf(r)}`;
+      get<string>("erp_name") ?? `${orderErpName}-${items.indexOf(r)}`;
     await db
       .execute(sql`
         INSERT INTO erp.sales_order_items (

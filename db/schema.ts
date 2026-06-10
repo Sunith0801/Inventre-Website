@@ -1236,6 +1236,40 @@ export const returns = pgTable(
     // `pickup_date` is set only on exchange rows; refund rows leave it
     // NULL. See lib/date.ts → firstPickupSaturday for the rule.
     pickupDate: date("pickup_date"),
+    // ─── Phase 2 (migration 0052): industry-standard exchange UX ──
+    subReason: text("sub_reason"),
+    // Variant the customer wants *instead* — NULL on "fresh piece"
+    // requests (damaged / defective). No FK so an archived variant
+    // doesn't block the row.
+    requestedVariantId: uuid("requested_variant_id"),
+    // For kit / Magic Box parent lines: which component is the issue.
+    // Shape: { variantId, componentName, attributes? } pointing into
+    // the original line's bundle_selections.
+    requestedComponentPath: jsonb("requested_component_path"),
+    damageLocation: text("damage_location"),
+    // Photos uploaded by the school at hand-over (separate from the
+    // request photos in `photos`). [{ url, key }, ...]
+    handoverPhotos: jsonb("handover_photos"),
+    // ─── 0053 (2026-06-07): honest replacement mode ───────────────
+    // What the customer explicitly chose for the replacement:
+    //   'sibling'             — picked a different size/variant
+    //   'same_fresh'          — wants a fresh copy of the same variant
+    //   'different_describe'  — wants something different (see notes)
+    // Replaces the silent "same fresh piece" assumption. NULL on rows
+    // that predate this column.
+    replacementMode: text("replacement_mode"),
+    // ─── 0054 (2026-06-07): customer-facing rejection reason ──────
+    // Captured by audit customer-care when rejecting; carried back in
+    // the exchange.rejected webhook envelope; persisted here so the
+    // customer's exchange-status page can render the actual reason
+    // instead of a generic "contact support" message.
+    rejectionReason: text("rejection_reason"),
+    // ─── 0055 (2026-06-07): replacement-arrived-at-school timestamp
+    // Stamped by the audit-side exchange.replacement_arrived webhook
+    // when the warehouse→school dispatch leg lands. The customer
+    // page renders an intermediate "arrived at school" callout when
+    // status='approved' and this is set.
+    replacementArrivedAt: timestamp("replacement_arrived_at", { withTimezone: true }),
     // ──────────────────────────────────────────────────────────────
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
@@ -1262,6 +1296,70 @@ export const returnItems = pgTable("return_items", {
   qty: integer("qty").notNull(),
   reason: text("reason"),
   condition: returnConditionEnum("condition"),
+  // Per-item exchange detail (migration 0057). The row-level `returns`
+  // columns still carry the "primary" (first item's) values for back-compat.
+  subReason: text("sub_reason"),
+  damageLocation: text("damage_location"),
+  replacementMode: text("replacement_mode"),
+  requestedVariantId: uuid("requested_variant_id").references(() => productVariants.id),
+  requestedComponentPath: jsonb("requested_component_path"),
+  notes: text("notes"),
+});
+
+// ─── Missing-item claims (migration 0056) ────────────────────────────
+// Separate top-level entity from returns/exchanges because semantics
+// differ: customer never received the item, no reverse logistics. Same
+// shape as the exchange flow's customer-facing surfaces (claim_number,
+// status, photos, rejection_reason, replacement_arrived_at) so the form
+// + status page can mostly mirror /shop/orders/[id]/exchange/*.
+export const missingItemClaims = pgTable(
+  "missing_item_claims",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    claimNumber: text("claim_number"),                // MIS-YYYY-NNNNN
+    orderId: uuid("order_id")
+      .notNull()
+      .references(() => orders.id),
+    parentId: uuid("parent_id")
+      .notNull()
+      .references(() => parents.id),
+    // requested | approved | rejected | received_at_school | delivered
+    status: text("status").notNull().default("requested"),
+    notes: text("notes"),
+    rejectionReason: text("rejection_reason"),
+    replacementArrivedAt: timestamp("replacement_arrived_at", { withTimezone: true }),
+    pickupDate: date("pickup_date"),
+    photos: jsonb("photos"),
+    approvedAt: timestamp("approved_at", { withTimezone: true }),
+    approvedBy: uuid("approved_by"),
+    rejectedAt: timestamp("rejected_at", { withTimezone: true }),
+    receivedAt: timestamp("received_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    claimNumberIdx: uniqueIndex("missing_item_claims_claim_number_idx").on(t.claimNumber),
+    parentStatusIdx: index("ix_missing_claims_parent_status").on(t.parentId, t.status),
+    orderIdx: index("ix_missing_claims_order").on(t.orderId),
+  }),
+);
+
+export const missingItemClaimItems = pgTable("missing_item_claim_items", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  claimId: uuid("claim_id")
+    .notNull()
+    .references(() => missingItemClaims.id, { onDelete: "cascade" }),
+  orderItemId: uuid("order_item_id").notNull(),
+  qtyShort: integer("qty_short").notNull(),
+  // {variantId, componentName, attributes} — for kit/Magic-Box claims
+  // where only a component is missing. Bridge enriches with item_code +
+  // item_name + size before sending to audit.
+  missingComponentPath: jsonb("missing_component_path"),
+  notes: text("notes"),
 });
 
 export const payments = pgTable("payments", {

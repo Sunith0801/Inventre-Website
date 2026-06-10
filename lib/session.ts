@@ -22,6 +22,7 @@ import {
   verifySession,
   type SessionPayload,
 } from "./jwt";
+import { readSupportView } from "./support-view";
 
 /** Convert an ERP-relative path (e.g. /files/logo.png) to a full URL using ERP_BASE_URL.
  *  Returns the original value if it's already absolute or null/empty. */
@@ -113,6 +114,16 @@ export type CurrentUser = CurrentParent | CurrentAdmin | null;
  * happen to exist (e.g. admin tab + parent tab in the same browser).
  */
 export const getSession = cache(async (): Promise<SessionPayload | null> => {
+  // Support agent view-as wins over any real session in the browser so a
+  // logged-in agent never accidentally sees their own data through the
+  // impersonation iframe.
+  const view = await readSupportView();
+  if (view) {
+    return {
+      sub: view.parentId,
+      kind: "parent",
+    } as unknown as SessionPayload;
+  }
   const jar = await cookies();
   const adminTok = jar.get(ADMIN_SESSION_COOKIE)?.value;
   if (adminTok) {
@@ -139,16 +150,32 @@ export const getSession = cache(async (): Promise<SessionPayload | null> => {
  * parent-area pages like /shop.
  */
 export const getCurrentParent = cache(async (): Promise<CurrentParent | null> => {
-  const jar = await cookies();
-  const tok = jar.get(SESSION_COOKIE)?.value;
-  if (!tok) return null;
-  const sess = await verifySession(tok);
-  if (!sess || sess.kind !== "parent") return null;
+  // Support view-as: impersonate the parent identified by the support JWT.
+  // The DB hydration below is identical — the only difference is where the
+  // parent id comes from.
+  const view = await readSupportView();
+  let parentId: string | null = null;
+  let viewLoggedInPhone: string | null = null;
+  if (view) {
+    parentId = view.parentId;
+    // The agent didn't sign in with any phone — surface the parent's primary
+    // phone so downstream UI logic that branches on loggedInPhone behaves
+    // identically to a real session signed in with that number.
+    viewLoggedInPhone = null;
+  } else {
+    const jar = await cookies();
+    const tok = jar.get(SESSION_COOKIE)?.value;
+    if (!tok) return null;
+    const sess = await verifySession(tok);
+    if (!sess || sess.kind !== "parent") return null;
+    parentId = sess.sub;
+    viewLoggedInPhone = sess.phone ?? null;
+  }
 
   const [parent] = await db
     .select()
     .from(parents)
-    .where(eq(parents.id, sess.sub))
+    .where(eq(parents.id, parentId))
     .limit(1);
   if (!parent) return null;
 
@@ -371,7 +398,7 @@ export const getCurrentParent = cache(async (): Promise<CurrentParent | null> =>
     kind: "parent",
     id: parent.id,
     phone: parent.phone,
-    loggedInPhone: sess.phone ?? null,
+    loggedInPhone: viewLoggedInPhone ?? null,
     name: parent.name,
     email: parent.email,
     tcAcceptedAt: parent.tcAcceptedAt ?? null,

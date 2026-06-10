@@ -547,9 +547,18 @@ export async function getParentOrderDetailFromErp(
              dispatched_at::text AS dispatched_at,
              NULL::text          AS delivered_at,
              NULL::text          AS item_category
-        FROM erp.packing_units
-       WHERE order_erp_name = ${orderNo}
-         AND status IN ('sealed','dispatched')
+        FROM erp.packing_units pu
+       WHERE pu.order_erp_name = ${orderNo}
+         AND pu.status IN ('sealed','dispatched')
+         -- Once an outward_shipments row exists for this order, it owns
+         -- the lifecycle (it's the only place that flips to "delivered").
+         -- Keeping packing_units in the union double-counts and pegs the
+         -- timeline at "shipped" forever, because packing_units never
+         -- progresses past "dispatched".
+         AND NOT EXISTS (
+           SELECT 1 FROM erp.outward_shipments os
+            WHERE os.order_erp_name = pu.order_erp_name
+         )
       ORDER BY dispatched_at DESC NULLS LAST
     `)
   );

@@ -33,6 +33,104 @@ export function isExchangeReason(v: unknown): v is ExchangeReason {
   );
 }
 
+// ─── Sub-reasons (Phase 2) ─────────────────────────────────────────
+//
+// A second dropdown the customer picks under the top-level reason.
+// Surfacing these gives customer-care a much tighter starting point
+// when reviewing — they don't have to read free-text notes to know
+// "wrong size" means "too small" vs "too large" vs "size chart
+// mismatch". "other" intentionally has no sub-reasons; the free-text
+// notes are mandatory there.
+
+export const SUB_REASONS: Record<
+  ExchangeReason,
+  readonly { value: string; label: string }[]
+> = {
+  wrong_size_delivered: [
+    { value: "too_small", label: "Too small" },
+    { value: "too_large", label: "Too large" },
+    { value: "size_chart_mismatch", label: "Size label doesn't match brand chart" },
+  ],
+  damaged: [
+    { value: "packaging", label: "Packaging damaged in transit" },
+    { value: "item", label: "Item damaged in transit" },
+    { value: "both", label: "Both packaging and item damaged" },
+  ],
+  wrong_item: [
+    { value: "wrong_color", label: "Wrong color" },
+    { value: "wrong_design", label: "Wrong design / print" },
+    { value: "wrong_product", label: "Completely different product" },
+    { value: "wrong_language", label: "Wrong language (books)" },
+  ],
+  defective: [
+    { value: "stitching", label: "Stitching issue" },
+    { value: "tear", label: "Tear / hole" },
+    { value: "button", label: "Button missing / broken" },
+    { value: "print", label: "Print quality issue" },
+    { value: "fabric", label: "Fabric issue" },
+    { value: "pages", label: "Pages torn / missing (books)" },
+    { value: "other", label: "Other defect" },
+  ],
+  other: [],
+} as const;
+
+export function isValidSubReason(top: ExchangeReason, sub: string): boolean {
+  return SUB_REASONS[top].some((r) => r.value === sub);
+}
+
+// ─── Damage location (Phase 2) ─────────────────────────────────────
+// Only relevant under `damaged` and `defective`.
+export const DAMAGE_LOCATIONS: readonly { value: string; label: string }[] = [
+  { value: "front", label: "Front of item" },
+  { value: "back", label: "Back of item" },
+  { value: "side", label: "Side / edge" },
+  { value: "inside", label: "Inside / lining" },
+  { value: "other", label: "Other (described in notes)" },
+] as const;
+
+// ─── Photo categories (Phase 2) ────────────────────────────────────
+//
+// Guided photo prompts shown to the customer when attaching evidence.
+// Each photo carries one of these tags so customer-care knows what
+// they're looking at without guessing. Phase 1 photos lack the tag —
+// audit-side renders them in an "Other" bucket gracefully.
+
+export const PHOTO_CATEGORIES: readonly { value: string; label: string; hint: string }[] = [
+  {
+    value: "front_full",
+    label: "Front of item (full view)",
+    hint: "Show the whole item so we can confirm what was delivered.",
+  },
+  {
+    value: "issue_close_up",
+    label: "Close-up of the issue",
+    hint: "Zoom in on the size label / damage / defect.",
+  },
+  {
+    value: "packaging",
+    label: "Original packaging",
+    hint: "Helpful for in-transit damage claims.",
+  },
+  {
+    value: "size_label",
+    label: "Size / variant label",
+    hint: "The tag inside the item showing size + variant info.",
+  },
+  {
+    value: "other",
+    label: "Other supporting photo",
+    hint: "Anything else that helps customer-care decide.",
+  },
+] as const;
+
+export type ExchangePhoto = {
+  url: string;
+  key: string;
+  // Phase-2 enrichment — optional so Phase-1 rows keep working.
+  category?: string;
+  caption?: string;
+};
+
 // ─── Status machine ────────────────────────────────────────────────
 
 export const EXCHANGE_STATUSES = [

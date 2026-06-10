@@ -16,6 +16,7 @@ import {
 import { isResponse, requirePermission } from "@/lib/admin-guard";
 import { invalidateCatalog } from "@/lib/cache";
 import { getSizeAxisNameForProduct } from "@/lib/repos/product-attribute-groups";
+import { normalizeAttributeName } from "@/lib/normalize-attribute-name";
 
 const Variant = z.object({
   id: z.string().uuid().optional(),
@@ -135,6 +136,59 @@ export async function PATCH(
   if (Object.keys(update).length > 0)
     await db.update(products).set(update).where(eq(products.id, id));
 
+  // When basePrice changes, propagate to itemPrices for every active variant
+  // on the default ("Standard Selling") price list at the global (schoolId
+  // IS NULL) scope. The storefront resolver prefers itemPrices over
+  // products.basePrice, so without this sync a Magic Box / Bookkit price
+  // edited here would never surface on the shop or cart. School-specific
+  // overrides (itemPrices rows with non-null schoolId) are left untouched
+  // so per-school pricing keeps working.
+  if (body.basePrice !== undefined) {
+    const newPricePaise = body.basePrice * 100;
+    const [defaultPL] = await db
+      .select({ id: priceLists.id })
+      .from(priceLists)
+      .where(eq(priceLists.isDefault, true))
+      .limit(1);
+    if (defaultPL) {
+      const activeVariants = await db
+        .select({ id: productVariants.id })
+        .from(productVariants)
+        .where(
+          and(
+            eq(productVariants.productId, id),
+            eq(productVariants.isActive, true)
+          )
+        );
+      for (const v of activeVariants) {
+        const existing = await db
+          .select({ id: itemPrices.id })
+          .from(itemPrices)
+          .where(
+            and(
+              eq(itemPrices.variantId, v.id),
+              eq(itemPrices.priceListId, defaultPL.id),
+              sql`${itemPrices.schoolId} IS NULL`
+            )
+          )
+          .limit(1);
+        if (existing.length > 0) {
+          await db
+            .update(itemPrices)
+            .set({ price: newPricePaise })
+            .where(eq(itemPrices.id, existing[0].id));
+        } else {
+          await db.insert(itemPrices).values({
+            variantId: v.id,
+            priceListId: defaultPL.id,
+            schoolId: null,
+            price: newPricePaise,
+          });
+        }
+      }
+    }
+  }
+
   // Variant sync — soft-delete model: rows missing from the incoming list are
   // marked isActive=false so historical orderItems / shipmentItems / etc keep
   // their FK references intact. Hard delete would FK-violate on any variant
@@ -166,53 +220,113 @@ export async function PATCH(
 
     try {
       for (const v of body.variants) {
+        // Look up the colour value (label + attribute id) up front so we
+        // can both EAV-link the variant AND auto-clean the size column.
+        // The editor's Size input is free text — admins have been typing
+        // composite labels like "green · 24" into it because the input
+        // gives them no hint that Colour is already a separate axis. We
+        // strip a leading "<colour> · " prefix so the legacy size column
+        // stays canonical even when the input was polluted.
+        let colourVal: { attributeId: string; value: string } | null = null;
+        if (v.colorValueId) {
+          const [row] = await db
+            .select({
+              attributeId: productAttributeValues.attributeId,
+              value: productAttributeValues.value,
+            })
+            .from(productAttributeValues)
+            .where(eq(productAttributeValues.id, v.colorValueId))
+            .limit(1);
+          colourVal = row ?? null;
+        }
+        const cleanSize = (() => {
+          const raw = (v.size ?? "").trim();
+          if (!colourVal) return raw;
+          // Match "<colour> · <rest>" case-insensitively, allowing either
+          // the middle-dot (·) or a plain hyphen with surrounding spaces.
+          // Keep one round of stripping — never recurse.
+          const sep = /\s*[·\-–—]\s*/;
+          const tryStrip = (label: string) => {
+            const re = new RegExp(`^${label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}${sep.source}`, "i");
+            return raw.replace(re, "");
+          };
+          const stripped = tryStrip(colourVal.value);
+          return stripped !== raw ? stripped : raw;
+        })();
+
         let variantId = v.id;
         if (v.id) {
           await db
             .update(productVariants)
             .set({
-              size: v.size,
+              size: cleanSize,
               sku: v.sku,
               stockQty: v.stockQty,
               isActive: true,
             })
             .where(eq(productVariants.id, v.id));
         } else {
-          const [ins] = await db
-            .insert(productVariants)
-            .values({
-              productId: id,
-              size: v.size,
-              sku: v.sku,
-              stockQty: v.stockQty,
-              isActive: true,
-            })
-            .returning({ id: productVariants.id });
-          variantId = ins.id;
-        }
-        // Persist the editable colour → product_variant_attributes.
-        if (variantId && v.colorValueId) {
-          const [val] = await db
-            .select({ attributeId: productAttributeValues.attributeId })
-            .from(productAttributeValues)
-            .where(eq(productAttributeValues.id, v.colorValueId))
+          // INSERT path. The `product_variants.sku` index is a GLOBAL
+          // UNIQUE — soft-deleted rows still occupy their SKU. When an
+          // admin removes a row from the editor and later re-adds the
+          // same SKU (common workflow: "oh I deleted that by mistake"),
+          // the raw INSERT would fail with a duplicate-key error and the
+          // whole save would abort, blocking the re-derivation and the
+          // PDP fix from landing. Detect that case here and reactivate
+          // the existing row instead of failing.
+          const [resurrectable] = await db
+            .select({ id: productVariants.id })
+            .from(productVariants)
+            .where(
+              and(
+                eq(productVariants.productId, id),
+                eq(productVariants.sku, v.sku),
+                eq(productVariants.isActive, false),
+              ),
+            )
             .limit(1);
-          if (val) {
+          if (resurrectable) {
             await db
-              .insert(productVariantAttributes)
-              .values({
-                variantId,
-                attributeId: val.attributeId,
-                valueId: v.colorValueId,
+              .update(productVariants)
+              .set({
+                size: cleanSize,
+                stockQty: v.stockQty,
+                isActive: true,
               })
-              .onConflictDoUpdate({
-                target: [
-                  productVariantAttributes.variantId,
-                  productVariantAttributes.attributeId,
-                ],
-                set: { valueId: v.colorValueId },
-              });
+              .where(eq(productVariants.id, resurrectable.id));
+            variantId = resurrectable.id;
+          } else {
+            const [ins] = await db
+              .insert(productVariants)
+              .values({
+                productId: id,
+                size: cleanSize,
+                sku: v.sku,
+                stockQty: v.stockQty,
+                isActive: true,
+              })
+              .returning({ id: productVariants.id });
+            variantId = ins.id;
           }
+        }
+        // Persist the editable colour → product_variant_attributes. We
+        // looked up the attribute id above so we don't pay for a second
+        // round-trip here.
+        if (variantId && v.colorValueId && colourVal) {
+          await db
+            .insert(productVariantAttributes)
+            .values({
+              variantId,
+              attributeId: colourVal.attributeId,
+              valueId: v.colorValueId,
+            })
+            .onConflictDoUpdate({
+              target: [
+                productVariantAttributes.variantId,
+                productVariantAttributes.attributeId,
+              ],
+              set: { valueId: v.colorValueId },
+            });
         }
         // Persist the editable price → item_prices (Standard Selling list).
         if (variantId && v.price !== undefined && sellPL) {
@@ -235,11 +349,20 @@ export async function PATCH(
       }
     } catch (e) {
       // Unique-constraint violation on sku → return 409 instead of opaque 500.
+      // The most common collision (a soft-deleted variant of the *same*
+      // product holding the SKU) is now auto-healed in the INSERT path
+      // above. If we land here it's almost always a different product
+      // already owning the SKU — surface that explicitly so the admin
+      // knows to pick a unique value, not to keep clicking Save.
       const msg = e instanceof Error ? e.message : "";
       if (/duplicate key|variants_sku_idx|unique/i.test(msg)) {
+        const m = msg.match(/Key \(sku\)=\(([^)]+)\)/i);
+        const conflictingSku = m?.[1];
         return NextResponse.json(
           {
-            error: "One of the SKUs you entered is already used by another variant.",
+            error: conflictingSku
+              ? `SKU "${conflictingSku}" is already used by another product. Each SKU must be unique across the whole catalog — please pick a different code (e.g. add a school or category prefix).`
+              : "One of the SKUs you entered is already used by another product. Each SKU must be unique across the whole catalog.",
             details: msg,
           },
           { status: 409 }
@@ -295,62 +418,125 @@ export async function PATCH(
           and(eq(productVariants.productId, id), eq(productVariants.isActive, true))
         );
 
+      // Bucket EAV rows by *normalised* attribute name so two equivalent
+      // attribute rows (e.g. "Size" + "Sizes", or "Color" + "Colour")
+      // collapse into one axis. The old code bucketed by `attrId` which
+      // produced the doubled-Size symptom on inventre-dev when admin had
+      // both rows bound to a product's variants. Note: we no longer skip
+      // type='size' rows here — the legacy `productVariants.size` column
+      // is merged into the same normalised "size" bucket below, so EAV
+      // size rows participate in the merge without duplicating.
       type Bucket = {
-        name: string;
+        normalizedKey: string;
+        displayName: string;
         attrSort: number;
+        attributeIds: Set<string>;
         values: { value: string; sort: number }[];
         seen: Set<string>;
       };
       const buckets = new Map<string, Bucket>();
       for (const r of attrRows) {
         if (!r.value) continue;
-        if (r.attrType === "size") continue;
-        const bucket =
-          buckets.get(r.attrId) ??
-          {
-            name: r.attrName,
+        const key = normalizeAttributeName(r.attrName);
+        let bucket = buckets.get(key);
+        if (!bucket) {
+          bucket = {
+            normalizedKey: key,
+            displayName: r.attrName,
             attrSort: r.attrSort ?? 0,
+            attributeIds: new Set<string>(),
             values: [],
             seen: new Set<string>(),
           };
+          buckets.set(key, bucket);
+        }
+        // Prefer the type='size' attribute's display name for the size axis
+        // (matches MultiAttributePicker's expected key) when the first row
+        // we saw used a different display label.
+        if (r.attrType === "size" && bucket.displayName !== r.attrName) {
+          bucket.displayName = r.attrName;
+        }
+        bucket.attributeIds.add(r.attrId);
+        if ((r.attrSort ?? 0) < bucket.attrSort) bucket.attrSort = r.attrSort ?? 0;
         if (!bucket.seen.has(r.value)) {
           bucket.seen.add(r.value);
           bucket.values.push({ value: r.value, sort: r.valueSort ?? 0 });
         }
-        buckets.set(r.attrId, bucket);
       }
 
-      const groups: { name: string; values: string[] }[] = [];
-      const otherGroups = Array.from(buckets.values()).sort(
-        (a, b) => a.attrSort - b.attrSort
-      );
+      // Decide what to do with the legacy `product_variants.size` column.
+      //
+      // Variant rows now arrive here already cleaned (the loop above
+      // stripped any `<colour> · ` prefix). That means legacy values are
+      // trustworthy — they can be unioned into the EAV size bucket so a
+      // newly added size (e.g. white·30 added in the variants editor
+      // without yet being declared as an EAV value) still shows on the
+      // PDP picker. Three cases:
+      //
+      //   1. An EAV size axis already exists in `buckets` (under its own
+      //      normalised name — e.g. "tshirt size" for "Tshirt Size") →
+      //      MERGE legacy values into that bucket. Keep EAV's display
+      //      name + ordering hints. Dedupe by the `seen` set so values
+      //      shared by both layers don't duplicate.
+      //   2. No EAV size axis, and no other EAV axes → emit legacy as a
+      //      "Size" axis. Preserves behaviour for ~2,100 legacy-only
+      //      products with no EAV metadata at all.
+      //   3. No EAV size axis, BUT other EAV axes exist → skip the legacy
+      //      size column entirely. Prevents a phantom Size axis on products
+      //      whose `product_variants.size` carries non-size data (e.g. CAS
+      //      bookkit parents where `size` is a sibling product name).
       if (sizes.length > 0) {
-        // Pick the axis name for the legacy size group. Three cases:
-        //   1. Product has an EAV attribute of type='size' (e.g. "Caps Sizes",
-        //      "Skirt Size") — use that name so the JSON axis matches the key
-        //      MultiAttributePicker looks up in variantsByAttributeKey.
-        //   2. No EAV size attribute and no other EAV axes — fall back to
-        //      the legacy "Size" label (preserves behaviour for the ~2,100
-        //      legacy-only products with no EAV metadata).
-        //   3. No EAV size attribute but other EAV axes exist — skip the
-        //      size group entirely. This prevents a phantom "Size" axis on
-        //      products whose `product_variants.size` column holds non-size
-        //      labels (e.g. CAS bookkit parents where `size` is a sibling
-        //      product name); otherwise every option would become unreachable
-        //      in the picker.
         const eavSizeName = await getSizeAxisNameForProduct(id);
-        const sizeAxisName =
-          eavSizeName ?? (otherGroups.length === 0 ? "Size" : null);
-        if (sizeAxisName !== null) {
-          groups.push({ name: sizeAxisName, values: sizes });
+        const eavSizeKey = eavSizeName ? normalizeAttributeName(eavSizeName) : null;
+        const sizeBucket = eavSizeKey ? buckets.get(eavSizeKey) : undefined;
+        if (sizeBucket) {
+          // Case 1: union legacy into EAV bucket.
+          for (const sz of sizes) {
+            if (!sizeBucket.seen.has(sz)) {
+              sizeBucket.seen.add(sz);
+              sizeBucket.values.push({ value: sz, sort: 0 });
+            }
+          }
+        } else {
+          // Case 2 or 3: no EAV size bucket present → emit legacy on its own.
+          const otherCount = buckets.size;
+          const displayName =
+            eavSizeName ?? (otherCount === 0 ? "Size" : null);
+          if (displayName !== null) {
+            const key = eavSizeKey ?? "size";
+            buckets.set(key, {
+              normalizedKey: key,
+              displayName,
+              attrSort: 0,
+              attributeIds: new Set<string>(),
+              values: sizes.map((sz) => ({ value: sz, sort: 0 })),
+              seen: new Set<string>(sizes),
+            });
+          }
         }
       }
-      for (const g of otherGroups) {
-        const values = g.values
-          .sort((a, b) => a.sort - b.sort)
-          .map((v) => v.value);
-        groups.push({ name: g.name, values });
+
+      // Surface bad catalog data: any normalised axis backed by more than
+      // one underlying attribute row means admin has equivalent attributes
+      // (e.g. "Size" + "Sizes") that should be merged into one. We keep
+      // the PATCH succeeding — the merge produces the correct group — but
+      // log so the duplicate can be cleaned at the source.
+      for (const b of buckets.values()) {
+        if (b.attributeIds.size > 1) {
+          console.warn(
+            `[attribute-groups] product=${id}: merged ${b.attributeIds.size} attribute rows into one '${b.displayName}' axis (normalized='${b.normalizedKey}', attribute_ids=${Array.from(b.attributeIds).join(",")})`,
+          );
+        }
       }
+
+      const groups = Array.from(buckets.values())
+        .sort((a, b) => a.attrSort - b.attrSort || a.displayName.localeCompare(b.displayName))
+        .map((b) => ({
+          name: b.displayName,
+          values: b.values
+            .sort((x, y) => x.sort - y.sort || x.value.localeCompare(y.value))
+            .map((v) => v.value),
+        }));
 
       await db
         .update(products)

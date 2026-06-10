@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { and, eq, desc } from "drizzle-orm";
 import { db } from "@/db/client";
-import { returns, orders } from "@/db/schema";
+import { returns, orders, missingItemClaims } from "@/db/schema";
 import { requireParent, isResponse } from "@/lib/parent-guard";
 import {
   getParentOrderDetailFromErp,
@@ -34,6 +34,7 @@ export async function GET(
   //                        so the UI can render a status banner in place of
   //                        the request button.
   let canExchange = false;
+  let canMissing = false;
   let activeExchange:
     | {
         id: string;
@@ -44,15 +45,37 @@ export async function GET(
         photos: unknown;
       }
     | null = null;
+  let activeMissing:
+    | {
+        id: string;
+        claimNumber: string | null;
+        status: string;
+        pickupDate: string | null;
+        createdAt: string;
+        photos: unknown;
+      }
+    | null = null;
 
   if (isExchangeTester(me.phone)) {
-    // Need the canonical local row to scope the exchange lookup — the
-    // ERP-mirror order may not carry the local UUID, so resolve via the
-    // local orders table by id-or-order_number against this parent.
-    const localOrder = await resolveLocalOrderId(decoded, me.id);
-    if (localOrder) {
-      canExchange = (order as { status?: string })?.status === "delivered";
-      const [row] = await db
+    // Read both the local orders.status (inventre's own delivery-status
+    // derivation) and the local row id together. The ERP mirror status
+    // can lag the local truth — e.g. audit just marked delivered but
+    // the mirror sync hasn't propagated yet — so we gate exchange off
+    // the local row, not off the API-shaped `order.status`.
+    const local = await resolveLocalOrder(decoded, me.id);
+    if (local) {
+      // Override the API-shaped status with the local truth when local
+      // is strictly more advanced. Keeps the storefront UI in sync with
+      // the same status that gates the Exchange button — otherwise the
+      // header reads "shipped" while a Request-exchange chip appears
+      // underneath, which is confusing. Gated to testers for now per
+      // the live-site caution; widen once we trust the override for
+      // every parent.
+      const apiStatus = (order as { status?: string }).status;
+      if (apiStatus === "shipped" && local.status === "delivered") {
+        (order as { status?: string }).status = local.status;
+      }
+      const [exRow] = await db
         .select({
           id: returns.id,
           returnNumber: returns.returnNumber,
@@ -63,47 +86,99 @@ export async function GET(
           kind: returns.kind,
         })
         .from(returns)
-        .where(and(eq(returns.orderId, localOrder), eq(returns.parentId, me.id)))
+        .where(and(eq(returns.orderId, local.id), eq(returns.parentId, me.id)))
         .orderBy(desc(returns.createdAt))
         .limit(1);
-      if (row && row.kind === "exchange") {
+      if (exRow && exRow.kind === "exchange") {
         activeExchange = {
-          id: row.id,
-          returnNumber: row.returnNumber,
-          status: row.status,
-          pickupDate: row.pickupDate,
-          createdAt: row.createdAt.toISOString(),
-          photos: row.photos,
+          id: exRow.id,
+          returnNumber: exRow.returnNumber,
+          status: exRow.status,
+          pickupDate: exRow.pickupDate,
+          createdAt: exRow.createdAt.toISOString(),
+          photos: exRow.photos,
         };
       }
+      const [mcRow] = await db
+        .select({
+          id: missingItemClaims.id,
+          claimNumber: missingItemClaims.claimNumber,
+          status: missingItemClaims.status,
+          pickupDate: missingItemClaims.pickupDate,
+          createdAt: missingItemClaims.createdAt,
+          photos: missingItemClaims.photos,
+        })
+        .from(missingItemClaims)
+        .where(
+          and(
+            eq(missingItemClaims.orderId, local.id),
+            eq(missingItemClaims.parentId, me.id),
+          ),
+        )
+        .orderBy(desc(missingItemClaims.createdAt))
+        .limit(1);
+      if (mcRow) {
+        activeMissing = {
+          id: mcRow.id,
+          claimNumber: mcRow.claimNumber,
+          status: mcRow.status,
+          pickupDate: mcRow.pickupDate,
+          createdAt: mcRow.createdAt.toISOString(),
+          photos: mcRow.photos,
+        };
+      }
+
+      // Cross-flow lifetime lock: a parent gets ONE exchange + ONE missing
+      // per sale order — but the slot is released if customer-care rejects
+      // the request. Once any non-rejected request exists in EITHER flow,
+      // both buttons disappear on this order.
+      const exBlocking =
+        activeExchange !== null && activeExchange.status !== "rejected";
+      const mcBlocking =
+        activeMissing !== null && activeMissing.status !== "rejected";
+      const anyOpen = exBlocking || mcBlocking;
+      canExchange = local.status === "delivered" && !anyOpen;
+      // Missing claims don't require the local row to be delivered (a
+      // parent can spot a short ship the moment the box arrives) — but
+      // we still gate it on "not still in pre-delivery state".
+      const preDelivery =
+        local.status === "placed" || local.status === "confirmed";
+      canMissing = !preDelivery && !anyOpen;
     }
   }
 
-  return NextResponse.json({ order, canExchange, activeExchange });
+  return NextResponse.json({
+    order,
+    canExchange,
+    canMissing,
+    activeExchange,
+    activeMissing,
+  });
 }
 
 /**
- * Resolve the local `orders.id` for an identifier that might be either
- * a UUID (the local id) or an order_number (the customer-facing
- * ORD-…). Scoped to the parent so a non-owning caller can't probe.
+ * Resolve the local `orders` row (id + status) for an identifier that
+ * may be either a UUID (the local id) or an order_number (the
+ * customer-facing ORD-…). Scoped to the parent so a non-owning caller
+ * can't probe.
  */
-async function resolveLocalOrderId(
+async function resolveLocalOrder(
   idOrNumber: string,
   parentId: string
-): Promise<string | null> {
+): Promise<{ id: string; status: string } | null> {
   const isUuid = /^[0-9a-f-]{36}$/i.test(idOrNumber);
   if (isUuid) {
     const [row] = await db
-      .select({ id: orders.id })
+      .select({ id: orders.id, status: orders.status })
       .from(orders)
       .where(and(eq(orders.id, idOrNumber), eq(orders.parentId, parentId)))
       .limit(1);
-    return row?.id ?? null;
+    return row ? { id: row.id, status: row.status as string } : null;
   }
   const [row] = await db
-    .select({ id: orders.id })
+    .select({ id: orders.id, status: orders.status })
     .from(orders)
     .where(and(eq(orders.orderNumber, idOrNumber), eq(orders.parentId, parentId)))
     .limit(1);
-  return row?.id ?? null;
+  return row ? { id: row.id, status: row.status as string } : null;
 }

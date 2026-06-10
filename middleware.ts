@@ -2,6 +2,52 @@ import { NextResponse, type NextRequest } from "next/server";
 import { jwtVerify } from "jose";
 import { SESSION_COOKIE, ADMIN_SESSION_COOKIE } from "@/lib/jwt";
 
+const SUPPORT_VIEW_COOKIE = "inv_support_view";
+const SUPPORT_VIEW_HEADER = "x-inv-support-view";
+
+const SUPPORT_KEY_CACHE: { key: Uint8Array | null } = { key: null };
+function supportViewKey(): Uint8Array | null {
+  if (SUPPORT_KEY_CACHE.key) return SUPPORT_KEY_CACHE.key;
+  const s = process.env.SUPPORT_VIEW_JWT_SECRET;
+  if (!s) return null;
+  SUPPORT_KEY_CACHE.key = new TextEncoder().encode(s);
+  return SUPPORT_KEY_CACHE.key;
+}
+
+type SupportViewMini = {
+  parentId: string;
+  studentId: string | null;
+  agentId: string;
+  agentName: string | null;
+  supportSessionId: string;
+  scope: "read";
+  jti: string;
+  exp: number;
+};
+
+async function readSupportView(req: NextRequest): Promise<SupportViewMini | null> {
+  if (process.env.SUPPORT_VIEW_ENABLED !== "true") return null;
+  const tok = req.cookies.get(SUPPORT_VIEW_COOKIE)?.value;
+  if (!tok) return null;
+  const k = supportViewKey();
+  if (!k) return null;
+  try {
+    const { payload } = await jwtVerify(tok, k, { algorithms: ["HS256"] });
+    if (
+      typeof payload.parentId === "string" &&
+      typeof payload.agentId === "string" &&
+      typeof payload.supportSessionId === "string" &&
+      typeof payload.jti === "string" &&
+      payload.scope === "read"
+    ) {
+      return payload as unknown as SupportViewMini;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Edge middleware — cheap pre-DB rejection. Verifies JWT signature only;
  * full hydration (DB lookup + role check) still happens in route handlers
@@ -128,6 +174,28 @@ function checkCsrf(req: NextRequest): boolean {
 
 export async function middleware(req: NextRequest) {
   const path = req.nextUrl.pathname;
+
+  // ── Support view-as guard ─────────────────────────────────────────
+  // When a valid support-view cookie is present, the request is being driven
+  // by a support agent impersonating a parent for READ-ONLY diagnosis.
+  // Block every mutation; let GET/HEAD/OPTIONS through with a request header
+  // that downstream server code reads via lib/support-view.ts.
+  const supportView = await readSupportView(req);
+  if (supportView) {
+    const method = req.method.toUpperCase();
+    if (method !== "GET" && method !== "HEAD" && method !== "OPTIONS") {
+      return NextResponse.json(
+        { error: "Read-only support view: mutations are disabled." },
+        { status: 403 },
+      );
+    }
+    const headerVal = Buffer.from(JSON.stringify(supportView)).toString(
+      "base64url",
+    );
+    const fwd = new Headers(req.headers);
+    fwd.set(SUPPORT_VIEW_HEADER, headerVal);
+    return NextResponse.next({ request: { headers: fwd } });
+  }
 
   if (path.startsWith("/api/") && !checkCsrf(req)) {
     return NextResponse.json({ error: "Forbidden (CSRF)" }, { status: 403 });

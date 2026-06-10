@@ -53,6 +53,17 @@ export type Product = {
   fallbackImageUrl?: string | null;
   rating?: { score: number; count: number; distribution: number[] };
   variantPrices?: { [size: string]: { price: number; mrp: number | null } };
+  /** Full per-variant rows, populated on the PDP. Used to look up the
+   *  resolved variant's price when the customer's picked colour + size,
+   *  which the size-keyed `variantPrices` map can't disambiguate. */
+  variants?: {
+    id: string;
+    size: string;
+    sku: string;
+    stockQty: number;
+    pricePaise: number;
+    mrpPaise: number | null;
+  }[];
   /** size → variantId map, populated on the PDP. Allows add-to-cart to skip
    *  the getVariantId round-trip when the id is already known. */
   variantIds?: { [size: string]: string };

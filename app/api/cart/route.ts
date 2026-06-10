@@ -19,6 +19,7 @@ import { normalizeGrade } from "@/lib/grade-filter";
 const FREE_BOOKKIT_RESTRICTED_SCHOOL_CODES = ["SMSAW"];
 import { getCurrentParent, type CurrentParent } from "@/lib/session";
 import { readCart, addToCart, setCartQty, clearCart } from "@/lib/repos/cart";
+import { failJson } from "@/lib/observability/fail-json";
 import { parseJson } from "@/lib/api-handler";
 
 async function requireParent() {
@@ -325,19 +326,31 @@ export async function POST(req: Request) {
 
   const guard = requireActiveStudent(me, body.studentId);
   if (!guard.ok) {
-    return NextResponse.json({ error: guard.error }, { status: 400 });
+    return failJson({
+      parentId: me.id, req, status: 400, message: guard.error,
+      details: { studentId: body.studentId ?? null },
+      kind: "rule.block",
+    });
   }
   const active = guard.student;
   const schoolId = active.school.id;
 
   const bookkitError = await checkBookkitLimit(me.id, active.id, schoolId, body.variantId, body.qty);
   if (bookkitError) {
-    return NextResponse.json({ error: bookkitError }, { status: 409 });
+    return failJson({
+      parentId: me.id, studentId: active.id, req, status: 409,
+      message: bookkitError, kind: "rule.block",
+      details: { rule: "bookkit_limit", variantId: body.variantId, qty: body.qty },
+    });
   }
 
   const magicBoxError = await checkMagicBoxLimit(me.id, active.id, body.variantId, body.qty);
   if (magicBoxError) {
-    return NextResponse.json({ error: magicBoxError }, { status: 409 });
+    return failJson({
+      parentId: me.id, studentId: active.id, req, status: 409,
+      message: magicBoxError, kind: "rule.block",
+      details: { rule: "magicbox_limit", variantId: body.variantId, qty: body.qty },
+    });
   }
 
   // Grade-mismatch guard. The cart's grade-mismatch sweep is non-destructive
@@ -416,16 +429,27 @@ export async function PATCH(req: Request) {
   if (body.qty > 0) {
     const guard = requireActiveStudent(me, body.studentId);
     if (!guard.ok) {
-      return NextResponse.json({ error: guard.error }, { status: 400 });
+      return failJson({
+        parentId: me.id, req, status: 400, message: guard.error,
+        details: { studentId: body.studentId ?? null }, kind: "rule.block",
+      });
     }
     active = guard.student;
     const bookkitError = await checkBookkitLimit(me.id, active.id, active.school.id, body.variantId, body.qty);
     if (bookkitError) {
-      return NextResponse.json({ error: bookkitError }, { status: 409 });
+      return failJson({
+        parentId: me.id, studentId: active.id, req, status: 409,
+        message: bookkitError, kind: "rule.block",
+        details: { rule: "bookkit_limit", variantId: body.variantId, qty: body.qty, op: "patch" },
+      });
     }
     const magicBoxError = await checkMagicBoxLimit(me.id, active.id, body.variantId, body.qty);
     if (magicBoxError) {
-      return NextResponse.json({ error: magicBoxError }, { status: 409 });
+      return failJson({
+        parentId: me.id, studentId: active.id, req, status: 409,
+        message: magicBoxError, kind: "rule.block",
+        details: { rule: "magicbox_limit", variantId: body.variantId, qty: body.qty, op: "patch" },
+      });
     }
   } else {
     active = resolveActive(me, body.studentId);

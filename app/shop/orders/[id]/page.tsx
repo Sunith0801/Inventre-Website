@@ -7,7 +7,6 @@ import { ArrowLeft, CheckCircle2, Package } from "lucide-react";
 import { Nav } from "@/components/Nav";
 import { Footer } from "@/components/Footer";
 import { ExchangeStatusBanner } from "@/components/shop/orders/exchange/ExchangeStatusBanner";
-import { ExchangeButton } from "@/components/shop/orders/exchange/ExchangeButton";
 
 /**
  * Some legacy addresses were stored with literal "<br>" / "<br/>" inside the
@@ -117,9 +116,17 @@ export default function OrderDetailPage() {
   // parents always see `canExchange=false` and `activeExchange=null`,
   // so the banner and button render nothing for them.
   const [canExchange, setCanExchange] = useState(false);
+  const [canMissing, setCanMissing] = useState(false);
   const [activeExchange, setActiveExchange] = useState<{
     id: string;
     returnNumber: string | null;
+    status: string;
+    pickupDate: string | null;
+    createdAt: string;
+  } | null>(null);
+  const [activeMissing, setActiveMissing] = useState<{
+    id: string;
+    claimNumber: string | null;
     status: string;
     pickupDate: string | null;
     createdAt: string;
@@ -132,7 +139,9 @@ export default function OrderDetailPage() {
         .then((d) => {
           setOrder(d?.order ?? null);
           setCanExchange(Boolean(d?.canExchange));
+          setCanMissing(Boolean(d?.canMissing));
           setActiveExchange(d?.activeExchange ?? null);
+          setActiveMissing(d?.activeMissing ?? null);
         }),
     [id]
   );
@@ -465,9 +474,35 @@ export default function OrderDetailPage() {
 
         {/* Items */}
         <div className="mt-6 rounded-2xl border border-ink-100 bg-white p-5 lg:p-6">
-          <h3 className="font-display text-[16px] font-bold text-ink-900">
-            Items
-          </h3>
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <h3 className="font-display text-[16px] font-bold text-ink-900">
+              Items
+            </h3>
+            {/* Order-level entry points — one click opens a multi-item
+                picker that covers standalone items AND every kit/Magic
+                Box component, mirroring the Magic Box workflow across
+                the whole order. */}
+            {(canExchange || canMissing) && (
+              <div className="flex flex-wrap gap-2">
+                {canExchange && (
+                  <a
+                    href={`/shop/orders/${id}/exchange/new`}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-ink-200 px-3 py-1.5 text-[12.5px] font-medium text-ink-700 hover:border-brand hover:text-brand"
+                  >
+                    Request exchange
+                  </a>
+                )}
+                {canMissing && (
+                  <a
+                    href={`/shop/orders/${id}/missing/new`}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-ink-200 px-3 py-1.5 text-[12.5px] font-medium text-ink-700 hover:border-brand hover:text-brand"
+                  >
+                    Report missing
+                  </a>
+                )}
+              </div>
+            )}
+          </div>
           <ul className="mt-4 space-y-3">
             {order.items.map((it) => (
               <li
@@ -506,16 +541,6 @@ export default function OrderDetailPage() {
                     ₹{it.total.toLocaleString()}
                   </p>
                 </div>
-                {/* Exchange button — gated server-side via canExchange.
-                    Hidden if there's already an active exchange on this
-                    order (the banner takes over). For non-allowlisted
-                    phones canExchange is always false, so this renders
-                    nothing. */}
-                <ExchangeButton
-                  orderId={id}
-                  orderItemId={it.id}
-                  hidden={!canExchange || activeExchange !== null}
-                />
                 {it.bundleSelections && it.bundleSelections.length > 0 && (
                   <div className="mt-2 rounded-lg border border-ink-100 bg-cream-50/60 px-3 py-2">
                     <p className="text-[10.5px] font-semibold uppercase tracking-wide text-ink-500 mb-1.5">

@@ -41,6 +41,13 @@ const STATUS_COPY: Record<
     tone: "emerald",
     Icon: CheckCircle2,
   },
+  replacement_arrived: {
+    title: "Replacement arrived at school",
+    body: ({ pickupLabel }) =>
+      `Your replacement has arrived at the school. Come ${pickupLabel ? `on ${pickupLabel}` : "during the scheduled pickup window"} with the original item to complete the exchange.`,
+    tone: "emerald",
+    Icon: CheckCircle2,
+  },
   rejected: {
     title: "Not approved",
     body: () =>
@@ -118,7 +125,14 @@ export default async function ExchangeDetailPage({
     .innerJoin(orderItems, eq(orderItems.id, returnItems.orderItemId))
     .where(eq(returnItems.returnId, returnId));
 
-  const status = row.ret.status as keyof typeof STATUS_COPY;
+  // Promote `approved` to the new `replacement_arrived` pseudo-state when
+  // the audit-side webhook has stamped the arrival timestamp. The
+  // underlying status stays `approved` in DB — this is a UI-only sub-state.
+  const baseStatus = row.ret.status as keyof typeof STATUS_COPY;
+  const status: keyof typeof STATUS_COPY =
+    baseStatus === "approved" && row.ret.replacementArrivedAt
+      ? "replacement_arrived"
+      : baseStatus;
   const copy = STATUS_COPY[status] ?? STATUS_COPY.requested;
   const pickupLabel = row.ret.pickupDate ? formatPickupLabel(row.ret.pickupDate) : null;
   const Icon = copy.Icon;
@@ -172,34 +186,94 @@ export default async function ExchangeDetailPage({
           </div>
         </div>
 
+        {/* When rejected and customer-care left a specific reason, surface
+            it verbatim. Previously the customer just saw the generic
+            "contact support" line above and had no idea why. */}
+        {status === "rejected" && row.ret.rejectionReason && (
+          <div className="mt-3 rounded-2xl border border-rose-200 bg-rose-50/50 p-4 text-[13px]">
+            <p className="font-display text-[13px] font-bold text-rose-900">
+              Reason from our team
+            </p>
+            <p className="mt-1 text-rose-900 whitespace-pre-line italic">
+              &ldquo;{row.ret.rejectionReason}&rdquo;
+            </p>
+          </div>
+        )}
+
         {/* Request details */}
         <div className="mt-6 rounded-2xl border border-ink-100 bg-white p-5">
           <h3 className="font-display text-[14px] font-bold text-ink-900">
             Items
           </h3>
           <ul className="mt-3 space-y-2">
-            {lineRows.map(({ ri, oi }) => (
-              <li key={ri.id} className="flex items-center gap-3 text-[13px]">
-                <div className="h-12 w-12 shrink-0 rounded-lg bg-cream-100 border border-ink-100 overflow-hidden">
-                  {oi.imageSnapshot ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={oi.imageSnapshot}
-                      alt=""
-                      className="h-full w-full object-contain p-1"
-                    />
-                  ) : null}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium text-ink-900 truncate">
-                    {oi.nameSnapshot}
-                  </p>
-                  <p className="text-[12px] text-ink-500">
-                    {oi.size ? `Size ${oi.size} · ` : ""}× {ri.qty}
-                  </p>
-                </div>
-              </li>
-            ))}
+            {lineRows.map(({ ri, oi }) => {
+              // When the customer flagged a specific component inside a kit
+              // (Magic Box / Bookkit), surface that component as the real
+              // subject of the exchange — the order_item row alone reads
+              // as just "SAS KS GRADE 6 MAGIC BOX BOYS · Standard" and
+              // hides what the customer actually pointed at. The path
+              // lives on the parent `returns` row (one per request).
+              const path =
+                row.ret.requestedComponentPath &&
+                typeof row.ret.requestedComponentPath === "object"
+                  ? (row.ret.requestedComponentPath as {
+                      variantId?: string;
+                      componentName?: string | null;
+                      attributes?: { name?: string; value?: string }[];
+                    })
+                  : null;
+              const componentName =
+                path && typeof path.componentName === "string"
+                  ? path.componentName
+                  : null;
+              const componentDetail = (() => {
+                const attrs = Array.isArray(path?.attributes) ? path!.attributes : [];
+                const parts = attrs
+                  .map((a) => (typeof a?.value === "string" ? a.value : null))
+                  .filter((v): v is string => !!v);
+                return parts.join(" · ");
+              })();
+              return (
+                <li key={ri.id} className="flex items-center gap-3 text-[13px]">
+                  <div className="h-12 w-12 shrink-0 rounded-lg bg-cream-100 border border-ink-100 overflow-hidden">
+                    {oi.imageSnapshot ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={oi.imageSnapshot}
+                        alt=""
+                        className="h-full w-full object-contain p-1"
+                      />
+                    ) : null}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    {componentName ? (
+                      <>
+                        <p className="font-medium text-ink-900 truncate">
+                          {componentName}
+                        </p>
+                        <p className="text-[12px] text-ink-500 truncate">
+                          {componentDetail || "—"}
+                          <span className="text-ink-400">
+                            {" "}· in {oi.nameSnapshot}
+                          </span>
+                          {" · × "}
+                          {ri.qty}
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <p className="font-medium text-ink-900 truncate">
+                          {oi.nameSnapshot}
+                        </p>
+                        <p className="text-[12px] text-ink-500">
+                          {oi.size ? `Size ${oi.size} · ` : ""}× {ri.qty}
+                        </p>
+                      </>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
           </ul>
 
           <div className="mt-4 pt-4 border-t border-ink-100 text-[13px]">
