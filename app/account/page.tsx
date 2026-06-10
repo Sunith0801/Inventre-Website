@@ -19,7 +19,7 @@ import {
 } from "lucide-react";
 import { Nav } from "@/components/Nav";
 import { Footer } from "@/components/Footer";
-import { auth, type Me } from "@/lib/auth";
+import { auth, clearMeCache, type Me } from "@/lib/auth";
 import { SiblingsList } from "@/components/account/SiblingsList";
 
 function titleCase(s: string | null | undefined): string {
@@ -81,7 +81,16 @@ export default function AccountPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ [field]: value === "" ? null : value }),
       });
-      if (!res.ok) throw new Error(await res.text());
+      if (!res.ok) {
+        const msg = await res.text();
+        alert(msg || "Could not update. Please check the value and try again.");
+        return;
+      }
+      // The auth.me() helper caches the previous /api/auth/me response for
+      // 10 seconds. Without clearing it the just-saved value would be
+      // overwritten by stale cached data and the UI would "snap back",
+      // making the edit appear silently broken.
+      clearMeCache();
       const refreshed = await auth.me();
       setMe(refreshed);
       setEditField(null);
