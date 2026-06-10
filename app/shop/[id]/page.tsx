@@ -54,6 +54,19 @@ function dtoToProduct(d: ProductDetailDto): Product {
     sizeTable: d.sizeTable ?? undefined,
     sizeChartUrl: d.sizeChartUrl ?? null,
     rating: d.rating ?? undefined,
+    // Full per-variant rows — required so BuyBox can look up the exact
+    // pricePaise of the resolved Colour × Size variant via
+    // variantsByAttributeKey. Without this, the size-only `variantPrices`
+    // map below is the only signal, and it collapses multiple colours
+    // sharing one size into a single (last-wins) price.
+    variants: d.variants.map((v) => ({
+      id: v.id,
+      size: v.size,
+      sku: v.sku,
+      stockQty: v.stockQty,
+      pricePaise: v.pricePaise,
+      mrpPaise: v.mrpPaise,
+    })),
     variantPrices: d.variants.length > 0
       ? Object.fromEntries(
           d.variants.map((v) => [

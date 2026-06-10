@@ -46,9 +46,10 @@ pnpm-debug.log*
 scripts/migrate-from-erp/_reports/
 scripts/migrate-from-erp/pre-backfill-snapshot.json
 
-# build artifacts
-dist
-build
+# build artifacts — anchored to repo root so we don't accidentally hide
+# source dirs that happen to be named "build" (e.g. app/admin/.../catalog/build).
+/dist
+/build
 
 # ERP product images live in public/erp-media/. Committed for easy deploy
 # (~67MB / 282 files at last check). When this folder grows beyond ~200MB,

@@ -405,27 +405,41 @@ export function BuyBox({
 
       {/* price */}
       <div className="mt-6 flex items-baseline gap-3">
-        {needsFullSelection && pricesVary ? (
-          <span className="text-[14px] font-semibold tracking-wide uppercase text-ink-500">
-            From
+        {activePrice <= 0 ? (
+          // No item_prices row for the resolved variant AND no fallback
+          // base_price set — surface this honestly instead of "₹0", which
+          // parents read as "free". Add-to-cart is disabled below in the
+          // same activePrice <= 0 branch.
+          <span className="font-display text-[24px] font-extrabold tracking-tight text-ink-500">
+            Price coming soon
           </span>
-        ) : null}
-        <span className="font-display text-[34px] font-extrabold tracking-tight text-ink-900">
-          ₹{activePrice.toLocaleString()}
-        </span>
-        {activeMrp && (
+        ) : (
           <>
-            <span className="text-[16px] line-through text-ink-400">
-              ₹{activeMrp.toLocaleString()}
+            {needsFullSelection && pricesVary ? (
+              <span className="text-[14px] font-semibold tracking-wide uppercase text-ink-500">
+                From
+              </span>
+            ) : null}
+            <span className="font-display text-[34px] font-extrabold tracking-tight text-ink-900">
+              ₹{activePrice.toLocaleString()}
             </span>
-            <span className="rounded-full bg-brand-50 border border-brand-100 px-2 py-0.5 text-[11px] font-bold text-brand">
-              {off}% OFF
-            </span>
+            {activeMrp && (
+              <>
+                <span className="text-[16px] line-through text-ink-400">
+                  ₹{activeMrp.toLocaleString()}
+                </span>
+                <span className="rounded-full bg-brand-50 border border-brand-100 px-2 py-0.5 text-[11px] font-bold text-brand">
+                  {off}% OFF
+                </span>
+              </>
+            )}
           </>
         )}
       </div>
       <p className="mt-1 text-[12px] text-ink-500">
-        Inclusive of all taxes · Free shipping over ₹999
+        {activePrice <= 0
+          ? "This combination isn't priced yet. Pick another colour or size."
+          : "Inclusive of all taxes · Free shipping over ₹999"}
       </p>
 
       {/* Inline size-chart card. Visible directly below the price so parents
@@ -648,7 +662,7 @@ export function BuyBox({
         <button
           type="button"
           onClick={handleAdd}
-          disabled={!canAdd || addBusy}
+          disabled={!canAdd || addBusy || activePrice <= 0}
           className="flex-1 inline-flex items-center justify-center gap-2 rounded-full bg-brand text-white px-6 h-12 text-[14px] font-bold hover:bg-brand-600 active:scale-[0.99] transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-[inset_0_1px_0_rgba(255,255,255,0.25)]"
         >
           <AnimatePresence mode="wait">
@@ -661,6 +675,17 @@ export function BuyBox({
                 className="inline-flex items-center gap-2"
               >
                 <Check className="h-4 w-4" /> Added to cart
+              </motion.span>
+            ) : activePrice <= 0 ? (
+              <motion.span
+                key="nopx"
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -6 }}
+                className="inline-flex items-center gap-2"
+              >
+                <ShoppingBag className="h-4 w-4" />
+                Not available
               </motion.span>
             ) : (
               <motion.span

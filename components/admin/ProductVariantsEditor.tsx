@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Trash2, Save, Boxes } from "lucide-react";
+import { Plus, Trash2, Save, Boxes, X } from "lucide-react";
 import { Card, CardHeader, EmptyState } from "@/components/admin/ui/primitives";
 import { Button } from "@/components/admin/ui/primitives-client";
 
@@ -14,6 +14,13 @@ type Variant = {
   colorValueId: string | null;
   /** Per-variant selling price in paise (editable; saved to item_prices). */
   price: number | null;
+  /** True once the admin has typed into the price field (or pressed Clear).
+   *  Untouched rows are sent without a `price` key so the server leaves the
+   *  existing item_prices row alone — blank inputs no longer wipe prices. */
+  priceTouched?: boolean;
+  /** True when the admin explicitly clicked Clear. Sends `price: null` so
+   *  the server deletes the item_prices row. */
+  priceCleared?: boolean;
 };
 
 type ColourOption = { id: string; label: string };
@@ -118,11 +125,26 @@ export function ProductVariantsEditor({
       }
       seen.add(v.sku);
     }
+    // Strip per-row UI flags and OMIT `price` for rows the admin hasn't
+    // touched — the server uses `v.price !== undefined` to decide whether to
+    // upsert/delete the item_prices row. Without this, a blank input on an
+    // unrelated row would silently wipe its saved price.
+    const payload = variants.map((v) => {
+      const base = {
+        id: v.id,
+        size: v.size,
+        sku: v.sku,
+        stockQty: v.stockQty,
+        colorValueId: v.colorValueId,
+      };
+      if (!v.priceTouched) return base;
+      return { ...base, price: v.priceCleared ? null : v.price };
+    });
     start(async () => {
       const res = await fetch(`/api/admin/products/${productId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ variants }),
+        body: JSON.stringify({ variants: payload }),
       });
       if (!res.ok) {
         const d = await res.json().catch(() => ({}));
@@ -230,21 +252,54 @@ export function ProductVariantsEditor({
                   />
                 </td>
                 <td className="py-1.5 pr-3 text-right">
-                  <input
-                    type="number"
-                    min={0}
-                    step="0.01"
-                    value={v.price != null ? v.price / 100 : ""}
-                    placeholder="₹"
-                    onChange={(e) => {
-                      const r = e.target.value;
-                      update(i, {
-                        price:
-                          r === "" ? null : Math.round(parseFloat(r) * 100),
-                      });
-                    }}
-                    className="w-28 rounded-md border border-ink-200 px-2 py-1 text-[13px] text-right tabular-nums outline-none focus:border-ink-900"
-                  />
+                  <div className="inline-flex items-center justify-end gap-1">
+                    <input
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      value={
+                        v.priceCleared
+                          ? ""
+                          : v.price != null
+                            ? v.price / 100
+                            : ""
+                      }
+                      placeholder={v.price != null && !v.priceTouched ? "(saved)" : "₹"}
+                      onChange={(e) => {
+                        const r = e.target.value;
+                        update(i, {
+                          price:
+                            r === "" ? null : Math.round(parseFloat(r) * 100),
+                          priceTouched: true,
+                          priceCleared: false,
+                        });
+                      }}
+                      className="w-28 rounded-md border border-ink-200 px-2 py-1 text-[13px] text-right tabular-nums outline-none focus:border-ink-900"
+                    />
+                    {(v.price != null || v.priceTouched) && !v.priceCleared && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          update(i, {
+                            price: null,
+                            priceTouched: true,
+                            priceCleared: true,
+                          })
+                        }
+                        title="Clear price (variant will fall back to base price)"
+                        className="grid place-items-center h-6 w-6 rounded text-ink-400 hover:text-red-600 hover:bg-red-50"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    )}
+                  </div>
+                  {v.price == null && !v.priceCleared && (
+                    <div className="mt-0.5 flex justify-end">
+                      <span className="inline-flex items-center rounded-full bg-red-50 px-1.5 py-0.5 text-[10px] font-semibold text-red-700 ring-1 ring-red-200">
+                        Missing price
+                      </span>
+                    </div>
+                  )}
                 </td>
                 <td className="py-1.5 pr-3 text-right">
                   <input
