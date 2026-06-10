@@ -81,15 +81,16 @@ export async function POST(req: Request) {
 
   // Gate: CCAvenue's hosted page rejects malformed billing_email with
   // `31011: billing_email: Invalid Parameter`, which surfaces as an instant
-  // bounce-back to a "placed/failed" order — confusing UX and a stranded
-  // order row. Validate the parent's email here, BEFORE we insert any
-  // orders or build the encrypted payload.
-  const emailCheck = z.string().trim().email().safeParse(me.email);
-  if (!emailCheck.success) {
+  // bounce-back to a "placed/failed" order. Validate ONLY when the parent
+  // actually has an email saved — the no-email case is the norm for most
+  // parents and falls through to the `${phone}@no-email.local` synthetic
+  // billing_email lower down (CCAvenue accepts that one fine).
+  const trimmedEmail = me.email?.trim() ?? "";
+  if (trimmedEmail !== "" && !z.string().email().safeParse(trimmedEmail).success) {
     return NextResponse.json(
       {
         error:
-          "Your email address is missing or invalid. Please update it from your account before paying.",
+          "The email address on your account is invalid. Please update it from your account before paying.",
         code: "INVALID_EMAIL",
         redirectTo: "/account",
       },
