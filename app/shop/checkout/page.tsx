@@ -56,6 +56,7 @@ export default function CheckoutPage() {
   const [saveForNextTime, setSaveForNextTime] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [errorAction, setErrorAction] = useState<{ href: string; label: string } | null>(null);
   const [shippingP, setShippingP] = useState<number | null>(null);
   // Required client-side acknowledgement of the payment-gateway fee +
   // GST schedule. The Pay button stays disabled until ticked, and we
@@ -127,6 +128,7 @@ export default function CheckoutPage() {
 
   const place = async () => {
     setError(null);
+    setErrorAction(null);
     if (count === 0) {
       router.push("/shop/cart");
       return;
@@ -181,7 +183,13 @@ export default function CheckoutPage() {
         body: JSON.stringify({ address }),
       });
       if (!res.ok) {
-        const d = await res.json().catch(() => ({}));
+        const d = await res.json().catch(() => ({} as Record<string, string>));
+        if (d.code === "INVALID_EMAIL") {
+          setError(d.error ?? "Please update your email before paying.");
+          setErrorAction({ href: d.redirectTo ?? "/account", label: "Update email" });
+          setSubmitting(false);
+          return;
+        }
         throw new Error(d.error ?? "Could not start CCAvenue checkout");
       }
       const d: {
@@ -358,7 +366,17 @@ export default function CheckoutPage() {
               {error && (
                 <div className="mt-4 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-[13px] text-red-700">
                   <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
-                  <span>{error}</span>
+                  <div className="flex flex-col gap-1">
+                    <span>{error}</span>
+                    {errorAction && (
+                      <a
+                        href={errorAction.href}
+                        className="self-start font-semibold underline underline-offset-2 hover:text-red-900"
+                      >
+                        {errorAction.label} →
+                      </a>
+                    )}
+                  </div>
                 </div>
               )}
             </div>

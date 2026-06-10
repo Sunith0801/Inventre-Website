@@ -79,6 +79,24 @@ export async function POST(req: Request) {
     }
   }
 
+  // Gate: CCAvenue's hosted page rejects malformed billing_email with
+  // `31011: billing_email: Invalid Parameter`, which surfaces as an instant
+  // bounce-back to a "placed/failed" order — confusing UX and a stranded
+  // order row. Validate the parent's email here, BEFORE we insert any
+  // orders or build the encrypted payload.
+  const emailCheck = z.string().trim().email().safeParse(me.email);
+  if (!emailCheck.success) {
+    return NextResponse.json(
+      {
+        error:
+          "Your email address is missing or invalid. Please update it from your account before paying.",
+        code: "INVALID_EMAIL",
+        redirectTo: "/account",
+      },
+      { status: 400 }
+    );
+  }
+
   // Group cart lines by sibling. Each (student, school) pair becomes its
   // OWN orders row so school-side fulfillment stays unambiguous; all rows
   // share an `order_group_id` so the parent's account view + CCAvenue
