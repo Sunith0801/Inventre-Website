@@ -88,7 +88,25 @@ echo "▶ Syncing build into container…"
 # extractor entirely, so we get to pick the conflict policy ourselves.
 # Node holds previously-loaded modules in memory, so overlaying its own
 # source files mid-flight is safe — we restart at the end anyway.
-( cd .next/standalone && tar -ch --hard-dereference -f - . ) \
+#
+# Symlinks are preserved (no -h/--hard-dereference). The standalone tree
+# is pnpm-layout: node_modules/@aws-sdk/client-s3 is a symlink into
+# .pnpm/<pkg>@<ver>/node_modules/, and Node resolves that package's deps
+# against its REAL path's siblings. Dereferencing the top-level symlink
+# into a plain copy made its require('@smithy/core') resolve against
+# whatever stale /app/node_modules/@smithy/core a previous deploy left
+# behind — which broke prod uploads on 2026-06-11 with "Package subpath
+# './client' is not defined" when a new @aws-sdk needed a newer
+# @smithy/core than the leftover.
+#
+# The container's tar is BusyBox (no --recursive-unlink), so symlinks
+# can't replace the real dirs older --hard-dereference deploys created
+# in place. Instead, wipe node_modules and extract fresh: a pristine
+# tree every deploy, nothing stale to shadow resolution. Node keeps
+# already-loaded modules in memory, so the running process survives the
+# ~seconds-long gap until the restart below picks up the new tree.
+docker exec -u 0 inventre-deploy-app rm -rf /app/node_modules
+( cd .next/standalone && tar -cf - . ) \
   | docker exec -i -u 0 inventre-deploy-app tar -xf - --overwrite -C /app
 
 # @node-rs/bcrypt ships per-platform native bindings; the build host is
@@ -117,7 +135,14 @@ docker cp public inventre-deploy-app:/app/public
 mkdir -p /tmp/_deploy_scripts && cp scripts/start.sh /tmp/_deploy_scripts/
 docker cp /tmp/_deploy_scripts inventre-deploy-app:/app/scripts
 # Migration SQL files (referenced at runtime by migrate.js)
-docker cp db/migrations inventre-deploy-app:/app/db/migrations
+#
+# Trailing `/.` on the source + trailing `/` on the dest tells docker cp to
+# merge *contents* rather than nest. Without it, when /app/db/migrations
+# already exists in the container, docker cp creates
+# /app/db/migrations/migrations/ and any newly added .sql file gets
+# stranded there — the migrator reads only the top level, so the file
+# silently never runs. (Hit this for migration 0059 on 2026-06-11.)
+docker cp db/migrations/. inventre-deploy-app:/app/db/migrations/
 
 echo "▶ Restarting to load synced code…"
 # Container was running through the sync (so we could docker-exec tar -x);

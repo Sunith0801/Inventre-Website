@@ -3,7 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { orders } from "@/db/schema";
 import { requireParent, isResponse } from "@/lib/parent-guard";
-import { isExchangeTester } from "@/lib/exchange-gate";
+import { isExchangeTester, isExchangeScopeRelaxed } from "@/lib/exchange-gate";
 import { uploadFile } from "@/lib/storage";
 
 export const runtime = "nodejs";
@@ -49,7 +49,12 @@ export async function POST(req: Request) {
   const [order] = await db
     .select({ id: orders.id })
     .from(orders)
-    .where(and(eq(orders.id, orderId), eq(orders.parentId, me.id)))
+    .where(
+      and(
+        eq(orders.id, orderId),
+        isExchangeScopeRelaxed() ? undefined : eq(orders.parentId, me.id)
+      )
+    )
     .limit(1);
   if (!order) {
     return NextResponse.json({ error: "Order not found" }, { status: 404 });

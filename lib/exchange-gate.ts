@@ -39,6 +39,21 @@ export function isExchangeTester(phone: string | null | undefined): boolean {
   return getAllowlist().has(norm);
 }
 
+/**
+ * Dev-only ownership relaxation for the exchange / missing flows.
+ *
+ * The dev DB is a prod snapshot, so almost every delivered order's
+ * local `orders.parent_id` belongs to some real parent — not to the
+ * tester who logged in on :3020. The strict parentId scope would hide
+ * the Exchange / Report-missing buttons on every order a tester can
+ * see. Outside production we drop the parentId match (order id /
+ * order_number still has to resolve) so every delivered order shows
+ * both buttons. In production this is always false — scope stays strict.
+ */
+export function isExchangeScopeRelaxed(): boolean {
+  return process.env.NODE_ENV !== "production";
+}
+
 /** Number of testers currently configured; used by admin telemetry. */
 export function exchangeTesterCount(): number {
   return getAllowlist().size;

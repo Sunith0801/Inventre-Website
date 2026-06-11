@@ -11,6 +11,9 @@ const PatchBody = z.object({
   alt: z.string().nullable().optional(),
   isPrimary: z.boolean().optional(),
   sortOrder: z.number().int().min(0).optional(),
+  // Colour tag — product_attribute_values.id this image belongs to
+  // (e.g. Colour=Blue). null clears the tag.
+  attributeValueId: z.string().uuid().nullable().optional(),
 });
 
 export async function PATCH(
@@ -50,6 +53,8 @@ export async function PATCH(
     if (body.alt !== undefined) update.alt = body.alt;
     if (body.isPrimary !== undefined) update.isPrimary = body.isPrimary;
     if (body.sortOrder !== undefined) update.sortOrder = body.sortOrder;
+    if (body.attributeValueId !== undefined)
+      update.attributeValueId = body.attributeValueId;
     if (Object.keys(update).length > 0) {
       await tx
         .update(productImages)

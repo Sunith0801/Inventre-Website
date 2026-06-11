@@ -13,6 +13,7 @@ import { allocReturnNumber } from "@/lib/numbering";
 import { firstPickupSaturday, toDbDate } from "@/lib/date";
 import { emitExchangeEvent } from "@/lib/erp-bridge";
 import { notifyExchangeStatus } from "@/lib/notifications";
+import { isExchangeScopeRelaxed } from "@/lib/exchange-gate";
 import {
   canTransition,
   isExchangeStatus,
@@ -159,10 +160,16 @@ export async function createExchange(
   input: CreateExchangeInput
 ): Promise<CreateExchangeResult> {
   // 1. Scope: order must belong to this parent and be delivered.
+  //    (Ownership relaxed outside production — see isExchangeScopeRelaxed.)
   const [order] = await db
     .select()
     .from(orders)
-    .where(and(eq(orders.id, input.orderId), eq(orders.parentId, input.parentId)))
+    .where(
+      and(
+        eq(orders.id, input.orderId),
+        isExchangeScopeRelaxed() ? undefined : eq(orders.parentId, input.parentId)
+      )
+    )
     .limit(1);
   if (!order) return { ok: false, status: 404, error: "Order not found" };
   if (order.status !== "delivered") {
@@ -204,7 +211,11 @@ export async function createExchange(
   // 3. Cross-flow per-sale-order block. ONE exchange + ONE missing per
   //    order, lifetime — until either is rejected. After rejection the
   //    customer can retry.
-  const open = await findOpenRequestForOrder(input.orderId, input.parentId);
+  // Dev: lifetime lock disabled (isExchangeScopeRelaxed) so testers can
+  // raise repeat requests on the same order.
+  const open = isExchangeScopeRelaxed()
+    ? null
+    : await findOpenRequestForOrder(input.orderId, input.parentId);
   if (open) {
     const msg =
       open.kind === "exchange"

@@ -19,6 +19,8 @@ type Unit = {
   orderItemId: string;
   parentName: string;
   isKitComponent: boolean;
+  /** The kit/Magic-Box order item itself — selecting it = whole box missing. */
+  isKitParent?: boolean;
   name: string;
   size: string;
   qty: number;
@@ -106,6 +108,39 @@ export function MissingForm({
   };
 
   const totalSelected = useMemo(() => selectedIdxs.length, [selectedIdxs]);
+
+  // ── Kit / Magic Box grouping (mirrors the exchange form) ──────
+  // A kit order item arrives as one "parent" unit (whole box missing)
+  // plus one unit per component. The picker collapses each family into
+  // a single card with a scope chooser.
+  const kitGroups = useMemo(() => {
+    const map = new Map<string, { parentIdx: number; compIdxs: number[] }>();
+    units.forEach((u, idx) => {
+      if (!u.isKitParent && !u.isKitComponent) return;
+      const g = map.get(u.orderItemId) ?? { parentIdx: -1, compIdxs: [] };
+      if (u.isKitParent) g.parentIdx = idx;
+      else g.compIdxs.push(idx);
+      map.set(u.orderItemId, g);
+    });
+    return new Map(
+      [...map].filter(([, g]) => g.parentIdx >= 0 && g.compIdxs.length > 0)
+    );
+  }, [units]);
+
+  const [kitScope, setKitScope] = useState<Record<string, "" | "full" | "items">>({});
+
+  const setKitScopeFor = (orderItemId: string, scope: "full" | "items") => {
+    const g = kitGroups.get(orderItemId);
+    if (!g) return;
+    setSelectionConfirmed(false);
+    setKitScope((prev) => ({ ...prev, [orderItemId]: scope }));
+    setSelectedIdxs((prev) => {
+      const drop = new Set([g.parentIdx, ...g.compIdxs]);
+      const next = prev.filter((i) => !drop.has(i));
+      if (scope === "full") next.push(g.parentIdx);
+      return next;
+    });
+  };
 
   // ── Photo handling ────────────────────────────────────────────
   const stageFiles = (files: FileList | null) => {
@@ -223,6 +258,131 @@ export function MissingForm({
     }
   };
 
+  // ── Render helpers: unit picker ───────────────────────────────
+  // Single checkbox row — standalone items and components inside an
+  // expanded kit group. (The individual-item flow is unchanged.)
+  const unitRow = (u: Unit, idx: number) => {
+    const active = selectedIdxs.includes(idx);
+    const toggle = () => {
+      setSelectionConfirmed(false);
+      setSelectedIdxs((prev) =>
+        prev.includes(idx) ? prev.filter((i) => i !== idx) : [...prev, idx]
+      );
+    };
+    return (
+      <li key={u.unitKey}>
+        <button
+          type="button"
+          onClick={toggle}
+          className={
+            "w-full text-left rounded-lg border px-3 py-2 text-[13px] flex items-center gap-2 " +
+            (active
+              ? "border-rose-500 bg-rose-50/40 text-ink-900"
+              : "border-ink-200 hover:border-ink-400 text-ink-700")
+          }
+        >
+          <span
+            className={
+              "h-3.5 w-3.5 rounded-sm border-2 shrink-0 flex items-center justify-center " +
+              (active ? "border-rose-500 bg-rose-500" : "border-ink-300")
+            }
+          >
+            {active && (
+              <svg
+                viewBox="0 0 12 12"
+                className="h-2.5 w-2.5 text-white"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+              >
+                <path d="M2 6l2.5 2.5L10 3" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            )}
+          </span>
+          <span className="flex-1 min-w-0">
+            <span className="font-medium block truncate">{u.name}</span>
+            <span className="text-[11.5px] text-ink-500 block truncate">
+              {unitDetailLabel(u) || "—"}
+              {u.isKitComponent && !kitGroups.has(u.orderItemId) && (
+                <span className="text-ink-400"> · in {u.parentName}</span>
+              )}
+            </span>
+          </span>
+          <span
+            className={
+              "shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] uppercase tracking-wider " +
+              (active
+                ? "border-rose-500/40 bg-white text-rose-700"
+                : "border-ink-200 bg-cream-50 text-ink-500")
+            }
+          >
+            {categoryLabel(u.kind)}
+          </span>
+        </button>
+      </li>
+    );
+  };
+
+  // Kit / Magic-Box card: one card for the family with a scope chooser.
+  const kitGroupCard = (orderItemId: string) => {
+    const g = kitGroups.get(orderItemId);
+    if (!g) return null;
+    const parent = units[g.parentIdx];
+    if (!parent) return null;
+    const scope = kitScope[orderItemId] ?? "";
+    const compCount = g.compIdxs.length;
+    return (
+      <li key={`kit:${orderItemId}`}>
+        <div
+          className={
+            "rounded-xl border overflow-hidden " +
+            (scope ? "border-rose-400/60" : "border-ink-200")
+          }
+        >
+          <div className="px-3 py-2.5 border-b border-ink-100 bg-cream-50/40 flex items-center gap-2">
+            <div className="flex-1 min-w-0">
+              <p className="text-[13px] font-medium text-ink-900 truncate">
+                {parent.name}
+              </p>
+              <p className="text-[11.5px] text-ink-500">{compCount} items inside</p>
+            </div>
+            <span className="shrink-0 rounded-full border border-ink-200 bg-white px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-ink-500">
+              {categoryLabel(parent.kind)}
+            </span>
+          </div>
+          <div className="p-3 space-y-2">
+            <p className="text-[11.5px] font-semibold uppercase tracking-wider text-ink-500">
+              What didn&apos;t arrive?
+            </p>
+            <ScopeOption
+              checked={scope === "full"}
+              onSelect={() => setKitScopeFor(orderItemId, "full")}
+              title="The whole box never arrived"
+              hint="The entire kit is missing from the delivery."
+            />
+            <ScopeOption
+              checked={scope === "items"}
+              onSelect={() => setKitScopeFor(orderItemId, "items")}
+              title="Only some items inside are missing"
+              hint="The box arrived, but some items weren't in it — pick them below."
+            />
+            {scope === "full" && (
+              <div className="rounded-lg bg-rose-50 border border-rose-200 px-3 py-2 text-[12px] text-rose-900">
+                Whole box selected — reporting the complete kit ({compCount} items) as
+                not arrived.
+              </div>
+            )}
+            {scope === "items" && (
+              <ul className="space-y-1.5 pt-1">
+                {g.compIdxs.map((ci) => unitRow(units[ci], ci))}
+              </ul>
+            )}
+          </div>
+        </div>
+      </li>
+    );
+  };
+
   return (
     <div className="rounded-2xl border border-ink-100 bg-white p-5 lg:p-6 space-y-5">
       {/* Order header */}
@@ -250,68 +410,24 @@ export function MissingForm({
           <p className="mt-1 text-[11.5px] text-ink-500">
             Tick every item that was missing — you can select more than one.
           </p>
-          <ul className="mt-2 space-y-1.5">
-            {units.map((u, idx) => {
-              const active = selectedIdxs.includes(idx);
-              const toggle = () => {
-                setSelectionConfirmed(false);
-                setSelectedIdxs((prev) =>
-                  prev.includes(idx) ? prev.filter((i) => i !== idx) : [...prev, idx]
-                );
-              };
-              return (
-                <li key={u.unitKey}>
-                  <button
-                    type="button"
-                    onClick={toggle}
-                    className={
-                      "w-full text-left rounded-lg border px-3 py-2 text-[13px] flex items-center gap-2 " +
-                      (active
-                        ? "border-rose-500 bg-rose-50/40 text-ink-900"
-                        : "border-ink-200 hover:border-ink-400 text-ink-700")
-                    }
-                  >
-                    <span
-                      className={
-                        "h-3.5 w-3.5 rounded-sm border-2 shrink-0 flex items-center justify-center " +
-                        (active ? "border-rose-500 bg-rose-500" : "border-ink-300")
-                      }
-                    >
-                      {active && (
-                        <svg
-                          viewBox="0 0 12 12"
-                          className="h-2.5 w-2.5 text-white"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2.5"
-                        >
-                          <path d="M2 6l2.5 2.5L10 3" strokeLinecap="round" strokeLinejoin="round" />
-                        </svg>
-                      )}
-                    </span>
-                    <span className="flex-1 min-w-0">
-                      <span className="font-medium block truncate">{u.name}</span>
-                      <span className="text-[11.5px] text-ink-500 block truncate">
-                        {unitDetailLabel(u) || "—"}
-                        {u.isKitComponent && (
-                          <span className="text-ink-400"> · in {u.parentName}</span>
-                        )}
-                      </span>
-                    </span>
-                    <span
-                      className={
-                        "shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] uppercase tracking-wider " +
-                        (active
-                          ? "border-rose-500/40 bg-white text-rose-700"
-                          : "border-ink-200 bg-cream-50 text-ink-500")
-                      }
-                    >
-                      {categoryLabel(u.kind)}
-                    </span>
-                  </button>
-                </li>
-              );
-            })}
+          <ul className="mt-2 space-y-2">
+            {(() => {
+              const seenKit = new Set<string>();
+              const rows: React.ReactNode[] = [];
+              units.forEach((u, idx) => {
+                const grouped =
+                  kitGroups.has(u.orderItemId) && (u.isKitParent || u.isKitComponent);
+                if (grouped) {
+                  if (!seenKit.has(u.orderItemId)) {
+                    seenKit.add(u.orderItemId);
+                    rows.push(kitGroupCard(u.orderItemId));
+                  }
+                  return;
+                }
+                rows.push(unitRow(u, idx));
+              });
+              return rows;
+            })()}
           </ul>
           <label className="mt-3 flex items-start gap-2 rounded-lg border border-ink-200 bg-cream-50/40 px-3 py-2.5 cursor-pointer">
             <input
@@ -363,6 +479,9 @@ export function MissingForm({
                       {unitDetailLabel(u) || "—"}
                       {u.isKitComponent && (
                         <span className="text-ink-400"> · in {u.parentName}</span>
+                      )}
+                      {u.isKitParent && (
+                        <span className="text-ink-400"> · whole box</span>
                       )}
                     </p>
                   </div>
@@ -483,6 +602,43 @@ export function MissingForm({
             ? `Submit missing-item claim (${totalSelected} items)`
             : "Submit missing-item claim"}
       </button>
+    </div>
+  );
+}
+
+function ScopeOption({
+  checked,
+  onSelect,
+  title,
+  hint,
+}: {
+  checked: boolean;
+  onSelect: () => void;
+  title: string;
+  hint: string;
+}) {
+  return (
+    <div
+      onClick={onSelect}
+      className={
+        "rounded-lg border px-3 py-2.5 cursor-pointer " +
+        (checked
+          ? "border-rose-500 bg-rose-50/40"
+          : "border-ink-200 hover:border-ink-400 bg-white")
+      }
+    >
+      <div className="flex items-start gap-2">
+        <span
+          className={
+            "mt-0.5 h-3.5 w-3.5 rounded-full border-2 shrink-0 " +
+            (checked ? "border-rose-500 bg-rose-500" : "border-ink-300")
+          }
+        />
+        <div className="flex-1 min-w-0">
+          <p className="text-[13px] font-medium text-ink-900">{title}</p>
+          <p className="text-[11.5px] text-ink-500 mt-0.5">{hint}</p>
+        </div>
+      </div>
     </div>
   );
 }

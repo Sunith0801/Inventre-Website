@@ -192,7 +192,10 @@ function options(
           defective: DAMAGE_LOC_BOOK,
           other: [],
         },
-        showSiblingPicker: false, // books don't have sibling sizes
+        // Books rarely have sibling variants, but when one does (e.g. a
+        // language/edition axis) let the customer pick the exact one they
+        // want instead of describing it in free text.
+        showSiblingPicker: hasSiblings,
         forceKitDrillDown: false,
       };
 
@@ -275,7 +278,10 @@ function options(
           defective: [],
           other: [],
         },
-        showSiblingPicker: false,
+        // The drilled-down component (uniform piece, belt, …) may itself
+        // carry size/variant siblings — surface them so the customer can
+        // say exactly which one they want.
+        showSiblingPicker: hasSiblings,
         forceKitDrillDown: true,
       };
 
@@ -304,7 +310,7 @@ function options(
           defective: DAMAGE_LOC_BOOK,
           other: [],
         },
-        showSiblingPicker: false,
+        showSiblingPicker: hasSiblings,
         forceKitDrillDown: false,
       };
 
@@ -330,7 +336,7 @@ function options(
           defective: DAMAGE_LOC_GENERIC,
           other: [],
         },
-        showSiblingPicker: false,
+        showSiblingPicker: hasSiblings,
         forceKitDrillDown: false,
       };
 

@@ -1,12 +1,18 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useFocusRefetch } from "@/lib/use-focus-refetch";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, ShieldCheck, Lock, AlertTriangle, Info } from "lucide-react";
 import { Nav } from "@/components/Nav";
 import { useCart } from "@/lib/cart";
-import { auth, type Me } from "@/lib/auth";
+import { auth, clearMeCache, type Me } from "@/lib/auth";
+import { z } from "zod";
+import {
+  DEFAULT_PAYMENT_CHARGES,
+  isValidPaymentChargesConfig,
+  type PaymentChargesConfig,
+} from "@/lib/payment-charges-defaults";
 
 type Address = {
   receiverName: string;
@@ -54,6 +60,16 @@ export default function CheckoutPage() {
     (Address & { id: string; label: string | null; isDefault: boolean })[]
   >([]);
   const [saveForNextTime, setSaveForNextTime] = useState(true);
+  // Billing email lives on `parents.email`, not on the addresses row. We
+  // prefill from `me.email`; if it was empty at page load, we write it back
+  // to parents.email after Pay so the next checkout auto-prefills.
+  const [email, setEmail] = useState("");
+  const [emailLockedFromMe, setEmailLockedFromMe] = useState(false);
+  // Ref on the email field's wrapper so we can scroll it into view when the
+  // user clicks Pay with a missing/invalid email — otherwise the inline
+  // error banner shows near the bottom of the address card and is easy to
+  // miss on small screens.
+  const emailFieldRef = useRef<HTMLDivElement | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [errorAction, setErrorAction] = useState<{ href: string; label: string } | null>(null);
@@ -62,6 +78,12 @@ export default function CheckoutPage() {
   // GST schedule. The Pay button stays disabled until ticked, and we
   // re-check on submit before kicking off the CCAvenue redirect.
   const [feesAcknowledged, setFeesAcknowledged] = useState(false);
+  // Fee schedule shown in the amber disclosure box. Defaults are the
+  // values that used to be hardcoded; replaced at runtime by whatever
+  // /admin/payment-charges has saved.
+  const [charges, setCharges] = useState<PaymentChargesConfig>(
+    DEFAULT_PAYMENT_CHARGES,
+  );
 
   const fetchShipping = useCallback(async () => {
     if (lines.length === 0) {
@@ -81,6 +103,12 @@ export default function CheckoutPage() {
   // Pick up admin Delivery Fee Rule edits the moment the tab regains focus.
   useFocusRefetch(fetchShipping);
   useEffect(() => {
+    fetch("/api/payment-charges", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (isValidPaymentChargesConfig(d)) setCharges(d);
+      })
+      .catch(() => {});
     fetch("/api/cart/apply-coupon")
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
@@ -100,6 +128,9 @@ export default function CheckoutPage() {
           receiverName: u.name ?? "",
           receiverPhone: u.phone,
         }));
+        const saved = (u.email ?? "").trim();
+        setEmail(saved);
+        setEmailLockedFromMe(saved !== "");
       }
     });
     fetch("/api/addresses", { cache: "no-store" })
@@ -155,6 +186,25 @@ export default function CheckoutPage() {
       setError("Pincode must be 6 digits");
       return;
     }
+    const trimmedEmail = email.trim();
+    const focusEmail = () => {
+      emailFieldRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+      // Focus the actual input so the user can start typing immediately.
+      emailFieldRef.current?.querySelector("input")?.focus();
+    };
+    if (!trimmedEmail) {
+      setError("Please enter your email address");
+      focusEmail();
+      return;
+    }
+    if (!z.string().email().safeParse(trimmedEmail).success) {
+      setError("Please enter a valid email address");
+      focusEmail();
+      return;
+    }
     if (!feesAcknowledged) {
       setError("Please acknowledge the payment-gateway fee & GST schedule to continue.");
       return;
@@ -162,6 +212,27 @@ export default function CheckoutPage() {
 
     setSubmitting(true);
     try {
+      // First-time fill: persist the entered email to `parents.email` so the
+      // next checkout auto-prefills. We only write back when the field was
+      // empty at page load — edits to a previously-saved email apply only to
+      // this CCAvenue payload (handled server-side from parents.email today).
+      if (!emailLockedFromMe) {
+        const patchRes = await fetch("/api/auth/me", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: trimmedEmail }),
+        });
+        if (!patchRes.ok) {
+          const d = await patchRes
+            .json()
+            .catch(() => ({}) as Record<string, string>);
+          setError(d.error ?? "Could not save your email. Please try again.");
+          setSubmitting(false);
+          return;
+        }
+        clearMeCache();
+      }
+
       // Save address for next time (best-effort, non-blocking)
       if (saveForNextTime) {
         void fetch("/api/addresses", {
@@ -351,6 +422,16 @@ export default function CheckoutPage() {
                   }
                   inputMode="numeric"
                 />
+                <div ref={emailFieldRef} className="sm:col-span-2 scroll-mt-24">
+                  <Field
+                    label="Email"
+                    value={email}
+                    onChange={setEmail}
+                    type="email"
+                    inputMode="email"
+                    autoComplete="email"
+                  />
+                </div>
               </div>
 
               <label className="mt-4 flex items-center gap-2 text-[13px] text-ink-700 cursor-pointer">
@@ -514,43 +595,21 @@ export default function CheckoutPage() {
                     <Info className="h-4 w-4 mt-0.5 text-amber-700 flex-shrink-0" />
                     <div className="flex-1 min-w-0">
                       <p className="text-[12.5px] font-bold text-amber-900">
-                        Payment-gateway charges apply
+                        {charges.title}
                       </p>
                       <p className="mt-0.5 text-[11.5px] text-amber-800">
-                        The transaction fee depends on the payment method
-                        you choose on the next page:
+                        {charges.intro}
                       </p>
                       <ul className="mt-1.5 space-y-0.5 text-[11.5px] text-amber-900">
-                        <li className="flex justify-between gap-2">
-                          <span>Credit Card (Visa / Master / RuPay)</span>
-                          <span className="font-mono font-semibold">1.95%</span>
-                        </li>
-                        <li className="flex justify-between gap-2">
-                          <span>Debit Card</span>
-                          <span className="font-mono font-semibold">1.25%</span>
-                        </li>
-                        <li className="flex justify-between gap-2">
-                          <span>RuPay Debit Card</span>
-                          <span className="font-mono font-semibold">1.00%</span>
-                        </li>
-                        <li className="flex justify-between gap-2">
-                          <span>UPI (standard)</span>
-                          <span className="font-mono font-semibold">1.00%</span>
-                        </li>
-                        <li className="flex justify-between gap-2">
-                          <span>UPI via credit card / wallet</span>
-                          <span className="font-mono font-semibold">2.00%</span>
-                        </li>
-                        <li className="flex justify-between gap-2">
-                          <span>Net Banking</span>
-                          <span className="font-mono font-semibold">1.80%</span>
-                        </li>
+                        {charges.rows.map((row, i) => (
+                          <li key={i} className="flex justify-between gap-2">
+                            <span>{row.label}</span>
+                            <span className="font-mono font-semibold">{row.rate}</span>
+                          </li>
+                        ))}
                       </ul>
                       <p className="mt-2 text-[11px] text-amber-800 leading-snug">
-                        18% GST is applied on the total amount (including the
-                        transaction fee) as per government regulations. The
-                        fee above includes a 1% platform charge irrespective
-                        of the payment mode chosen.
+                        {charges.footnote}
                       </p>
                     </div>
                   </div>
@@ -602,20 +661,25 @@ function Field({
   value,
   onChange,
   inputMode,
+  type,
+  autoComplete,
   className = "",
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
-  inputMode?: "text" | "numeric";
+  inputMode?: "text" | "numeric" | "email";
+  type?: "text" | "email";
+  autoComplete?: string;
   className?: string;
 }) {
   return (
     <label className={"flex flex-col " + className}>
       <span className="text-[12px] font-semibold text-ink-700">{label}</span>
       <input
-        type="text"
+        type={type ?? "text"}
         inputMode={inputMode ?? "text"}
+        autoComplete={autoComplete}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         className="mt-1 rounded-xl border border-ink-200 bg-white px-3 py-2.5 text-[14px] text-ink-900 outline-none focus:border-ink-900 transition-colors"

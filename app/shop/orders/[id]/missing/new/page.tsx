@@ -11,7 +11,7 @@ import {
   productAttributeValues,
 } from "@/db/schema";
 import { getCurrentParent } from "@/lib/session";
-import { isExchangeTester } from "@/lib/exchange-gate";
+import { isExchangeTester, isExchangeScopeRelaxed } from "@/lib/exchange-gate";
 import { Nav } from "@/components/Nav";
 import { Footer } from "@/components/Footer";
 import { MissingForm } from "@/components/shop/orders/missing/MissingForm";
@@ -32,19 +32,23 @@ async function resolveLocalOrderId(
   idOrNumber: string,
   parentId: string,
 ): Promise<string | null> {
+  // Dev: ownership scope relaxed — see isExchangeScopeRelaxed.
+  const ownerScope = isExchangeScopeRelaxed()
+    ? undefined
+    : eq(orders.parentId, parentId);
   const isUuid = /^[0-9a-f-]{36}$/i.test(idOrNumber);
   if (isUuid) {
     const [row] = await db
       .select({ id: orders.id, status: orders.status })
       .from(orders)
-      .where(and(eq(orders.id, idOrNumber), eq(orders.parentId, parentId)))
+      .where(and(eq(orders.id, idOrNumber), ownerScope))
       .limit(1);
     return row && row.status !== "placed" ? row.id : null;
   }
   const [row] = await db
     .select({ id: orders.id, status: orders.status })
     .from(orders)
-    .where(and(eq(orders.orderNumber, idOrNumber), eq(orders.parentId, parentId)))
+    .where(and(eq(orders.orderNumber, idOrNumber), ownerScope))
     .limit(1);
   return row && row.status !== "placed" ? row.id : null;
 }
@@ -162,6 +166,7 @@ export default async function NewMissingClaimPage({
     orderItemId: string;
     parentName: string;
     isKitComponent: boolean;
+    isKitParent: boolean;
     name: string;
     size: string;
     qty: number;
@@ -176,6 +181,24 @@ export default async function NewMissingClaimPage({
       ? (it.bundleSelections as Array<Record<string, unknown>>)
       : [];
     if (raw.length > 0) {
+      // Whole-kit unit first: the form's scope chooser offers "the whole
+      // box never arrived" vs "only some items inside are missing".
+      {
+        const vid = it.variantId ?? "";
+        units.push({
+          unitKey: `kitparent:${it.id}`,
+          orderItemId: it.id,
+          parentName: it.name,
+          isKitComponent: false,
+          isKitParent: true,
+          name: it.name,
+          size: it.size,
+          qty: it.qty,
+          variantId: vid,
+          kind: (vid ? kindByVariant.get(vid) : null) ?? "kit",
+          attributes: [],
+        });
+      }
       raw.forEach((c, ci) => {
         const vid = typeof c.variantId === "string" ? c.variantId : "";
         const compName = typeof c.name === "string" ? c.name : "Component";
@@ -189,6 +212,7 @@ export default async function NewMissingClaimPage({
           orderItemId: it.id,
           parentName: it.name,
           isKitComponent: true,
+          isKitParent: false,
           name: compName,
           size: compSize,
           qty: compQty,
@@ -204,6 +228,7 @@ export default async function NewMissingClaimPage({
         orderItemId: it.id,
         parentName: it.name,
         isKitComponent: false,
+        isKitParent: false,
         name: it.name,
         size: it.size,
         qty: it.qty,

@@ -6,6 +6,7 @@ import {
   productSchool,
   productVariants,
   productImages,
+  productAttributeValues,
   productBadges,
   productBundles,
   bundleComponents,
@@ -76,7 +77,11 @@ export type ProductDetailDto = ProductCardDto & {
    *  this (they keep showing "no image" so the data gap stays visible to
    *  admins). null when no candidate exists. */
   fallbackImageUrl: string | null;
-  images: { id: string; url: string; alt: string | null }[];
+  /** `colorValue` carries the attribute value (e.g. "Blue") this image
+   *  belongs to — from an explicit admin tag (product_images.attribute_value_id)
+   *  or, failing that, a non-size attribute value found in the alt text.
+   *  null = generic image, shown regardless of selection. */
+  images: { id: string; url: string; alt: string | null; colorValue: string | null }[];
   rating: { score: number; count: number; distribution: number[] } | null;
   /** Recursive BOM subtree rooted at this product. Empty when the product has
    *  no `product_bundles` row. Children render as an inline accordion on the
@@ -844,6 +849,45 @@ export async function listProductsForStudent(args: {
  * paths. If freshness becomes important, either drop the TTL here or wire
  * an explicit bust into the admin product/bundle update routes.
  */
+/** Attach a colour label to each PDP image so the gallery can react to the
+ *  shopper's colour pick. Explicit admin tag (attribute_value_id) wins;
+ *  otherwise we look for a non-size attribute value inside the alt text —
+ *  uploads are usually named after their colour ("Blue Sports polo front.jpg"),
+ *  which covers products created before the tagging UI existed. Longest value
+ *  first so "Sky Blue" beats "Blue". */
+async function resolveImageColors(
+  images: (typeof productImages.$inferSelect)[],
+  attributeGroups: { name: string; values: string[] }[]
+): Promise<{ id: string; url: string; alt: string | null; colorValue: string | null }[]> {
+  const taggedIds = images
+    .map((i) => i.attributeValueId)
+    .filter((v): v is string => Boolean(v));
+  const tagRows = taggedIds.length
+    ? await db
+        .select({ id: productAttributeValues.id, value: productAttributeValues.value })
+        .from(productAttributeValues)
+        .where(inArray(productAttributeValues.id, taggedIds))
+    : [];
+  const tagText = new Map(tagRows.map((r) => [r.id, r.value]));
+
+  const candidateValues = attributeGroups
+    .filter((g) => !/size|sizes/i.test(g.name))
+    .flatMap((g) => g.values)
+    .filter((v) => typeof v === "string" && v.length >= 3)
+    .sort((a, b) => b.length - a.length);
+
+  return images.map((i) => {
+    let colorValue: string | null = null;
+    if (i.attributeValueId) colorValue = tagText.get(i.attributeValueId) ?? null;
+    if (!colorValue && i.alt) {
+      const alt = i.alt.toLowerCase();
+      colorValue =
+        candidateValues.find((v) => alt.includes(v.toLowerCase())) ?? null;
+    }
+    return { id: i.id, url: safeImgUrl(i.url) ?? i.url, alt: i.alt, colorValue };
+  });
+}
+
 export async function getProductBySlug(
   slug: string,
   schoolId?: string
@@ -988,7 +1032,10 @@ export async function getProductBySlug(
       // (visually misleading). The PDP renders a stylized placeholder card
       // when this is null — better to show no photo than a wrong photo.
       fallbackImageUrl: null,
-      images: images.map((i) => ({ id: i.id, url: safeImgUrl(i.url) ?? i.url, alt: i.alt })),
+      images: await resolveImageColors(
+        images,
+        (product.attributeGroups as { name: string; values: string[] }[] | null) ?? []
+      ),
       rating: count > 0 ? { score, count, distribution } : null,
       bundleTree,
       isBundle: bundleTree.length > 0,

@@ -5,6 +5,7 @@ import { missingItemClaims, missingItemClaimItems, orders } from "@/db/schema";
 import { allocClaimNumber } from "@/lib/numbering";
 import { firstPickupSaturday, toDbDate } from "@/lib/date";
 import { findOpenRequestForOrder } from "@/lib/exchange";
+import { isExchangeScopeRelaxed } from "@/lib/exchange-gate";
 
 /**
  * Customer-raised "missing-item" claim service.
@@ -57,7 +58,12 @@ export async function createMissingClaim(
   const [order] = await db
     .select()
     .from(orders)
-    .where(and(eq(orders.id, input.orderId), eq(orders.parentId, input.parentId)))
+    .where(
+      and(
+        eq(orders.id, input.orderId),
+        isExchangeScopeRelaxed() ? undefined : eq(orders.parentId, input.parentId)
+      )
+    )
     .limit(1);
   if (!order) return { ok: false, status: 404, error: "Order not found" };
   if (order.status === "placed" || order.status === "confirmed") {
@@ -70,7 +76,11 @@ export async function createMissingClaim(
 
   // 2. Cross-flow per-sale-order block. ONE missing claim + ONE exchange
   //    request per order, lifetime — until either is rejected.
-  const open = await findOpenRequestForOrder(input.orderId, input.parentId);
+  // Dev: lifetime lock disabled (isExchangeScopeRelaxed) so testers can
+  // raise repeat requests on the same order.
+  const open = isExchangeScopeRelaxed()
+    ? null
+    : await findOpenRequestForOrder(input.orderId, input.parentId);
   if (open) {
     const msg =
       open.kind === "missing"

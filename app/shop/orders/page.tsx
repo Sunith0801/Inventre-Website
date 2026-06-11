@@ -34,6 +34,7 @@ const statusStyle: Record<string, string> = {
   confirmed: "bg-blue-50 text-blue-700",
   packed: "bg-amber-50 text-amber-700",
   shipped: "bg-indigo-50 text-indigo-700",
+  "out for delivery": "bg-indigo-100 text-indigo-800",
   delivered: "bg-emerald-50 text-emerald-700",
   cancelled: "bg-red-50 text-red-700",
   returned: "bg-zinc-100 text-zinc-700",
@@ -76,18 +77,34 @@ export default function OrdersPage() {
   useFocusRefetch(loadOrders);
 
   // Group orders by student so a parent with multiple kids sees one block
-  // per child instead of an interleaved list. Group identity is the
-  // enrollment number (preferred — stable across name typos) then the
-  // student name, falling back to "Unassigned" so nothing disappears.
+  // per child instead of an interleaved list. Group identity normalises
+  // the enrollment string to (lowercase-alpha):(digits) so the audit-side
+  // form "KS240005" and our local form "24KS0005" collapse into the same
+  // group instead of rendering as two sections for the same kid.
+  const enrollmentKey = (s: string | null | undefined): string => {
+    if (!s) return "";
+    const alpha = s.replace(/[^a-zA-Z]/g, "").toLowerCase();
+    const digits = s.replace(/\D/g, "");
+    return `${alpha}:${digits}`;
+  };
   const groups: StudentGroup[] = useMemo(() => {
     const byKey = new Map<string, StudentGroup>();
     for (const o of orders) {
-      const key = (o.enrollment ?? o.studentName ?? "unassigned").trim();
+      const key =
+        enrollmentKey(o.enrollment) ||
+        (o.studentName ?? "unassigned").trim().toLowerCase();
       const ts = new Date(o.createdAt).getTime();
       const existing = byKey.get(key);
       if (existing) {
         existing.orders.push(o);
         if (ts > existing.latest) existing.latest = ts;
+        // Prefer the canonical local enrollment string (typically the
+        // students.enrollment_number form) once we've seen it — that's
+        // what the parent recognises. Audit's "KS240005" should defer
+        // to our "24KS0005" if both turn up.
+        if (!existing.enrollment && o.enrollment) {
+          existing.enrollment = o.enrollment;
+        }
       } else {
         byKey.set(key, {
           key,

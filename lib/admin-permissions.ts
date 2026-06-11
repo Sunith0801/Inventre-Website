@@ -56,6 +56,7 @@ export const ADMIN_PAGES: AdminPage[] = [
   { slug: "catalog",              label: "Catalog",               group: "Catalog" },
   { slug: "discounts",            label: "Discounts",             group: "Pricing & Tax" },
   { slug: "tax",                  label: "Tax & GST",             group: "Pricing & Tax" },
+  { slug: "payment-charges",      label: "Payment charges",       group: "Payment Charges" },
   { slug: "suppliers",            label: "Suppliers",             group: "Buying" },
   { slug: "purchase-orders",      label: "Purchase orders",       group: "Buying" },
   { slug: "payments",             label: "Payments",              group: "Accounting" },
@@ -79,8 +80,8 @@ export type AdminPermissionAction = "read" | "write";
 
 export const ADMIN_PERMISSION_GROUPS: readonly string[] = [
   "Overview", "Sales", "Network", "People", "Catalog",
-  "Pricing & Tax", "Buying", "Accounting", "Engagement",
-  "Content", "Tools", "Settings",
+  "Pricing & Tax", "Payment Charges", "Buying", "Accounting",
+  "Engagement", "Content", "Tools", "Settings",
 ];
 
 export const readKey = (slug: string): string => `${slug}.read`;

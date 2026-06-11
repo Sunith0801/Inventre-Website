@@ -505,14 +505,26 @@ export function GradesPicker({
 // Images editor (inline)
 // ────────────────────────────────────────────────────────────
 
-type Img = { id: string; url: string; alt: string | null; isPrimary?: boolean };
+type Img = {
+  id: string;
+  url: string;
+  alt: string | null;
+  isPrimary?: boolean;
+  /** Colour tag — product_attribute_values.id (e.g. Colour=Blue). The PDP
+   *  gallery surfaces tagged images when that colour is selected. */
+  attributeValueId?: string | null;
+};
 
 export function ProductImages({
   productId,
   initial,
+  colourOptions = [],
 }: {
   productId: string;
   initial: Img[];
+  /** Colour values used by this product's variants; empty = product has no
+   *  colour axis and the per-image colour dropdown is hidden. */
+  colourOptions?: { id: string; label: string }[];
 }) {
   const router = useRouter();
   const [images, setImages] = useState<Img[]>(initial);
@@ -607,6 +619,22 @@ export function ProductImages({
     const next = [images[i], ...images.filter((_, idx) => idx !== i)];
     setImages(next);
     await persistOrder(next, () => setImages(before));
+  };
+
+  const setColour = async (img: Img, attributeValueId: string | null) => {
+    const before = images;
+    setImages((cur) =>
+      cur.map((i) => (i.id === img.id ? { ...i, attributeValueId } : i))
+    );
+    const r = await fetch(`/api/admin/products/${productId}/images/${img.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ attributeValueId }),
+    });
+    if (!r.ok) {
+      setImages(before);
+      setError("Could not save colour tag");
+    }
   };
 
   const startEditAlt = (img: Img) => {
@@ -725,6 +753,23 @@ export function ProductImages({
                   <p className="text-[11px] text-ink-500 truncate mt-0.5">
                     {img.alt || <span className="italic text-ink-400">no alt text</span>}
                   </p>
+                  {colourOptions.length > 0 ? (
+                    <select
+                      value={img.attributeValueId ?? ""}
+                      onChange={(e) =>
+                        void setColour(img, e.target.value || null)
+                      }
+                      className="mt-1.5 h-7 max-w-full rounded border border-ink-200 bg-white px-1.5 text-[11px] text-ink-700"
+                      title="Colour this image shows — the storefront gallery surfaces it when that colour is selected"
+                    >
+                      <option value="">No colour tag</option>
+                      {colourOptions.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.label}
+                        </option>
+                      ))}
+                    </select>
+                  ) : null}
                 </div>
 
                 {/* Always-visible actions */}

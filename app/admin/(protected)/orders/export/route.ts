@@ -97,7 +97,7 @@ export async function GET(req: Request) {
                  o.status::text                                AS status,
                  round((o.total::numeric / 100), 0)::int       AS grand_total,
                  COALESCE(o.school_name_snapshot, s.school_name, s.name) AS school_name,
-                 stu.enrollment_number                         AS enrollment_number,
+                 COALESCE(NULLIF(stu.enrollment_number, ''), NULLIF(c_l.custom_enrollment_number, ''), NULLIF(so_l.student, '')) AS enrollment_number,
                  COALESCE(o.grade_snapshot, stu.grade)         AS grade,
                  COALESCE(o.placed_at, o.created_at)::text     AS ordered_at,
                  o.payment_status::text                        AS payment_status,
@@ -109,6 +109,8 @@ export async function GET(req: Request) {
             LEFT JOIN schools s   ON s.id   = o.school_id
             LEFT JOIN students stu ON stu.id = o.student_id
             LEFT JOIN first_payment fp ON fp.order_id = o.id
+            LEFT JOIN erp.sales_orders so_l ON so_l.erp_name = o.order_number
+            LEFT JOIN erp.customers   c_l  ON c_l.erp_name  = so_l.customer
           UNION ALL
           SELECT so.erp_name,
                  COALESCE(stu_m.name, so.customer_name)        AS customer,
@@ -116,7 +118,7 @@ export async function GET(req: Request) {
                  COALESCE(so.custom_display_status, so.status) AS status,
                  round(so.grand_total::numeric, 0)::int        AS grand_total,
                  so.custom_student_school                      AS school_name,
-                 so.student                                    AS enrollment_number,
+                 COALESCE(NULLIF(c.custom_enrollment_number, ''), so.student) AS enrollment_number,
                  so.custom_student_grade                       AS grade,
                  so.creation_at::text                          AS ordered_at,
                  so.custom_payment_status                      AS payment_status,
@@ -124,7 +126,8 @@ export async function GET(req: Request) {
                  'erp'::text                                   AS source,
                  2                                             AS pri
             FROM erp.sales_orders so
-            LEFT JOIN students stu_m ON stu_m.enrollment_number = so.student
+            LEFT JOIN erp.customers c ON c.erp_name = so.customer
+            LEFT JOIN students stu_m ON stu_m.enrollment_number = NULLIF(c.custom_enrollment_number, '')
           UNION ALL
           SELECT erp_name, customer,
                  transaction_date::text, status,
@@ -189,7 +192,33 @@ export async function GET(req: Request) {
     )
     SELECT
       f.erp_name                                AS so_id,
-      f.enrollment_number                       AS enrollment,
+      -- Fallback for paid orders placed without a student_id (guest-style
+      -- checkouts): if the parent on the order resolves to exactly one
+      -- enrolled student — directly or via guardian phone links — use that
+      -- student's enrollment number. COALESCE short-circuits, so the
+      -- subquery only runs for the handful of rows where enrollment is
+      -- otherwise blank.
+      COALESCE(
+        f.enrollment_number,
+        (SELECT CASE WHEN count(DISTINCT cand.en) = 1 THEN min(cand.en) END
+           FROM (
+             SELECT NULLIF(s.enrollment_number, '') AS en
+               FROM orders o3
+               JOIN students s ON s.parent_id = o3.parent_id
+              WHERE o3.order_number = f.erp_name
+             UNION
+             SELECT NULLIF(s2.enrollment_number, '')
+               FROM orders o4
+               JOIN parents p4 ON p4.id = o4.parent_id
+               JOIN student_guardian_links sgl
+                 ON right(regexp_replace(COALESCE(sgl.phone_no, ''), '[^0-9]', '', 'g'), 10)
+                  = right(regexp_replace(COALESCE(p4.phone, ''), '[^0-9]', '', 'g'), 10)
+                AND length(right(regexp_replace(COALESCE(p4.phone, ''), '[^0-9]', '', 'g'), 10)) = 10
+               JOIN students s2 ON s2.id = sgl.student_id
+              WHERE o4.order_number = f.erp_name
+           ) cand
+          WHERE cand.en IS NOT NULL)
+      )                                         AS enrollment,
       f.customer                                AS student,
       f.school_name                             AS school,
       f.grade                                   AS grade,
@@ -225,9 +254,15 @@ export async function GET(req: Request) {
         FROM erp.sales_order_items i
        WHERE i.order_erp_name = f.erp_name
       UNION ALL
-      -- ERP sub-items (kit components, etc.) — inherit category from parent line
+      -- ERP sub-items (kit components, etc.) — inherit category from parent line.
+      -- The sub-items mirror carries no rate (the bridge ships bundle picks
+      -- without prices), so we price them from the local catalog instead:
+      -- item_prices on the "Standard Selling" list matches transacted ERP
+      -- rates 1:1. Amount stays NULL on these rows so summing the Amount
+      -- column still reconciles with order grand totals (the parent bundle
+      -- line already carries the transacted amount).
       SELECT si.item_code, NULL::text AS item_name,
-             si.qty::numeric AS qty, NULL::numeric AS rate, NULL::numeric AS amount,
+             si.qty::numeric AS qty, lp.rate AS rate, NULL::numeric AS amount,
              si.parent_item_code,
              (SELECT COALESCE(
                        NULLIF(pi.category, ''),
@@ -245,6 +280,15 @@ export async function GET(req: Request) {
                LIMIT 1) AS category,
              1 AS line_pri, si.id AS line_seq
         FROM erp.sales_order_sub_items si
+        LEFT JOIN LATERAL (
+          SELECT (ip.price / 100.0)::numeric AS rate
+            FROM product_variants pv
+            JOIN item_prices ip ON ip.variant_id = pv.id
+            LEFT JOIN price_lists pl ON pl.id = ip.price_list_id
+           WHERE pv.sku = si.item_code AND ip.price > 0
+           ORDER BY (pl.name = 'Standard Selling') DESC, ip.updated_at DESC
+           LIMIT 1
+        ) lp ON TRUE
        WHERE si.order_erp_name = f.erp_name
       UNION ALL
       -- Local order_items, only when this row hasn't been mirrored to

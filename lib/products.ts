@@ -12,8 +12,10 @@ export type Product = {
   stockLeft?: number; // for "Only X left" indicator
   badge?: "NEW" | "BESTSELLER" | "LOW STOCK";
   img: string | null;
-  /** Optional gallery — falls back to [img] if absent. */
-  images?: { id: string; url: string; alt: string | null }[];
+  /** Optional gallery — falls back to [img] if absent. `colorValue` ties an
+   *  image to an attribute value (e.g. "Blue") so the PDP gallery can put it
+   *  first when that colour is selected; null/absent = generic image. */
+  images?: { id: string; url: string; alt: string | null; colorValue?: string | null }[];
   required: boolean;
   isMagicBox?: boolean;
   isKit?: boolean;

@@ -443,6 +443,11 @@ export default async function EditProductPage({
               url: i.url,
               alt: i.alt,
               isPrimary: i.isPrimary,
+              attributeValueId: i.attributeValueId,
+            }))}
+            colourOptions={colourOptions.map((c) => ({
+              id: c.id,
+              label: c.displayLabel ?? c.value,
             }))}
           />
           <GradesPicker

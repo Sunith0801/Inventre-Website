@@ -1,6 +1,13 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // Dev isolation: prod deploys run `npm run build` on the host in this
+  // same checkout (scripts/deploy.sh), which clobbers `.next` under a
+  // running `next dev` and 500s every page until restart. The dev server
+  // sets NEXT_DIST_DIR=.next-dev to keep the two apart; unset (prod
+  // build, deploy.sh) keeps the default `.next` so cache reuse and the
+  // container sync are untouched.
+  distDir: process.env.NEXT_DIST_DIR || ".next",
   // Upstream `main` has ~24 pre-existing TS errors from in-progress schema
   // refactors (school status casing, dropped columns). The emitted JS runs
   // fine; bypass the compile-time type gate so deploys aren't blocked.

@@ -1059,10 +1059,22 @@ async function deriveLocalOrderStatusFromMirror(
   orderId: string,
   orderErpName: string
 ): Promise<boolean> {
+  // Mirror the storefront listing/detail filters: synthetic
+  // `shipped_to_school` / pre-AWB stub rows whose tracking_number starts
+  // 'syn:' are NOT real customer deliveries. Without this filter, audit's
+  // bookkit-to-school internal handoff (which is mirrored as a 'delivered'
+  // outward_shipments row) cascades local.status to 'delivered' for
+  // orders that audit's own order header still flags "Not Yet Delivered".
+  // That stale local.status then leaks into exchange-eligibility,
+  // review-prompt, and admin fulfillment dashboards. Audit's
+  // `custom_display_status` is the authoritative order-level signal —
+  // the per-shipment derivation here must only consider real carrier
+  // shipments.
   const sh: any = await db.execute(sql`
     SELECT status FROM erp.outward_shipments
      WHERE order_erp_name = ${orderErpName}
        AND COALESCE(is_deleted, false) = false
+       AND COALESCE(tracking_number, '') NOT LIKE 'syn:%'
   `);
   const pu: any = await db.execute(sql`
     SELECT status FROM erp.packing_units
@@ -1123,7 +1135,7 @@ export async function upsertOrderMirror(h: ErpOrderHeader): Promise<void> {
   await db
     .execute(sql`
       INSERT INTO erp.sales_orders (
-        erp_name, customer, customer_name, customer_group,
+        erp_name, customer, customer_name, customer_group, student,
         transaction_date, delivery_date, status, custom_display_status,
         delivery_status, grand_total, net_total, total, currency,
         contact_person, contact_email, contact_phone, contact_mobile,
@@ -1137,6 +1149,7 @@ export async function upsertOrderMirror(h: ErpOrderHeader): Promise<void> {
         ${get<string>("customer")},
         ${get<string>("customer_name")},
         ${get<string>("customer_group")},
+        ${get<string>("enrollment_number") ?? get<string>("student")},
         ${get<string>("transaction_date")}::date,
         ${get<string>("delivery_date")}::date,
         ${get<string>("status")},
@@ -1166,6 +1179,8 @@ export async function upsertOrderMirror(h: ErpOrderHeader): Promise<void> {
         customer              = EXCLUDED.customer,
         customer_name         = EXCLUDED.customer_name,
         customer_group        = EXCLUDED.customer_group,
+        -- keep a previously backfilled value when the header omits the field
+        student               = COALESCE(NULLIF(EXCLUDED.student, ''), erp.sales_orders.student),
         transaction_date      = EXCLUDED.transaction_date,
         delivery_date         = EXCLUDED.delivery_date,
         status                = EXCLUDED.status,
@@ -1205,6 +1220,50 @@ export async function upsertShipmentMirror(
   // from event_type — receiver passes {isDeleted:true} for shipment.cancelled.
   const isDeleted = opts.isDeleted ?? false;
   const qty = ((sh as Record<string, unknown>).qty as number | null) ?? 1;
+  // Audit's GET /shipments/{id} doesn't return a separate `carrier_events`
+  // field — it intermixes carrier scans and system transitions in one
+  // `events` array, distinguished by `actor` (e.g. "dtdc-scan" is a
+  // carrier scan; "dtdc-poller" / "auto-track" / "admin" are system
+  // events). Split them: carrier scans go into the `carrier_events`
+  // jsonb column (with the location parsed out of the
+  // "Label — Location" note); the rest go into outward_status_events.
+  // Falls back to a directly-shaped carrier_events array if the source
+  // already pre-shaped it (legacy paths).
+  const directCarrier =
+    (sh as Record<string, unknown>).carrier_events ?? null;
+  const rawEvents = (sh.events ?? []) as Array<{
+    actor?: string | null;
+    note?: string | null;
+    from_status?: string | null;
+    to_status?: string | null;
+    status?: string | null;
+    created_at?: string | null;
+  }>;
+  const isScanActor = (a?: string | null) =>
+    typeof a === "string" && /-scan$/i.test(a);
+  const carrierEventsBuilt = rawEvents
+    .filter((e) => isScanActor(e.actor))
+    .map((e) => {
+      const note = (e.note ?? "").trim();
+      // Audit formats carrier scans as "Label — Location" (em-dash with
+      // surrounding spaces). Support hyphen variants as a fallback so a
+      // typo on the audit side doesn't drop the location.
+      const sep = /\s*[—–-]\s+/;
+      const [label, ...rest] = note.split(sep);
+      return {
+        at: e.created_at ?? null,
+        label: (label || e.to_status || "Scan").trim(),
+        location: rest.length ? rest.join(" - ").trim() : null,
+        code: null,
+      };
+    })
+    .filter((e) => e.at);
+  const carrierEventsJson =
+    directCarrier != null
+      ? JSON.stringify(directCarrier)
+      : carrierEventsBuilt.length
+        ? JSON.stringify(carrierEventsBuilt)
+        : null;
   await db
     .execute(sql`
       INSERT INTO erp.outward_shipments (id, order_erp_name, partner,
@@ -1213,7 +1272,7 @@ export async function upsertShipmentMirror(
                                          item_category, parent_item_code,
                                          item_code, description,
                                          dispatched_at, delivered_at,
-                                         is_deleted, updated_at)
+                                         is_deleted, carrier_events, updated_at)
       VALUES (
         ${sh.id},
         ${sh.order_erp_name},
@@ -1229,6 +1288,7 @@ export async function upsertShipmentMirror(
         ${sh.dispatched_at ?? null}::timestamp,
         ${sh.delivered_at ?? null}::timestamp,
         ${isDeleted},
+        ${carrierEventsJson}::jsonb,
         now()
       )
       ON CONFLICT (id) DO UPDATE SET
@@ -1245,6 +1305,10 @@ export async function upsertShipmentMirror(
         dispatched_at           = EXCLUDED.dispatched_at,
         delivered_at            = EXCLUDED.delivered_at,
         is_deleted              = EXCLUDED.is_deleted,
+        -- Only overwrite carrier_events when the source has something to
+        -- write; preserves the existing column when audit's response
+        -- doesn't carry the field (delta polls).
+        carrier_events          = COALESCE(EXCLUDED.carrier_events, erp.outward_shipments.carrier_events),
         updated_at              = now()
     `)
     .catch((e) => {
@@ -1254,20 +1318,48 @@ export async function upsertShipmentMirror(
       );
     });
 
+  // System status transitions. The audit endpoint may return the
+  // transition in several shapes — we normalise to (from_status,
+  // to_status, actor, note, created_at). The legacy implementation here
+  // wrote to a `status` column that doesn't exist on the table; the
+  // .catch silently swallowed every error, so new shipments simply never
+  // got their event timeline mirrored. Mirroring is idempotent via
+  // (shipment_id, COALESCE(from_status,''), to_status, created_at).
   for (const ev of sh.events ?? []) {
-    if (!ev?.status) continue;
+    const eRec = ev as Record<string, unknown>;
+    const actor = (eRec.actor as string | undefined) ?? null;
+    // Skip carrier-scan rows — they're already mirrored to carrier_events
+    // above. Keeping them in outward_status_events would duplicate every
+    // scan in the timeline.
+    if (isScanActor(actor)) continue;
+    const toStatus =
+      (eRec.to_status as string | undefined) ??
+      (eRec.status as string | undefined) ??
+      null;
+    if (!toStatus) continue;
+    const fromStatus = (eRec.from_status as string | undefined) ?? null;
+    const note = (eRec.note as string | undefined) ?? null;
+    const createdAt = (eRec.created_at as string | undefined) ?? null;
     await db
       .execute(sql`
-        INSERT INTO erp.outward_status_events (shipment_id, status, created_at)
-        SELECT ${sh.id}, ${ev.status}, ${ev.created_at ?? null}::timestamptz
-        WHERE NOT EXISTS (
-          SELECT 1 FROM erp.outward_status_events
-           WHERE shipment_id = ${sh.id}
-             AND status      = ${ev.status}
-             AND created_at  = ${ev.created_at ?? null}::timestamptz
-        )
+        INSERT INTO erp.outward_status_events
+              (shipment_id, from_status, to_status, note, actor, created_at)
+        SELECT ${sh.id}, ${fromStatus}, ${toStatus}, ${note}, ${actor},
+               COALESCE(${createdAt}::timestamptz, now())
+         WHERE NOT EXISTS (
+           SELECT 1 FROM erp.outward_status_events
+            WHERE shipment_id = ${sh.id}
+              AND COALESCE(from_status, '') = COALESCE(${fromStatus}, '')
+              AND to_status   = ${toStatus}
+              AND created_at  = COALESCE(${createdAt}::timestamptz, now())
+         )
       `)
-      .catch(() => {});
+      .catch((e) => {
+        console.warn(
+          "[erp-poll] outward_status_events insert skipped:",
+          e instanceof Error ? e.message.slice(0, 200) : e,
+        );
+      });
   }
 }
 

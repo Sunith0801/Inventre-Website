@@ -12,6 +12,7 @@ import { parseBookkitLangs, type LangPair } from "@/lib/bookkit-langs";
 import { MultiAttributePicker } from "./MultiAttributePicker";
 import { buildAttributeKey } from "@/lib/attribute-key";
 import { dedupeAttributeGroups } from "@/lib/normalize-attribute-name";
+import { usePdpSelection } from "./SelectionContext";
 
 const trust = [
   { icon: Award, label: "Branded for your school" },
@@ -127,6 +128,15 @@ export function BuyBox({
     }
     return init;
   });
+  // Mirror the attribute selection into the PDP-level context (when a
+  // provider exists) so the Gallery can surface the selected colour's
+  // images. Includes the initial default so the gallery matches the
+  // pre-selected colour on first paint.
+  const pdpSelection = usePdpSelection();
+  const publishAttrSel = pdpSelection?.setAttrSel;
+  useEffect(() => {
+    publishAttrSel?.(attrSel);
+  }, [attrSel, publishAttrSel]);
   const [qty, setQty] = useState(1);
   const [liked, setLiked] = useState(false);
   const [added, setAdded] = useState(false);
@@ -436,11 +446,11 @@ export function BuyBox({
           </>
         )}
       </div>
-      <p className="mt-1 text-[12px] text-ink-500">
-        {activePrice <= 0
-          ? "This combination isn't priced yet. Pick another colour or size."
-          : "Inclusive of all taxes · Free shipping over ₹999"}
-      </p>
+      {activePrice <= 0 && (
+        <p className="mt-1 text-[12px] text-ink-500">
+          This combination isn&apos;t priced yet. Pick another colour or size.
+        </p>
+      )}
 
       {/* Inline size-chart card. Visible directly below the price so parents
           can compare measurements before they pick a size, without scrolling

@@ -12,7 +12,7 @@ import {
   returns,
 } from "@/db/schema";
 import { getCurrentParent } from "@/lib/session";
-import { isExchangeTester } from "@/lib/exchange-gate";
+import { isExchangeTester, isExchangeScopeRelaxed } from "@/lib/exchange-gate";
 import { Nav } from "@/components/Nav";
 import { Footer } from "@/components/Footer";
 import { ExchangeForm } from "@/components/shop/orders/exchange/ExchangeForm";
@@ -36,19 +36,23 @@ async function resolveLocalOrderId(
   idOrNumber: string,
   parentId: string
 ): Promise<string | null> {
+  // Dev: ownership scope relaxed — see isExchangeScopeRelaxed.
+  const ownerScope = isExchangeScopeRelaxed()
+    ? undefined
+    : eq(orders.parentId, parentId);
   const isUuid = /^[0-9a-f-]{36}$/i.test(idOrNumber);
   if (isUuid) {
     const [row] = await db
       .select({ id: orders.id, status: orders.status })
       .from(orders)
-      .where(and(eq(orders.id, idOrNumber), eq(orders.parentId, parentId)))
+      .where(and(eq(orders.id, idOrNumber), ownerScope))
       .limit(1);
     return row?.status === "delivered" ? row.id : null;
   }
   const [row] = await db
     .select({ id: orders.id, status: orders.status })
     .from(orders)
-    .where(and(eq(orders.orderNumber, idOrNumber), eq(orders.parentId, parentId)))
+    .where(and(eq(orders.orderNumber, idOrNumber), ownerScope))
     .limit(1);
   return row?.status === "delivered" ? row.id : null;
 }
@@ -232,6 +236,7 @@ export default async function NewExchangePage({
     parentImage: string | null;
     parentHeadLabel: string;
     isKitComponent: boolean;
+    isKitParent: boolean;
     name: string;
     size: string;
     qty: number;
@@ -252,6 +257,36 @@ export default async function NewExchangePage({
       ? (it.bundleSelections as Array<Record<string, unknown>>)
       : [];
     if (raw.length > 0) {
+      // Whole-kit unit first: the form's scope chooser offers "exchange
+      // the whole box" vs "only some items inside". Kit-level reasons
+      // (contents don't match / arrived damaged / …) apply here, so the
+      // raw kind is used — the bookkit→book override stays component-only.
+      {
+        const vid = it.variantId ?? "";
+        const productId = vid ? productByVariant.get(vid) ?? null : null;
+        const allVariants = productId ? variantsByProduct.get(productId) ?? [] : [];
+        const siblings = vid ? allVariants.filter((v) => v.id !== vid) : [];
+        units.push({
+          unitKey: `kitparent:${it.id}`,
+          orderItemId: it.id,
+          parentName: it.name,
+          parentImage: it.image ?? null,
+          parentHeadLabel: parentHead,
+          isKitComponent: false,
+          isKitParent: true,
+          name: it.name,
+          size: it.size,
+          qty: it.qty,
+          variantId: vid,
+          imageUrl: it.image ?? null,
+          kind: (vid ? kindByVariant.get(vid) : null) ?? "kit",
+          attributes: [],
+          hasSiblings: siblings.length > 0,
+          siblings,
+          locked: lockedByOrderItem.has(it.id),
+          lockReturnNumber: lockedByOrderItem.get(it.id) ?? null,
+        });
+      }
       raw.forEach((c, ci) => {
         const vid = typeof c.variantId === "string" ? c.variantId : "";
         const productId = vid ? productByVariant.get(vid) ?? null : null;
@@ -270,6 +305,7 @@ export default async function NewExchangePage({
           parentImage: it.image ?? null,
           parentHeadLabel: parentHead,
           isKitComponent: true,
+          isKitParent: false,
           name: compName,
           size: compSize,
           qty: compQty,
@@ -301,6 +337,7 @@ export default async function NewExchangePage({
         parentImage: it.image ?? null,
         parentHeadLabel: parentHead,
         isKitComponent: false,
+        isKitParent: false,
         name: it.name,
         size: it.size,
         qty: it.qty,

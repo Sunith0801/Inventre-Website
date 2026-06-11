@@ -96,6 +96,12 @@ export const ADMIN_NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
+    kicker: "Payment Charges",
+    items: [
+      { href: "/admin/payment-charges", label: "Payment charges", icon: IndianRupee },
+    ],
+  },
+  {
     kicker: "Buying",
     items: [
       { href: "/admin/suppliers", label: "Suppliers", icon: TruckSupplier },

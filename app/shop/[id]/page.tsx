@@ -18,6 +18,7 @@ import { StickyMobileBar } from "@/components/shop/pdp/StickyMobileBar";
 import { BundleTree } from "@/components/shop/BundleTree";
 import { MagicBoxConfigurator } from "@/components/shop/MagicBoxConfigurator";
 import { MultiAttributePicker } from "@/components/shop/pdp/MultiAttributePicker";
+import { PdpSelectionProvider } from "@/components/shop/pdp/SelectionContext";
 import { useProductDraft, type ProductDraftState } from "@/lib/product-draft";
 import { Package } from "lucide-react";
 import { parseKitLang, parseKitThirdLang, parseBookkitLangs, type LangPair } from "@/lib/bookkit-langs";
@@ -1223,10 +1224,14 @@ export default function ProductPage() {
       ) : (
         <>
           <section className="mx-auto max-w-7xl px-5 lg:px-8 pt-6 lg:pt-10">
-            <div className="grid lg:grid-cols-[380px_1fr] gap-10 lg:gap-16 items-start">
-              <Gallery product={product} />
-              <BuyBox product={product} onSizeGuide={scrollToSizeGuide} />
-            </div>
+            {/* Provider lets BuyBox's colour pick reach the Gallery so the
+                selected colour's images surface first. */}
+            <PdpSelectionProvider>
+              <div className="grid lg:grid-cols-[380px_1fr] gap-10 lg:gap-16 items-start">
+                <Gallery product={product} />
+                <BuyBox product={product} onSizeGuide={scrollToSizeGuide} />
+              </div>
+            </PdpSelectionProvider>
           </section>
 
           {bundleTree.length > 0 && (

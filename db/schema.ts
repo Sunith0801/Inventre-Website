@@ -633,6 +633,14 @@ export const productImages = pgTable(
       onDelete: "cascade",
     }),
     isPrimary: boolean("is_primary").notNull().default(false),
+    // Colour tag: links this image to one attribute value (e.g. Colour=Blue)
+    // so the PDP gallery can surface it when the shopper picks that colour.
+    // Coarser than variantId on purpose — one photo covers every size of a
+    // colour. Migration 0060.
+    attributeValueId: uuid("attribute_value_id").references(
+      () => productAttributeValues.id,
+      { onDelete: "set null" }
+    ),
     // ─── ERP feed origin tracking ─────────────────────────────────
     // Original URL from the ERP feed (e.g. https://audit.inventre.online/item-media/<sha1>.png).
     // `url` may diverge — once the rehoster mirrors the file into our MinIO,

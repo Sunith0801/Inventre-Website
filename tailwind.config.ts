@@ -57,9 +57,14 @@ const config: Config = {
           from: { transform: "translateX(0)" },
           to: { transform: "translateX(-50%)" },
         },
+        shipmentEventIn: {
+          from: { opacity: "0", transform: "translateY(6px) scale(0.96)" },
+          to: { opacity: "1", transform: "translateY(0) scale(1)" },
+        },
       },
       animation: {
         marquee: "marquee 40s linear infinite",
+        "shipment-event-in": "shipmentEventIn 320ms ease-out both",
       },
     },
   },

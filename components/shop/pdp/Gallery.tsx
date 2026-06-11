@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Product } from "@/lib/products";
+import { usePdpSelection } from "./SelectionContext";
 
 const badgeStyles: Record<string, string> = {
   NEW: "bg-ink-900 text-white",
@@ -10,16 +11,44 @@ const badgeStyles: Record<string, string> = {
 };
 
 export function Gallery({ product }: { product: Product }) {
-  const images =
-    product.images && product.images.length > 0
-      ? product.images.map((i) => i.url)
-      : product.img
-      ? [product.img]
-      : [];
+  // Selected non-size attributes (Colour, House, …) published by BuyBox.
+  // null when this Gallery renders outside a PdpSelectionProvider.
+  const pdpSelection = usePdpSelection();
+  const selectedValues = useMemo(
+    () =>
+      Object.values(pdpSelection?.attrSel ?? {}).map((v) => v.toLowerCase()),
+    [pdpSelection?.attrSel]
+  );
+
+  // Reorder so images tagged with a currently-selected value (e.g.
+  // Colour=Blue) come first; untagged/unmatched images keep their relative
+  // order after them. When nothing matches (no tags, no colour axis) this
+  // is a stable no-op.
+  const images = useMemo(() => {
+    const list =
+      product.images && product.images.length > 0
+        ? product.images.map((i) => ({
+            url: i.url,
+            colorValue: i.colorValue?.toLowerCase() ?? null,
+          }))
+        : product.img
+        ? [{ url: product.img, colorValue: null }]
+        : [];
+    if (selectedValues.length === 0) return list.map((i) => i.url);
+    const matched = list.filter(
+      (i) => i.colorValue && selectedValues.includes(i.colorValue)
+    );
+    if (matched.length === 0) return list.map((i) => i.url);
+    const rest = list.filter((i) => !matched.includes(i));
+    return [...matched, ...rest].map((i) => i.url);
+  }, [product.images, product.img, selectedValues]);
+
   const [active, setActive] = useState(0);
 
-  // Reset to first image when product changes
-  useEffect(() => setActive(0), [product.id]);
+  // Reset to first image when the product OR the selected colour changes —
+  // the first slot is the selected colour's photo after the reorder above.
+  const selectionKey = selectedValues.join("|");
+  useEffect(() => setActive(0), [product.id, selectionKey]);
 
   return (
     <div className="flex items-start gap-3 lg:gap-5">

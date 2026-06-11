@@ -15,6 +15,7 @@ export type CategoryItemTracking = {
 
 export type CategoryGroupStatus =
   | "delivered"
+  | "out for delivery"
   | "in transit"
   | "returned"
   | "pending";
@@ -160,6 +161,66 @@ export async function dispatchQtysByItemCode(
   return out;
 }
 
+/**
+ * ERP sales_order_items rows for `orderErpName`, shaped for category
+ * grouping. Audit expands Magic Box / bundle parents into per-component
+ * lines (each tagged with its own `category`), so this is the right
+ * source for the per-category breakdown — the local `order_items` only
+ * has the bundle parent SKU, which audit never gives a category to.
+ *
+ * Returns an empty array when audit hasn't mirrored items yet (the
+ * caller falls back to local items).
+ */
+export async function erpItemsForCategoryGrouping(
+  orderErpName: string
+): Promise<
+  Array<{
+    id: string;
+    name: string;
+    qty: number;
+    categoryId: string | null;
+    deliveredQty: number;
+    pickedQty: number;
+    returnedQty: number;
+    erpCategory: string | null;
+  }>
+> {
+  if (!orderErpName) return [];
+  const r: any = await db.execute(sql`
+    SELECT id::text                              AS id,
+           COALESCE(item_name, item_code, 'Item') AS item_name,
+           COALESCE(qty, 0)::float8              AS qty,
+           COALESCE(delivered_qty, 0)::float8    AS delivered_qty,
+           COALESCE(picked_qty, 0)::float8       AS picked_qty,
+           COALESCE(returned_qty, 0)::float8     AS returned_qty,
+           category,
+           item_code
+      FROM erp.sales_order_items
+     WHERE order_erp_name = ${orderErpName}
+     ORDER BY id
+  `);
+  const rows = (r?.rows ?? r ?? []) as Array<{
+    id: string;
+    item_name: string;
+    qty: number;
+    delivered_qty: number;
+    picked_qty: number;
+    returned_qty: number;
+    category: string | null;
+    item_code: string | null;
+  }>;
+  return rows.map((row) => ({
+    id: `erp:${row.id}`,
+    name: row.item_name,
+    qty: row.qty,
+    categoryId: null,
+    deliveredQty: row.delivered_qty,
+    pickedQty: row.picked_qty,
+    returnedQty: row.returned_qty,
+    erpCategory: row.category,
+  }));
+}
+
 function statusOf(
   totalQty: number,
   deliveredQty: number,
@@ -177,13 +238,23 @@ export type FallbackState = "none" | "in_transit" | "delivered";
 /**
  * Audit's per-category status text → our 4-state UI enum.
  * Audit uses strings like "In Transit", "Dispatched", "Delivered",
- * "Pending", "Partial Dispatch", "Not Yet Delivered", "Returned".
+ * "Out for Delivery", "Pending", "Partial Dispatch", "Not Yet Delivered",
+ * "Returned".
+ *
+ * Order matters: "Out for Delivery" contains the substring "deliver" but
+ * is NOT a terminal state — the parcel is en-route. Customers want to see
+ * it called out distinctly ("out for delivery" is a meaningful, exciting
+ * step between shipped and delivered), so it gets its own enum value.
+ * Match it (and the "not yet" variant) BEFORE the generic "deliver" check
+ * so it doesn't flip the card to a green "delivered" tick prematurely.
  */
 function mapAuditStatus(raw: string | null | undefined): CategoryGroupStatus {
   const s = (raw ?? "").toLowerCase().trim();
   if (!s) return "pending";
-  if (s.includes("deliver") && !s.includes("not")) return "delivered";
   if (s.includes("return")) return "returned";
+  if (s.includes("out for delivery") || s.includes("ofd")) return "out for delivery";
+  if (s.includes("not") && s.includes("deliver")) return "pending";
+  if (s.includes("deliver")) return "delivered";
   if (
     s.includes("transit") ||
     s.includes("dispatch") ||
@@ -284,16 +355,18 @@ export function groupItemsByAuditCategory(
       }
     }
     if (!target) target = otherGroup;
+    const isMoving =
+      target.status === "in transit" || target.status === "out for delivery";
     target.totalQty += it.qty;
     if (target.status === "delivered") target.deliveredQty += it.qty;
-    else if (target.status === "in transit") target.pickedQty += it.qty;
+    else if (isMoving) target.pickedQty += it.qty;
     else if (target.status === "returned") target.returnedQty += it.qty;
     target.items.push({
       id: it.id,
       name: it.name,
       qty: it.qty,
       deliveredQty: target.status === "delivered" ? it.qty : 0,
-      pickedQty: target.status === "in transit" ? it.qty : 0,
+      pickedQty: isMoving ? it.qty : 0,
       returnedQty: target.status === "returned" ? it.qty : 0,
     });
   }

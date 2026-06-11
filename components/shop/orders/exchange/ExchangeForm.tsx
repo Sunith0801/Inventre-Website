@@ -40,6 +40,8 @@ export type Unit = {
   parentImage: string | null;
   parentHeadLabel: string;
   isKitComponent: boolean;
+  /** The kit/Magic-Box order item itself — selecting it = whole-box exchange. */
+  isKitParent?: boolean;
   name: string;
   size: string;
   qty: number;
@@ -190,6 +192,41 @@ export function ExchangeForm({
   const [step, setStep] = useState<"edit" | "confirm">("edit");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // ── Kit / Magic Box grouping ──────────────────────────────────
+  // A kit order item arrives as one "parent" unit (whole-box exchange)
+  // plus one unit per component, all sharing orderItemId. The picker
+  // collapses each such family into a single card with a scope chooser:
+  // "the whole box" vs "only some items inside".
+  const kitGroups = useMemo(() => {
+    const map = new Map<string, { parentIdx: number; compIdxs: number[] }>();
+    units.forEach((u, idx) => {
+      if (!u.isKitParent && !u.isKitComponent) return;
+      const g = map.get(u.orderItemId) ?? { parentIdx: -1, compIdxs: [] };
+      if (u.isKitParent) g.parentIdx = idx;
+      else g.compIdxs.push(idx);
+      map.set(u.orderItemId, g);
+    });
+    // The chooser only makes sense when both halves exist.
+    return new Map(
+      [...map].filter(([, g]) => g.parentIdx >= 0 && g.compIdxs.length > 0)
+    );
+  }, [units]);
+
+  const [kitScope, setKitScope] = useState<Record<string, "" | "full" | "items">>({});
+
+  const setKitScopeFor = (orderItemId: string, scope: "full" | "items") => {
+    const g = kitGroups.get(orderItemId);
+    if (!g) return;
+    setSelectionConfirmed(false);
+    setKitScope((prev) => ({ ...prev, [orderItemId]: scope }));
+    setSelectedIdxs((prev) => {
+      const drop = new Set([g.parentIdx, ...g.compIdxs]);
+      const next = prev.filter((i) => !drop.has(i));
+      if (scope === "full") next.push(g.parentIdx);
+      return next;
+    });
+  };
 
   // ── Derived ───────────────────────────────────────────────────
   const tabKeys = useMemo(
@@ -494,6 +531,163 @@ export function ExchangeForm({
     );
   }
 
+  // ── Render helpers: unit picker ───────────────────────────────
+  // Single checkbox row — used for standalone items and for components
+  // inside an expanded kit group. (The individual-item flow is unchanged.)
+  const unitRow = (u: Unit, idx: number) => {
+    const active = selectedIdxs.includes(idx);
+    const locked = !!u.locked;
+    const toggle = () => {
+      if (locked) return;
+      setSelectionConfirmed(false);
+      setSelectedIdxs((prev) =>
+        prev.includes(idx) ? prev.filter((i) => i !== idx) : [...prev, idx]
+      );
+    };
+    return (
+      <li key={u.unitKey}>
+        <button
+          type="button"
+          onClick={toggle}
+          disabled={locked}
+          className={
+            "w-full text-left rounded-lg border px-3 py-2 text-[13px] flex items-center gap-2 " +
+            (locked
+              ? "border-ink-200 bg-cream-50/60 text-ink-400 cursor-not-allowed"
+              : active
+              ? "border-brand bg-brand/5 text-ink-900"
+              : "border-ink-200 hover:border-ink-400 text-ink-700")
+          }
+        >
+          <span
+            className={
+              "h-3.5 w-3.5 rounded-sm border-2 shrink-0 flex items-center justify-center " +
+              (locked
+                ? "border-ink-200 bg-ink-100"
+                : active
+                ? "border-brand bg-brand"
+                : "border-ink-300")
+            }
+          >
+            {active && !locked && (
+              <svg
+                viewBox="0 0 12 12"
+                className="h-2.5 w-2.5 text-white"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+              >
+                <path d="M2 6l2.5 2.5L10 3" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            )}
+          </span>
+          <span className="flex-1 min-w-0">
+            <span className="font-medium block truncate">{u.name}</span>
+            <span className="text-[11.5px] text-ink-500 block truncate">
+              {unitDetailLabel(u) || "—"}
+              {u.isKitComponent && !kitGroups.has(u.orderItemId) && (
+                <span className="text-ink-400"> · in {u.parentName}</span>
+              )}
+              {locked && (
+                <span className="text-amber-700">
+                  {" "}· Already in progress
+                  {u.lockReturnNumber ? ` (${u.lockReturnNumber})` : ""}
+                </span>
+              )}
+            </span>
+          </span>
+          <span
+            className={
+              "shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] uppercase tracking-wider " +
+              (locked
+                ? "border-ink-200 bg-cream-50 text-ink-400"
+                : active
+                ? "border-brand/40 bg-white text-brand"
+                : "border-ink-200 bg-cream-50 text-ink-500")
+            }
+          >
+            {categoryLabel(u.kind)}
+          </span>
+        </button>
+      </li>
+    );
+  };
+
+  // Kit / Magic-Box card: one card for the whole family with a scope
+  // chooser, expanding to the component checkboxes for partial exchange.
+  const kitGroupCard = (orderItemId: string) => {
+    const g = kitGroups.get(orderItemId);
+    if (!g) return null;
+    const parent = units[g.parentIdx];
+    if (!parent) return null;
+    const scope = kitScope[orderItemId] ?? "";
+    const locked = !!parent.locked;
+    const compCount = g.compIdxs.length;
+    return (
+      <li key={`kit:${orderItemId}`}>
+        <div
+          className={
+            "rounded-xl border overflow-hidden " +
+            (locked
+              ? "border-ink-200 bg-cream-50/60"
+              : scope
+              ? "border-brand/50"
+              : "border-ink-200")
+          }
+        >
+          <div className="px-3 py-2.5 border-b border-ink-100 bg-cream-50/40 flex items-center gap-2">
+            <div className="flex-1 min-w-0">
+              <p className="text-[13px] font-medium text-ink-900 truncate">
+                {parent.name}
+              </p>
+              <p className="text-[11.5px] text-ink-500">
+                {compCount} items inside
+                {locked && (
+                  <span className="text-amber-700">
+                    {" "}· Already in progress
+                    {parent.lockReturnNumber ? ` (${parent.lockReturnNumber})` : ""}
+                  </span>
+                )}
+              </p>
+            </div>
+            <span className="shrink-0 rounded-full border border-ink-200 bg-white px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-ink-500">
+              {categoryLabel(parent.kind)}
+            </span>
+          </div>
+          {!locked && (
+            <div className="p-3 space-y-2">
+              <p className="text-[11.5px] font-semibold uppercase tracking-wider text-ink-500">
+                What needs exchanging?
+              </p>
+              <ReplacementOption
+                checked={scope === "full"}
+                onSelect={() => setKitScopeFor(orderItemId, "full")}
+                title="The whole box"
+                hint="Everything goes back and you receive a complete replacement."
+              />
+              <ReplacementOption
+                checked={scope === "items"}
+                onSelect={() => setKitScopeFor(orderItemId, "items")}
+                title="Only some items inside"
+                hint="Pick the specific items that have a problem — the rest stays with you."
+              />
+              {scope === "full" && (
+                <div className="rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2 text-[12px] text-emerald-900">
+                  Whole box selected — all {compCount} items will be exchanged together.
+                </div>
+              )}
+              {scope === "items" && (
+                <ul className="space-y-1.5 pt-1">
+                  {g.compIdxs.map((ci) => unitRow(units[ci], ci))}
+                </ul>
+              )}
+            </div>
+          )}
+        </div>
+      </li>
+    );
+  };
+
   // ── Render: edit step ─────────────────────────────────────────
   return (
     <div className="rounded-2xl border border-ink-100 bg-white p-5 lg:p-6 space-y-5">
@@ -524,85 +718,24 @@ export function ExchangeForm({
           <p className="mt-1 text-[11.5px] text-ink-500">
             Tick every item with a problem — you can select more than one.
           </p>
-          <ul className="mt-2 space-y-1.5">
-            {units.map((u, idx) => {
-              const active = selectedIdxs.includes(idx);
-              const locked = !!u.locked;
-              const toggle = () => {
-                if (locked) return;
-                setSelectionConfirmed(false);
-                setSelectedIdxs((prev) =>
-                  prev.includes(idx) ? prev.filter((i) => i !== idx) : [...prev, idx]
-                );
-              };
-              return (
-                <li key={u.unitKey}>
-                  <button
-                    type="button"
-                    onClick={toggle}
-                    disabled={locked}
-                    className={
-                      "w-full text-left rounded-lg border px-3 py-2 text-[13px] flex items-center gap-2 " +
-                      (locked
-                        ? "border-ink-200 bg-cream-50/60 text-ink-400 cursor-not-allowed"
-                        : active
-                        ? "border-brand bg-brand/5 text-ink-900"
-                        : "border-ink-200 hover:border-ink-400 text-ink-700")
-                    }
-                  >
-                    <span
-                      className={
-                        "h-3.5 w-3.5 rounded-sm border-2 shrink-0 flex items-center justify-center " +
-                        (locked
-                          ? "border-ink-200 bg-ink-100"
-                          : active
-                          ? "border-brand bg-brand"
-                          : "border-ink-300")
-                      }
-                    >
-                      {active && !locked && (
-                        <svg
-                          viewBox="0 0 12 12"
-                          className="h-2.5 w-2.5 text-white"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2.5"
-                        >
-                          <path d="M2 6l2.5 2.5L10 3" strokeLinecap="round" strokeLinejoin="round" />
-                        </svg>
-                      )}
-                    </span>
-                    <span className="flex-1 min-w-0">
-                      <span className="font-medium block truncate">{u.name}</span>
-                      <span className="text-[11.5px] text-ink-500 block truncate">
-                        {unitDetailLabel(u) || "—"}
-                        {u.isKitComponent && (
-                          <span className="text-ink-400"> · in {u.parentName}</span>
-                        )}
-                        {locked && (
-                          <span className="text-amber-700">
-                            {" "}· Already in progress
-                            {u.lockReturnNumber ? ` (${u.lockReturnNumber})` : ""}
-                          </span>
-                        )}
-                      </span>
-                    </span>
-                    <span
-                      className={
-                        "shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] uppercase tracking-wider " +
-                        (locked
-                          ? "border-ink-200 bg-cream-50 text-ink-400"
-                          : active
-                          ? "border-brand/40 bg-white text-brand"
-                          : "border-ink-200 bg-cream-50 text-ink-500")
-                      }
-                    >
-                      {categoryLabel(u.kind)}
-                    </span>
-                  </button>
-                </li>
-              );
-            })}
+          <ul className="mt-2 space-y-2">
+            {(() => {
+              const seenKit = new Set<string>();
+              const rows: React.ReactNode[] = [];
+              units.forEach((u, idx) => {
+                const grouped =
+                  kitGroups.has(u.orderItemId) && (u.isKitParent || u.isKitComponent);
+                if (grouped) {
+                  if (!seenKit.has(u.orderItemId)) {
+                    seenKit.add(u.orderItemId);
+                    rows.push(kitGroupCard(u.orderItemId));
+                  }
+                  return;
+                }
+                rows.push(unitRow(u, idx));
+              });
+              return rows;
+            })()}
           </ul>
           <label className="mt-3 flex items-start gap-2 rounded-lg border border-ink-200 bg-cream-50/40 px-3 py-2.5 cursor-pointer">
             <input
@@ -656,7 +789,7 @@ export function ExchangeForm({
                 >
                   <span className="truncate max-w-[180px]">{u.name}</span>
                   <span className="shrink-0 rounded-full border border-ink-200 bg-cream-50 px-1.5 py-0.5 text-[9.5px] uppercase tracking-wider text-ink-500">
-                    {categoryLabel(u.kind)}
+                    {u.isKitParent ? "Whole box" : categoryLabel(u.kind)}
                   </span>
                   {done ? (
                     <span className="text-emerald-600 text-[12px]">✓</span>
@@ -682,6 +815,11 @@ export function ExchangeForm({
             {activeUnit.isKitComponent && (
               <p className="mt-0.5 text-[11.5px] text-ink-500">
                 Inside {activeUnit.parentName}
+              </p>
+            )}
+            {activeUnit.isKitParent && (
+              <p className="mt-0.5 text-[11.5px] text-ink-500">
+                Whole box — every item inside will be exchanged together.
               </p>
             )}
           </div>
@@ -809,18 +947,30 @@ export function ExchangeForm({
                     onSelect={() =>
                       setReplacementMode((m) => (m === "same_fresh" ? "" : "same_fresh"))
                     }
-                    title="Same item, fresh piece"
-                    hint="We'll send a fresh copy of the same variant."
+                    title={
+                      activeUnit?.isKitParent
+                        ? "A fresh replacement box"
+                        : "Same item, fresh piece"
+                    }
+                    hint={
+                      activeUnit?.isKitParent
+                        ? "We'll send a complete fresh box with everything inside."
+                        : "We'll send a fresh copy of the same variant."
+                    }
                   />
                 )}
-                {siblingAvailable && reason !== "wrong_item" && reason !== "other" && (
+                {siblingAvailable && (
                   <ReplacementOption
                     checked={replacementMode === "sibling"}
                     onSelect={() =>
                       setReplacementMode((m) => (m === "sibling" ? "" : "sibling"))
                     }
-                    title="Different size / variant of the same product"
-                    hint="Pick from the available sizes / variants below."
+                    title={
+                      reason === "wrong_item"
+                        ? "The size / variant I actually wanted"
+                        : "Different size / variant of the same product"
+                    }
+                    hint="Pick exactly what you want from the available sizes / variants below."
                   >
                     {replacementMode === "sibling" && activeUnit && (
                       <select
@@ -1071,6 +1221,11 @@ function ConfirmStep({
           <p className="font-medium text-ink-900 text-[14px]">{s.unitLabel}</p>
           {s.unit?.isKitComponent && (
             <p className="text-[11.5px] text-ink-500">Inside {s.unit.parentName}</p>
+          )}
+          {s.unit?.isKitParent && (
+            <p className="text-[11.5px] text-ink-500">
+              Whole box — all items inside are exchanged together.
+            </p>
           )}
 
           {s.replacementMode === "sibling" && s.selectedSibling ? (

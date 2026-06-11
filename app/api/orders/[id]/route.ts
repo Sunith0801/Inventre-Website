@@ -7,7 +7,7 @@ import {
   getParentOrderDetailFromErp,
   getParentOrderDetailLocal,
 } from "@/lib/erp-customer-orders";
-import { isExchangeTester } from "@/lib/exchange-gate";
+import { isExchangeTester, isExchangeScopeRelaxed } from "@/lib/exchange-gate";
 
 export async function GET(
   _: Request,
@@ -136,7 +136,9 @@ export async function GET(
         activeExchange !== null && activeExchange.status !== "rejected";
       const mcBlocking =
         activeMissing !== null && activeMissing.status !== "rejected";
-      const anyOpen = exBlocking || mcBlocking;
+      // Dev: the lifetime lock is disabled so testers can re-raise
+      // exchange / missing on orders they already used up.
+      const anyOpen = !isExchangeScopeRelaxed() && (exBlocking || mcBlocking);
       canExchange = local.status === "delivered" && !anyOpen;
       // Missing claims don't require the local row to be delivered (a
       // parent can spot a short ship the moment the box arrives) — but
@@ -166,19 +168,24 @@ async function resolveLocalOrder(
   idOrNumber: string,
   parentId: string
 ): Promise<{ id: string; status: string } | null> {
+  // Dev: ownership scope relaxed so testers get the buttons on any
+  // delivered order (drizzle's and() drops the undefined operand).
+  const ownerScope = isExchangeScopeRelaxed()
+    ? undefined
+    : eq(orders.parentId, parentId);
   const isUuid = /^[0-9a-f-]{36}$/i.test(idOrNumber);
   if (isUuid) {
     const [row] = await db
       .select({ id: orders.id, status: orders.status })
       .from(orders)
-      .where(and(eq(orders.id, idOrNumber), eq(orders.parentId, parentId)))
+      .where(and(eq(orders.id, idOrNumber), ownerScope))
       .limit(1);
     return row ? { id: row.id, status: row.status as string } : null;
   }
   const [row] = await db
     .select({ id: orders.id, status: orders.status })
     .from(orders)
-    .where(and(eq(orders.orderNumber, idOrNumber), eq(orders.parentId, parentId)))
+    .where(and(eq(orders.orderNumber, idOrNumber), ownerScope))
     .limit(1);
   return row ? { id: row.id, status: row.status as string } : null;
 }

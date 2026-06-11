@@ -26,7 +26,11 @@ const PatchBody = z.object({
  * Phone is the login key; changes go through /api/auth/change-phone/*.
  */
 export async function PATCH(req: Request) {
-  const me = await getCurrentUser();
+  // Prefer the parent session for the same reason GET does — a co-resident
+  // admin cookie (common for staff who also shop) would otherwise resolve
+  // first via getCurrentUser() and 401 the parent's own self-edit.
+  const parent = await getCurrentParent();
+  const me = parent ?? (await getCurrentUser());
   if (me?.kind !== "parent") {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

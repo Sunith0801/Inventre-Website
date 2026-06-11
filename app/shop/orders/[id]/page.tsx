@@ -7,6 +7,11 @@ import { ArrowLeft, CheckCircle2, Package } from "lucide-react";
 import { Nav } from "@/components/Nav";
 import { Footer } from "@/components/Footer";
 import { ExchangeStatusBanner } from "@/components/shop/orders/exchange/ExchangeStatusBanner";
+import {
+  ShipmentHistory,
+  ShipmentCard,
+  type ShipmentHistoryItem,
+} from "@/components/shop/orders/ShipmentHistory";
 
 /**
  * Some legacy addresses were stored with literal "<br>" / "<br/>" inside the
@@ -69,6 +74,25 @@ type OrderDetail = {
     dispatchedAt: string | null;
     deliveredAt: string | null;
   }[];
+  shipmentHistory?: {
+    shipmentId: number | null;
+    partner: string;
+    mode: "auto" | "manual" | null;
+    trackingNumber: string | null;
+    status: string;
+    itemCategory: string | null;
+    description: string | null;
+    dispatchedAt: string | null;
+    deliveredAt: string | null;
+    carrierEventCount: number;
+    events: {
+      kind: "system" | "carrier";
+      at: string;
+      label: string;
+      source: string | null;
+      badge: string;
+    }[];
+  }[];
   categoryGroups?: {
     rootCategoryId: string | null;
     rootCategoryName: string;
@@ -76,7 +100,7 @@ type OrderDetail = {
     deliveredQty: number;
     pickedQty: number;
     returnedQty: number;
-    status: "delivered" | "in transit" | "returned" | "pending";
+    status: CategoryStatus;
     items: {
       id: string;
       name: string;
@@ -89,11 +113,16 @@ type OrderDetail = {
   pollPending?: boolean;
 };
 
-const CATEGORY_STATUS_CLASS: Record<
-  "delivered" | "in transit" | "returned" | "pending",
-  string
-> = {
+type CategoryStatus =
+  | "delivered"
+  | "out for delivery"
+  | "in transit"
+  | "returned"
+  | "pending";
+
+const CATEGORY_STATUS_CLASS: Record<CategoryStatus, string> = {
   delivered: "bg-emerald-100 text-emerald-800",
+  "out for delivery": "bg-indigo-100 text-indigo-800",
   "in transit": "bg-amber-100 text-amber-800",
   returned: "bg-rose-100 text-rose-800",
   pending: "bg-ink-100 text-ink-600",
@@ -152,6 +181,21 @@ export default function OrderDetailPage() {
   // Order status / tracking updates from admin should appear the moment
   // the parent returns to this tab.
   useFocusRefetch(refetchOrder);
+  // While the parent is watching the order page, poll every 30 s so
+  // freshly-mirrored carrier scans appear without a manual reload. The
+  // server-side getParentOrderDetailFromErp fires a throttled background
+  // refresh from audit on each request, so the polling cycle is:
+  //   client poll → server kicks audit refresh → response uses prev DB
+  //                                              state → next poll picks
+  //                                              up the new rows.
+  // 30 s is the cap audit's own carrier-poll cadence aims for, so any
+  // shorter interval would just burn requests for no extra freshness.
+  useEffect(() => {
+    const t = window.setInterval(() => {
+      refetchOrder();
+    }, 30_000);
+    return () => window.clearInterval(t);
+  }, [refetchOrder]);
 
   // While the order's payment is pending, ask the server to consult
   // CCAvenue's Status API on a back-off schedule. Stop on any terminal
@@ -301,176 +345,45 @@ export default function OrderDetailPage() {
           </span>
         </div>
 
-        {/* Status timeline */}
-        {stageIdx >= 0 && (
-          <div className="mt-6 rounded-2xl border border-ink-100 bg-white p-5">
-            <ol className="grid grid-cols-5">
-              {stages.map((s, i) => {
-                const reached = i <= stageIdx;
-                const last = i === stages.length - 1;
-                // segment to the next node is "filled" only if the next
-                // node is also reached
-                const segFilled = i < stageIdx;
-                return (
-                  <li
-                    key={s}
-                    className="relative flex flex-col items-center text-center"
-                  >
-                    {/* connector to the next stage */}
-                    {!last && (
-                      <span
-                        className={
-                          "absolute top-4 left-1/2 h-[3px] w-full -translate-y-1/2 " +
-                          (segFilled ? "bg-brand" : "bg-ink-200")
-                        }
-                      />
-                    )}
-                    <span
-                      className={
-                        "relative z-10 grid h-8 w-8 place-items-center rounded-full border-2 " +
-                        (reached
-                          ? "bg-brand border-brand text-white"
-                          : "bg-white border-ink-200 text-ink-400")
-                      }
-                    >
-                      {reached ? (
-                        <CheckCircle2 className="h-4 w-4" />
-                      ) : (
-                        <Package className="h-3.5 w-3.5" />
-                      )}
-                    </span>
-                    <span
-                      className={
-                        "relative z-10 mt-2 text-[10px] font-semibold tracking-wider uppercase " +
-                        (reached ? "text-ink-900" : "text-ink-400")
-                      }
-                    >
-                      {s}
-                    </span>
-                  </li>
-                );
-              })}
-            </ol>
-          </div>
-        )}
-
-        {/* Tracking by category */}
-        {order.categoryGroups && order.categoryGroups.length > 0 && (
-          <div className="mt-6 rounded-2xl border border-ink-100 bg-white p-5 lg:p-6">
-            <h3 className="font-display text-[16px] font-bold text-ink-900">
-              Tracking by category
-            </h3>
-            {order.pollPending && (
-              <p className="mt-2 rounded-lg bg-cream-100 px-3 py-2 text-[12px] text-ink-600">
-                Tracking will appear within a few minutes — we&apos;re syncing
-                with the warehouse.
-              </p>
-            )}
-            <ul className="mt-4 space-y-3">
-              {order.categoryGroups.map((g) => {
-                // Pick the counter that matches the group's effective
-                // status so customers see meaningful numbers (e.g.
-                // "6 / 6 in transit" instead of "0 / 6 delivered" when
-                // the parcel is on its way but per-line delivery hasn't
-                // been recorded yet).
-                const counter =
-                  g.status === "delivered"
-                    ? g.deliveredQty
-                    : g.status === "returned"
-                      ? g.returnedQty
-                      : g.status === "in transit"
-                        ? Math.max(g.pickedQty, g.deliveredQty)
-                        : 0;
-                const pct =
-                  g.totalQty > 0
-                    ? Math.min(100, Math.round((counter / g.totalQty) * 100))
-                    : 0;
-                const lineLabel =
-                  g.status === "delivered"
-                    ? "delivered"
-                    : g.status === "in transit"
-                      ? "in transit"
-                      : g.status === "returned"
-                        ? "returned"
-                        : "awaiting dispatch";
-                return (
-                  <li
+        {/* Per-category tracking. Each parcel-stream (Bookkit, Uniform, …)
+            gets a self-contained card with: status badge, 5-step stepper,
+            per-item progress, and the matching carrier shipment(s) with
+            timeline. Audit drives the status text — "Out for Delivery" is
+            preserved distinctly from generic "In Transit" so customers
+            see the meaningful "your parcel is on the way today" beat.
+            For orders with no category groups (audit hasn't classified
+            yet) we fall back to a single order-level stepper. */}
+        {(() => {
+          const groups = order.categoryGroups ?? [];
+          const allShipments = order.shipmentHistory ?? [];
+          if (groups.length > 0) {
+            return (
+              <div className="mt-6 space-y-4">
+                {order.pollPending && (
+                  <p className="rounded-lg bg-cream-100 px-3 py-2 text-[12px] text-ink-600">
+                    Tracking will appear within a few minutes — we&apos;re
+                    syncing with the warehouse.
+                  </p>
+                )}
+                {groups.map((g) => (
+                  <CategoryTrackingCard
                     key={g.rootCategoryId ?? g.rootCategoryName}
-                    className="rounded-xl border border-ink-100 bg-cream-50/40 p-3"
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="font-semibold text-[14px] text-ink-900">
-                        {g.rootCategoryName}
-                      </p>
-                      <span
-                        className={
-                          "rounded-full px-2.5 py-0.5 text-[10.5px] font-bold uppercase tracking-wider " +
-                          CATEGORY_STATUS_CLASS[g.status]
-                        }
-                      >
-                        {g.status}
-                      </span>
-                    </div>
-                    <div className="mt-2 flex items-center gap-3">
-                      <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-ink-100">
-                        <div
-                          className={
-                            "h-full " +
-                            (g.status === "delivered"
-                              ? "bg-emerald-500"
-                              : g.status === "in transit"
-                                ? "bg-amber-500"
-                                : g.status === "returned"
-                                  ? "bg-rose-500"
-                                  : "bg-ink-200")
-                          }
-                          style={{ width: `${pct}%` }}
-                        />
-                      </div>
-                      <p className="shrink-0 text-[12px] tabular-nums text-ink-600">
-                        {g.status === "pending"
-                          ? `${g.totalQty} ${lineLabel}`
-                          : `${counter} / ${g.totalQty} ${lineLabel}`}
-                      </p>
-                    </div>
-                    {g.items.length > 0 && (
-                      <details className="mt-2" open>
-                        <summary className="cursor-pointer text-[12px] font-medium text-brand hover:underline">
-                          {g.items.length} item{g.items.length === 1 ? "" : "s"}
-                        </summary>
-                        <ul className="mt-2 space-y-1 pl-3">
-                          {g.items.map((it) => {
-                            const itCounter =
-                              g.status === "delivered"
-                                ? it.deliveredQty
-                                : g.status === "returned"
-                                  ? it.returnedQty
-                                  : g.status === "in transit"
-                                    ? Math.max(it.pickedQty, it.deliveredQty)
-                                    : 0;
-                            return (
-                              <li
-                                key={it.id}
-                                className="flex items-center justify-between text-[12px] text-ink-700"
-                              >
-                                <span className="truncate pr-3">{it.name}</span>
-                                <span className="shrink-0 tabular-nums text-ink-500">
-                                  {g.status === "pending"
-                                    ? `× ${it.qty}`
-                                    : `${itCounter} / ${it.qty} ${lineLabel}`}
-                                </span>
-                              </li>
-                            );
-                          })}
-                        </ul>
-                      </details>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-        )}
+                    group={g}
+                    shipments={shipmentsForCategory(allShipments, g.rootCategoryName)}
+                  />
+                ))}
+              </div>
+            );
+          }
+          if (stageIdx >= 0) {
+            return (
+              <div className="mt-6 rounded-2xl border border-ink-100 bg-white p-5">
+                <StageBar reachedIdx={stageIdx} />
+              </div>
+            );
+          }
+          return null;
+        })()}
 
         {/* Items */}
         <div className="mt-6 rounded-2xl border border-ink-100 bg-white p-5 lg:p-6">
@@ -581,81 +494,26 @@ export default function OrderDetailPage() {
           </ul>
         </div>
 
-        {/* Tracking / shipments */}
-        {order.tracking && order.tracking.length > 0 && (
-          <div className="mt-6 rounded-2xl border border-ink-100 bg-white p-5 lg:p-6">
-            <h3 className="font-display text-[16px] font-bold text-ink-900">
-              Tracking
-            </h3>
-            <ol className="mt-5 relative">
-              {order.tracking.map((t, i) => {
-                const done = t.status === "delivered";
-                const last = i === order.tracking!.length - 1;
-                return (
-                  <li key={i} className="relative pl-8 pb-7 last:pb-0">
-                    {/* connecting line to the next node (both ends covered) */}
-                    {!last && (
-                      <span
-                        className={
-                          "absolute left-[10px] top-1 h-full w-[2px] " +
-                          (done ? "bg-emerald-400" : "bg-ink-200")
-                        }
-                      />
-                    )}
-                    {/* node */}
-                    <span
-                      className={
-                        "absolute left-0 top-0 grid h-[22px] w-[22px] place-items-center rounded-full border-2 " +
-                        (done
-                          ? "bg-emerald-500 border-emerald-500 text-white"
-                          : "bg-white border-indigo-400 text-indigo-500")
-                      }
-                    >
-                      {done ? (
-                        <CheckCircle2 className="h-3.5 w-3.5" />
-                      ) : (
-                        <Package className="h-3 w-3" />
-                      )}
-                    </span>
-
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px]">
-                      <span className="font-semibold text-ink-900 uppercase">
-                        {t.partner}
-                      </span>
-                      {t.trackingNumber && !t.trackingNumber.startsWith("syn:") && (
-                        <span className="font-mono text-[12px] text-ink-700">
-                          {t.trackingNumber}
-                        </span>
-                      )}
-                      <span
-                        className={
-                          "text-[10px] font-bold tracking-wider uppercase rounded-full px-2 py-0.5 " +
-                          (done
-                            ? "bg-emerald-50 text-emerald-700"
-                            : "bg-indigo-50 text-indigo-700")
-                        }
-                      >
-                        {t.status}
-                      </span>
-                    </div>
-                    <p className="mt-1 text-[12px] text-ink-500">
-                      {[
-                        t.dispatchedAt
-                          ? `Dispatched ${new Date(t.dispatchedAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}`
-                          : null,
-                        t.deliveredAt
-                          ? `Delivered ${new Date(t.deliveredAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}`
-                          : null,
-                      ]
-                        .filter(Boolean)
-                        .join(" · ") || "—"}
-                    </p>
-                  </li>
-                );
-              })}
-            </ol>
-          </div>
-        )}
+        {/* Shipment history — only renders shipments that did NOT match
+            any category card above (orphans: ERP `item_category` missing
+            or unknown, or packing-unit fallback rows with null category).
+            For multi-category orders all the action happens inline in the
+            per-category cards; this is just a safety net. */}
+        {(() => {
+          const all = order.shipmentHistory ?? [];
+          if (all.length === 0) return null;
+          const groups = order.categoryGroups ?? [];
+          if (groups.length === 0) {
+            // No category breakdown at all — show the full history so the
+            // customer still sees their tracking.
+            return <ShipmentHistory items={all} />;
+          }
+          const orphans = all.filter(
+            (s) => !findGroupForShipment(s, groups)
+          );
+          if (orphans.length === 0) return null;
+          return <ShipmentHistory items={orphans} />;
+        })()}
 
         {/* Address + Totals */}
         <div className="mt-6 grid sm:grid-cols-2 gap-4">
@@ -731,5 +589,213 @@ export default function OrderDetailPage() {
       </div>
       <Footer />
     </main>
+  );
+}
+
+// ───────────── Stage-bar helpers (top-of-page progress stepper) ─────────────
+
+type CategoryGroupForCard = NonNullable<OrderDetail["categoryGroups"]>[number];
+
+/** Map a per-category status to a stage index on the shared 5-step bar.
+ *  - "pending"           → confirmed   (1)
+ *  - "in transit"        → shipped     (3)
+ *  - "out for delivery"  → shipped     (3) — last hop before delivered;
+ *    the badge text carries the "OFD" nuance the stage bar can't.
+ *  - "delivered"         → delivered   (4)
+ *  - "returned"          → delivered   (4) but rendered with a returned tint
+ */
+function categoryStageIdx(status: CategoryGroupForCard["status"]): number {
+  switch (status) {
+    case "delivered":
+    case "returned":
+      return 4;
+    case "out for delivery":
+    case "in transit":
+      return 3;
+    default:
+      return 1;
+  }
+}
+
+/** Find which group, if any, owns a shipment. Matched by lowercased
+ *  comparison between the shipment's `itemCategory` (the ERP raw category:
+ *  "bookkit", "uniform", …) and each group's `rootCategoryName`. */
+function findGroupForShipment(
+  shipment: ShipmentHistoryItem,
+  groups: CategoryGroupForCard[]
+): CategoryGroupForCard | null {
+  const cat = (shipment.itemCategory ?? "").toLowerCase().trim();
+  if (!cat) return null;
+  return groups.find((g) => g.rootCategoryName.toLowerCase() === cat) ?? null;
+}
+
+/** Return the shipments whose `itemCategory` matches this group name. */
+function shipmentsForCategory(
+  shipments: ShipmentHistoryItem[],
+  rootCategoryName: string
+): ShipmentHistoryItem[] {
+  const key = rootCategoryName.toLowerCase();
+  return shipments.filter(
+    (s) => (s.itemCategory ?? "").toLowerCase().trim() === key
+  );
+}
+
+function StageBar({
+  reachedIdx,
+  accent = "brand",
+}: {
+  reachedIdx: number;
+  accent?: "brand" | "emerald" | "rose";
+}) {
+  const fill =
+    accent === "emerald"
+      ? "bg-emerald-500 border-emerald-500"
+      : accent === "rose"
+        ? "bg-rose-500 border-rose-500"
+        : "bg-brand border-brand";
+  const segFill =
+    accent === "emerald" ? "bg-emerald-400" : accent === "rose" ? "bg-rose-400" : "bg-brand";
+  return (
+    <ol className="grid grid-cols-5">
+      {stages.map((s, i) => {
+        const reached = i <= reachedIdx;
+        const last = i === stages.length - 1;
+        const segFilled = i < reachedIdx;
+        return (
+          <li key={s} className="relative flex flex-col items-center text-center">
+            {!last && (
+              <span
+                className={
+                  "absolute top-4 left-1/2 h-[3px] w-full -translate-y-1/2 " +
+                  (segFilled ? segFill : "bg-ink-200")
+                }
+              />
+            )}
+            <span
+              className={
+                "relative z-10 grid h-8 w-8 place-items-center rounded-full border-2 text-white " +
+                (reached ? fill : "bg-white border-ink-200 text-ink-400")
+              }
+            >
+              {reached ? (
+                <CheckCircle2 className="h-4 w-4" />
+              ) : (
+                <Package className="h-3.5 w-3.5" />
+              )}
+            </span>
+            <span
+              className={
+                "relative z-10 mt-2 text-[10px] font-semibold tracking-wider uppercase " +
+                (reached ? "text-ink-900" : "text-ink-400")
+              }
+            >
+              {s}
+            </span>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+function CategoryTrackingCard({
+  group,
+  shipments,
+}: {
+  group: CategoryGroupForCard;
+  shipments: ShipmentHistoryItem[];
+}) {
+  const idx = categoryStageIdx(group.status);
+  const accent =
+    group.status === "delivered"
+      ? "emerald"
+      : group.status === "returned"
+        ? "rose"
+        : "brand";
+  // Counter that matches the group's effective status — keeps the headline
+  // honest ("4 / 4 out for delivery") instead of falling back to "0/4
+  // delivered" before any line-level delivery is recorded.
+  const counter =
+    group.status === "delivered"
+      ? group.deliveredQty
+      : group.status === "returned"
+        ? group.returnedQty
+        : group.status === "in transit" || group.status === "out for delivery"
+          ? Math.max(group.pickedQty, group.deliveredQty)
+          : 0;
+  const lineLabel =
+    group.status === "delivered"
+      ? "delivered"
+      : group.status === "out for delivery"
+        ? "out for delivery"
+        : group.status === "in transit"
+          ? "in transit"
+          : group.status === "returned"
+            ? "returned"
+            : "awaiting dispatch";
+  const counterText =
+    group.status === "pending"
+      ? `${group.totalQty} ${lineLabel}`
+      : `${counter} / ${group.totalQty} ${lineLabel}`;
+
+  return (
+    <div className="rounded-2xl border border-ink-100 bg-white p-5 lg:p-6">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+        <h4 className="font-display text-[16px] font-bold text-ink-900">
+          {group.rootCategoryName}
+        </h4>
+        <div className="flex items-center gap-2">
+          <span
+            className={
+              "rounded-full px-2.5 py-0.5 text-[10.5px] font-bold uppercase tracking-wider " +
+              CATEGORY_STATUS_CLASS[group.status]
+            }
+          >
+            {group.status}
+          </span>
+          <span className="text-[11.5px] font-semibold tabular-nums text-ink-500">
+            {counterText}
+          </span>
+        </div>
+      </div>
+      <StageBar reachedIdx={idx} accent={accent} />
+
+      {group.items.length > 0 && (
+        <ul className="mt-4 space-y-1.5 border-t border-ink-100 pt-3">
+          {group.items.map((it) => {
+            const itCounter =
+              group.status === "delivered"
+                ? it.deliveredQty
+                : group.status === "returned"
+                  ? it.returnedQty
+                  : group.status === "in transit" ||
+                      group.status === "out for delivery"
+                    ? Math.max(it.pickedQty, it.deliveredQty)
+                    : 0;
+            return (
+              <li
+                key={it.id}
+                className="flex items-center justify-between text-[12.5px] text-ink-700"
+              >
+                <span className="truncate pr-3">{it.name}</span>
+                <span className="shrink-0 tabular-nums text-ink-500">
+                  {group.status === "pending"
+                    ? `× ${it.qty}`
+                    : `${itCounter} / ${it.qty} ${lineLabel}`}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      {shipments.length > 0 && (
+        <div className="mt-5 space-y-4 border-t border-ink-100 pt-4">
+          {shipments.map((s, i) => (
+            <ShipmentCard key={s.shipmentId ?? `idx-${i}`} shipment={s} />
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
