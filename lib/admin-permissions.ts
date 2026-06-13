@@ -70,6 +70,7 @@ export const ADMIN_PAGES: AdminPage[] = [
   { slug: "reports",              label: "Reports",               group: "Tools" },
   { slug: "activity",             label: "Activity log",          group: "Tools" },
   { slug: "otp-logs",             label: "OTP Logs",              group: "Tools" },
+  { slug: "order-notifications",  label: "Order Notifications",   group: "Tools" },
   { slug: "settings-users",       label: "Admin users",           group: "Settings" },
   { slug: "settings-otp",         label: "SMS / SMTP OTP",        group: "Settings" },
   { slug: "settings-erp-bridge",  label: "ERP bridge (live)",     group: "Settings" },

@@ -3,7 +3,7 @@ import crypto from "crypto";
 import { sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { getErpConfig } from "@/lib/erp-config";
-import { erpInboundDisabledResponse } from "@/lib/erp-inbound-guard";
+import { erpOrderPollDisabledResponse } from "@/lib/erp-inbound-guard";
 
 /**
  * Inbound webhook receiver.
@@ -68,9 +68,13 @@ export async function POST(req: Request) {
   if (!sigHeader || !timingSafeEqHex(sigHeader, expected)) {
     return NextResponse.json({ error: "bad signature" }, { status: 401 });
   }
-  // ERP inbound is gated. Returning 200 with {disabled: true} keeps
-  // ERPNext from retrying us into oblivion — they treat 200 as "got it".
-  const off = erpInboundDisabledResponse();
+  // ERP inbound is gated. We accept webhooks whenever the orders-poll
+  // slice is enabled (ERP_INBOUND_ORDERS_POLL_ENABLED) — order/shipment/
+  // packing status is exactly what storefront tracking needs, and the
+  // dispatch layer keeps customer-master events locked behind the full
+  // ERP_INBOUND_ENABLED switch. Returning 200 with {disabled: true} keeps
+  // the sender from retrying us into oblivion — they treat 200 as "got it".
+  const off = erpOrderPollDisabledResponse();
   if (off) return off;
 
   let env: WebhookEnvelope;

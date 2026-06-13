@@ -39,6 +39,7 @@ import {
   KeyRound,
   Wallet,
   Inbox,
+  Send,
 } from "lucide-react";
 import type { CurrentAdmin } from "@/lib/session";
 import { isReadOnlyAdmin, canSeePage } from "@/lib/admin-permissions";
@@ -148,6 +149,7 @@ const groups: NavGroup[] = [
       { href: "/admin/reports",  label: "Reports",         icon: BarChart3,     perm: "nav:reports" },
       { href: "/admin/activity", label: "Activity log",    icon: Activity,      perm: "nav:activity" },
       { href: "/admin/otp-logs", label: "OTP Logs",        icon: MessageSquare, perm: "nav:otp-logs" },
+      { href: "/admin/order-notifications", label: "Order Notifications", icon: Send, perm: "nav:order-notifications" },
     ],
   },
   {

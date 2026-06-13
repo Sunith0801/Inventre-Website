@@ -257,8 +257,12 @@ export default async function EditProductPage({
   // ternary inside `<ProductBasicsForm afterBasics={…} />` produced a
   // recurring "missing key" overlay warning on this exact line even
   // though every list in either branch already had keys.
+  // Explicit keys: elements created outside a JSX children position skip
+  // the compiler's static-child validation, so React warns "missing key"
+  // when they later land in ProductBasicsForm's children array.
   const afterBasicsContent = isBomKind ? (
     <BomEditor
+      key="bom-editor"
       productId={product.id}
       items={bomItemList}
       initial={bomRows.map((r) => ({
@@ -269,6 +273,7 @@ export default async function EditProductPage({
     />
   ) : (
     <ProductVariantsEditor
+      key="variants-editor"
       productId={product.id}
       slug={product.slug}
       colourOptions={colourOptions.map((c) => ({

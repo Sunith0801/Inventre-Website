@@ -34,6 +34,7 @@ const statusStyle: Record<string, string> = {
   confirmed: "bg-blue-50 text-blue-700",
   packed: "bg-amber-50 text-amber-700",
   shipped: "bg-indigo-50 text-indigo-700",
+  "in transit": "bg-amber-100 text-amber-800",
   "out for delivery": "bg-indigo-100 text-indigo-800",
   delivered: "bg-emerald-50 text-emerald-700",
   cancelled: "bg-red-50 text-red-700",

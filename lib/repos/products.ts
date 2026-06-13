@@ -48,7 +48,17 @@ export type ProductDetailDto = ProductCardDto & {
   specs: { label: string; value: string }[] | null;
   sizeTable: { size: string; chest: string; length: string; sleeve: string }[] | null;
   sizeChartUrl: string | null;
-  variants: { id: string; size: string; sku: string; stockQty: number; pricePaise: number; mrpPaise: number | null }[];
+  variants: {
+    id: string;
+    size: string;
+    sku: string;
+    stockQty: number;
+    pricePaise: number;
+    mrpPaise: number | null;
+    /** True when this variant carries a real price — an explicit item_prices
+     *  row (even ₹0) or a positive fallback. False = "price never set". */
+    priced: boolean;
+  }[];
   /** Template-level variants (e.g. Bookkit Hindi vs Bookkit Kannada).
    *  Empty when this product isn't a template. */
   templateVariants: {
@@ -1013,13 +1023,17 @@ export async function getProductBySlug(
       sizeChartUrl: safeImgUrl(product.sizeChartUrl ?? null),
       variants: variants.map((v) => {
         const r = resolved.get(v.id);
+        const pricePaise = r?.pricePaise ?? resolvedPricePaise;
         return {
           id: v.id,
           size: v.size,
           sku: v.sku,
           stockQty: r?.available ?? v.stockQty,
-          pricePaise: r?.pricePaise ?? resolvedPricePaise,
+          pricePaise,
           mrpPaise: r?.mrpPaise ?? resolvedMrpPaise,
+          // Explicit ₹0 item_prices rows are real prices (school-included
+          // freebies) — only "no row + zero fallback" counts as unpriced.
+          priced: (r?.explicitPrice ?? false) || pricePaise > 0,
         };
       }),
       templateVariants: await loadTemplateVariants(product.id),

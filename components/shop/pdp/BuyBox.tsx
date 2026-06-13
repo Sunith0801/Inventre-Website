@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
-import { Heart, ShoppingBag, Check, Star, Truck, RotateCw, Shield, Award, Ruler, X } from "lucide-react";
+import { Heart, ShoppingBag, Check, Star, Truck, Shield, Award, Ruler, X } from "lucide-react";
 import { Product } from "@/lib/products";
 import { useCart } from "@/lib/cart";
 import { QtyStepper } from "./QtyStepper";
@@ -16,7 +16,6 @@ import { usePdpSelection } from "./SelectionContext";
 
 const trust = [
   { icon: Award, label: "Branded for your school" },
-  { icon: RotateCw, label: "Free 7-day returns" },
   { icon: Truck, label: "Try before you buy" },
   { icon: Shield, label: "Quality-tested" },
 ];
@@ -350,6 +349,18 @@ export function BuyBox({
     ? Math.round((1 - activePrice / activeMrp) * 100)
     : 0;
 
+  // A ₹0 price is sellable when it's explicit (admin saved an item_prices
+  // row at 0 — school-included freebies like belts/caps). Only "price was
+  // never set" should gate the buy button. `priced` arrives per variant;
+  // a positive price is always considered priced for legacy paths that
+  // don't carry the flag.
+  const activePriced = resolvedAxisVariant
+    ? (resolvedAxisVariant.priced ?? resolvedAxisVariant.pricePaise > 0)
+    : priceKey && product.variantPrices?.[priceKey]
+      ? (product.variantPrices[priceKey].priced ??
+        product.variantPrices[priceKey].price > 0)
+      : activePrice > 0;
+
   return (
     <div className="lg:sticky lg:top-28 lg:self-start">
       {/* eyebrow — use a category-aware label so misclassified bookkits
@@ -415,13 +426,18 @@ export function BuyBox({
 
       {/* price */}
       <div className="mt-6 flex items-baseline gap-3">
-        {activePrice <= 0 ? (
+        {!activePriced ? (
           // No item_prices row for the resolved variant AND no fallback
           // base_price set — surface this honestly instead of "₹0", which
           // parents read as "free". Add-to-cart is disabled below in the
-          // same activePrice <= 0 branch.
+          // same !activePriced branch.
           <span className="font-display text-[24px] font-extrabold tracking-tight text-ink-500">
             Price coming soon
+          </span>
+        ) : activePrice <= 0 ? (
+          // Explicitly priced at ₹0 — a school-included freebie.
+          <span className="font-display text-[34px] font-extrabold tracking-tight text-ink-900">
+            Free
           </span>
         ) : (
           <>
@@ -446,7 +462,7 @@ export function BuyBox({
           </>
         )}
       </div>
-      {activePrice <= 0 && (
+      {!activePriced && (
         <p className="mt-1 text-[12px] text-ink-500">
           This combination isn&apos;t priced yet. Pick another colour or size.
         </p>
@@ -672,7 +688,7 @@ export function BuyBox({
         <button
           type="button"
           onClick={handleAdd}
-          disabled={!canAdd || addBusy || activePrice <= 0}
+          disabled={!canAdd || addBusy || !activePriced}
           className="flex-1 inline-flex items-center justify-center gap-2 rounded-full bg-brand text-white px-6 h-12 text-[14px] font-bold hover:bg-brand-600 active:scale-[0.99] transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-[inset_0_1px_0_rgba(255,255,255,0.25)]"
         >
           <AnimatePresence mode="wait">
@@ -686,7 +702,7 @@ export function BuyBox({
               >
                 <Check className="h-4 w-4" /> Added to cart
               </motion.span>
-            ) : activePrice <= 0 ? (
+            ) : !activePriced ? (
               <motion.span
                 key="nopx"
                 initial={{ opacity: 0, y: 6 }}
@@ -706,7 +722,9 @@ export function BuyBox({
                 className="inline-flex items-center gap-2"
               >
                 <ShoppingBag className="h-4 w-4" />
-                Add to cart · ₹{(activePrice * qty).toLocaleString()}
+                {activePrice <= 0
+                  ? "Add to cart · Free"
+                  : `Add to cart · ₹${(activePrice * qty).toLocaleString()}`}
               </motion.span>
             )}
           </AnimatePresence>

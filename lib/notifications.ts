@@ -5,9 +5,11 @@ import { orders, parents, returns } from "@/db/schema";
 import { sendSms } from "./sms";
 import { formatPickupLabel, type ExchangeStatus } from "./exchange";
 
+// "confirmed" intentionally absent: order confirmation sends a real
+// DLT-backed SMS + email via lib/order-confirmation.ts, with its own
+// idempotency log. Listing it here would re-fire from the admin status
+// PATCH with a body that doesn't match any DLT template.
 const TEMPLATES: Record<string, (orderNumber: string) => string> = {
-  confirmed: (n) =>
-    `Inventre: Order ${n} is confirmed. We'll pack it shortly. Track at inventre.in/shop/orders.`,
   packed: (n) =>
     `Inventre: Order ${n} is packed and ready for shipment.`,
   shipped: (n) =>

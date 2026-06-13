@@ -36,6 +36,7 @@ import {
   KeyRound,
   Wallet,
   Inbox,
+  Send,
 } from "lucide-react";
 
 export type AdminRole = "super" | "ops" | "school_admin";
@@ -137,6 +138,7 @@ export const ADMIN_NAV_GROUPS: NavGroup[] = [
       { href: "/admin/reports", label: "Reports", icon: BarChart3 },
       { href: "/admin/activity", label: "Activity log", icon: Activity },
       { href: "/admin/otp-logs", label: "OTP Logs", icon: MessageSquare, roles: ["super"] },
+      { href: "/admin/order-notifications", label: "Order Notifications", icon: Send },
     ],
   },
   {

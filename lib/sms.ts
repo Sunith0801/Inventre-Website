@@ -56,6 +56,81 @@ export async function sendOtpSms(
 }
 
 /**
+ * Order-placed confirmation SMS (DLT template "Order Confirmation New").
+ * Skeleton must match the registered template byte-for-byte or the operator
+ * silently drops the message even after SUBMIT_ACCEPTED:
+ *
+ *   Dear {#var#}, Your Order has been successful with Order ID {#var#}. You
+ *   will receive updates once it is processed. You can also track your order
+ *   here {#var#} -INVENTRE EDU SERVICES PVT LTD
+ *
+ * (Single spaces throughout; a space precedes the literal "-INVENTRE EDU
+ * SERVICES PVT LTD" footer — all part of the registered skeleton and must
+ * survive any edit here.)
+ *
+ * DLT variables are capped at 30 chars — name collapses to its first word
+ * (fallback "Customer"), the order number is truncated, and var3 carries
+ * the tracking link as a bare domain (the full https:// URL is 31 chars).
+ *
+ * Credentials: SMS_TRANS_API_USERNAME/PASSWORD when the transactional
+ * account differs from the OTP one, else the shared SMS_API_USERNAME/
+ * PASSWORD. Dev fallback (neither set): console log, no real SMS.
+ */
+const ORDER_CONFIRM_TEMPLATE_ID = "456421";
+const ORDER_CONFIRM_DLT_CONTENT_ID = "1107178133323580821";
+
+export async function sendOrderConfirmationSms(
+  phone: string,
+  parentName: string | null,
+  orderNumber: string
+): Promise<{ ok: true; transactionId: string; dev?: boolean; text: string }> {
+  const username =
+    process.env.SMS_TRANS_API_USERNAME ?? process.env.SMS_API_USERNAME;
+  const password =
+    process.env.SMS_TRANS_API_PASSWORD ?? process.env.SMS_API_PASSWORD;
+  const baseUrl =
+    process.env.SMS_API_URL ??
+    "https://control.arihantglobal.in/fe/api/v1/send";
+
+  const var1 = (parentName?.trim().split(/\s+/)[0] || "Customer").slice(0, 30);
+  const var2 = orderNumber.slice(0, 30);
+  const var3 = "inventre.in/shop/orders";
+  const text = `Dear ${var1}, Your Order has been successful with Order ID ${var2}. You will receive updates once it is processed. You can also track your order here ${var3} -INVENTRE EDU SERVICES PVT LTD`;
+
+  if (!username || !password) {
+    // eslint-disable-next-line no-console
+    console.log(`\n📱 [DEV SMS to +91${phone}] → ${text}\n`);
+    return { ok: true, transactionId: "dev", dev: true, text };
+  }
+
+  const params = new URLSearchParams({
+    username,
+    password,
+    unicode: "false",
+    from: SENDER_ID,
+    to: `91${phone}`,
+    text,
+    templateId: ORDER_CONFIRM_TEMPLATE_ID,
+    dltContentId: ORDER_CONFIRM_DLT_CONTENT_ID,
+  });
+
+  const res = await fetch(`${baseUrl}?${params}`);
+  const json = (await res.json()) as {
+    transactionId?: number;
+    state?: string;
+    description?: string;
+  };
+
+  if (json.state !== "SUBMIT_ACCEPTED") {
+    throw new Error(
+      json.description ?? `SMS send failed: state=${json.state ?? res.status}`
+    );
+  }
+
+  return { ok: true, transactionId: String(json.transactionId), text };
+}
+
+/**
  * @deprecated Legacy shim for routes that haven't migrated to sendOtpSms().
  * Only routes sending OTPs (with variables.otp) will actually send SMS;
  * other callers (order notifications etc.) are no-ops until they get their

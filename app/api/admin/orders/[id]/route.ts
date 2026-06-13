@@ -274,6 +274,19 @@ export async function DELETE(
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }
 
+  // Tell audit BEFORE the rows vanish — the buffered queue can't be used
+  // here (the drain builds its envelope from the order row at send time,
+  // which is about to be deleted), so this is the direct emit. Best-effort:
+  // emitOrderEvent never throws, and the attempt lands in webhook_deliveries
+  // so a failed notify can be replayed from /admin/erp-sync. Orders that
+  // never reached audit (unpaid 'placed') send a delete the receiver simply
+  // won't match — harmless, and cheaper than tracking which ones synced.
+  // order.deleted (vs .cancelled) tells audit to remove the SO outright.
+  {
+    const { emitOrderEvent } = await import("@/lib/erp-bridge");
+    await emitOrderEvent(id, "order.deleted");
+  }
+
   // Run the cascade clean-up + parent delete in one transaction so a
   // mid-flight failure can't leave the order half-deleted.
   // Order matters: FK targets are deleted before the order itself.

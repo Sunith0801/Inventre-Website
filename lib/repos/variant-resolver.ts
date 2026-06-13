@@ -34,6 +34,11 @@ export type VariantInfo = {
   /** Total available stock = actualQty - reservedQty (or legacy stockQty). */
   available: number;
   inStock: boolean;
+  /** True when an itemPrices row explicitly priced this variant — even at
+   *  ₹0 (school-included freebies like belts). Lets the storefront tell
+   *  "deliberately free" apart from "price never set", which both surface
+   *  as pricePaise === 0. */
+  explicitPrice: boolean;
 };
 
 /**
@@ -151,6 +156,7 @@ export async function resolveVariants(
       mrpPaise,
       available,
       inStock: available > 0,
+      explicitPrice: newPrice != null,
     });
   }
 

@@ -478,9 +478,6 @@ export default function CartPage() {
                     Your cart is saved on your account for <strong className="font-semibold text-ink-800">7 days</strong>. Sign in on any device to pick up where you left off.
                   </span>
                 </div>
-                <p className="mt-3 text-[11px] text-ink-500 text-center">
-                  Free 7-day returns. Branded by your school.
-                </p>
               </div>
             </aside>
           </div>

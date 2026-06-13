@@ -54,7 +54,9 @@ export type Product = {
    *  photo, nearest grade). Only consumed by the PDP, never by grid cards. */
   fallbackImageUrl?: string | null;
   rating?: { score: number; count: number; distribution: number[] };
-  variantPrices?: { [size: string]: { price: number; mrp: number | null } };
+  variantPrices?: {
+    [size: string]: { price: number; mrp: number | null; priced?: boolean };
+  };
   /** Full per-variant rows, populated on the PDP. Used to look up the
    *  resolved variant's price when the customer's picked colour + size,
    *  which the size-keyed `variantPrices` map can't disambiguate. */
@@ -65,6 +67,9 @@ export type Product = {
     stockQty: number;
     pricePaise: number;
     mrpPaise: number | null;
+    /** True when the price is real — explicit item_prices row (even ₹0)
+     *  or a positive fallback. False/undefined = price never set. */
+    priced?: boolean;
   }[];
   /** size → variantId map, populated on the PDP. Allows add-to-cart to skip
    *  the getVariantId round-trip when the id is already known. */

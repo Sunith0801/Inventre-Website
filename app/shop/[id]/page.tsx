@@ -67,6 +67,7 @@ function dtoToProduct(d: ProductDetailDto): Product {
       stockQty: v.stockQty,
       pricePaise: v.pricePaise,
       mrpPaise: v.mrpPaise,
+      priced: v.priced,
     })),
     variantPrices: d.variants.length > 0
       ? Object.fromEntries(
@@ -75,6 +76,7 @@ function dtoToProduct(d: ProductDetailDto): Product {
             {
               price: Math.round(v.pricePaise / 100),
               mrp: v.mrpPaise != null ? Math.round(v.mrpPaise / 100) : null,
+              priced: v.priced,
             },
           ])
         )

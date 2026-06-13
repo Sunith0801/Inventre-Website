@@ -31,8 +31,12 @@ START=$(date +%s)
 echo "▶ Building (${MODE} mode)…"
 # Override DB URL so static-page generation reaches the host-mapped port
 # instead of timing out on the Docker-internal 'pgbouncer' hostname.
+# NEXT_DIST_DIR pinned: .env.local points dev servers at .next-dev so they
+# can't corrupt prod bundles mid-build (2026-06-12 outage); the explicit env
+# here outranks .env.local and keeps the deploy build in .next.
 DATABASE_URL="postgres://inventre:inventre_prod@localhost:6433/inventre" \
 DATABASE_DIRECT_URL="postgres://inventre:inventre_prod@localhost:55433/inventre" \
+NEXT_DIST_DIR=".next" \
   npm run build
 
 echo "▶ Bundling migrations…"

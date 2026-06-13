@@ -31,6 +31,7 @@ import {
   type ErpShipmentResp,
   type ErpPackingUnitResp,
 } from "@/lib/erp-poll";
+import { isErpInboundEnabled } from "@/lib/erp-inbound-guard";
 
 export interface WebhookEnvelope {
   event_id: string;
@@ -59,6 +60,13 @@ async function applyMirrorUpsert(env: WebhookEnvelope): Promise<string | null> {
       return null;
     }
     case "customer.updated": {
+      // Customer is admin-canonical master data. When only the narrow
+      // orders-poll slice is enabled (ERP_INBOUND_ORDERS_POLL_ENABLED)
+      // and the full switch (ERP_INBOUND_ENABLED) is off, skip this so a
+      // webhook can't overwrite the manually-stewarded customer DB —
+      // mirrors the poll, which omits the customers master in orders-only
+      // mode. Order/shipment/packing events still flow through below.
+      if (!isErpInboundEnabled()) return null;
       const c = env.payload as { name: string } | undefined;
       if (c?.name) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any

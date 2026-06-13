@@ -30,6 +30,13 @@ function getAllowlist(): Set<string> {
 }
 
 export function isExchangeTester(phone: string | null | undefined): boolean {
+  // Phase 2 (2026-06-14): full rollout. EXCHANGE_OPEN_TO_ALL=true opens the
+  // flow to every authenticated parent in production. Reversible from env
+  // alone (flip to false → falls back to the EXCHANGE_TESTER_PHONES
+  // allowlist). Ownership scope stays strict — see isExchangeScopeRelaxed,
+  // which is NOT affected by this flag, so a user can still only act on
+  // their own orders.
+  if (process.env.EXCHANGE_OPEN_TO_ALL === "true") return true;
   // Dev: gate is fully open so every parent can exercise exchange /
   // missing on any delivered order. The phone allowlist is a
   // production-only safety belt during early rollout.

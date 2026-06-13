@@ -25,6 +25,12 @@ export type ErpEventType =
   | "order.created"
   | "order.updated"
   | "order.cancelled"
+  // Hard delete: admin removed the order entirely. Audit's ingest should
+  // DELETE the Sales Order (+ children), not just cancel it. Only ever
+  // direct-emitted from the admin DELETE route — never enqueued (the
+  // buffered drain couldn't build an envelope for a row that's gone, and
+  // erp_outbound_queue's CHECK constraint doesn't list it).
+  | "order.deleted"
   | "payment.updated"
   | "student.upserted"
   | "guardian.upserted"
@@ -94,6 +100,7 @@ async function ensureEndpoint(url: string, secret: string): Promise<string> {
         "order.created",
         "order.updated",
         "order.cancelled",
+        "order.deleted",
         "payment.updated",
       ],
       enabled: true,

@@ -2974,6 +2974,37 @@ export const otpLogs = pgTable(
   })
 );
 
+// One row per order-confirmation send attempt (SMS or email). Never
+// updated in place — resends insert a new row with attempt+1, and the
+// idempotency guard in lib/order-confirmation.ts checks for an existing
+// 'sent' row per (order, channel).
+export const orderNotifications = pgTable(
+  "order_notifications",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orderId: uuid("order_id")
+      .notNull()
+      .references(() => orders.id, { onDelete: "cascade" }),
+    orderNumber: text("order_number").notNull(),
+    channel: text("channel").notNull(), // 'sms' | 'email'
+    kind: text("kind").notNull().default("order_confirmed"),
+    recipient: text("recipient").notNull(), // phone or email ('' when missing)
+    subject: text("subject"), // email only
+    body: text("body"), // exact SMS text / email text body
+    status: text("status").notNull(), // 'sent' | 'failed'
+    vendorId: text("vendor_id"), // SMS transactionId / SMTP messageId
+    error: text("error"),
+    attempt: integer("attempt").notNull().default(1),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    orderIdx: index("order_notifications_order_idx").on(t.orderId),
+    createdIdx: index("order_notifications_created_idx").on(t.createdAt),
+  })
+);
+
 // ─── Website Cart Coupon (mirrors ERPNext doctype) ────────────────────
 //
 // Source of truth is `Website Cart Coupon` on erp.inventre.in. Every row

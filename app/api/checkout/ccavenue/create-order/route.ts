@@ -17,6 +17,7 @@ import {
   clearAppliedCoupon,
 } from "@/lib/cart-coupon";
 import { enqueueOrderEvent } from "@/lib/erp-bridge";
+import { notifyOrderConfirmed } from "@/lib/order-confirmation";
 
 /**
  * Sibling of /api/checkout/create-order, but routes through CCAvenue.
@@ -313,6 +314,11 @@ export async function POST(req: Request) {
     for (const sib of created) {
       void enqueueOrderEvent(sib.id, "order.created");
     }
+    // Zero-value orders confirm here and never reach ccavenue-finalize, so
+    // fire their confirmation SMS + email on this path too (primary fans out
+    // to every orderGroupId sibling). Awaited, not void: the response returns
+    // immediately otherwise and the Next runtime drops the pending promise.
+    await notifyOrderConfirmed(primary.id);
     return NextResponse.json({
       orderId: primary.id,
       orderNumber: primary.orderNumber,

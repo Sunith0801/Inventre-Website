@@ -29,7 +29,7 @@ import {
   getDefaultWarehouseId,
 } from "@/lib/repos/inventory";
 import { clearCart } from "@/lib/repos/cart";
-import { notifyOrderStatus } from "@/lib/notifications";
+import { notifyOrderConfirmed } from "@/lib/order-confirmation";
 import { enqueueOrderEvent } from "@/lib/erp-bridge";
 import { generateInvoiceForOrder } from "@/lib/repos/invoices";
 import { recordCouponUsage } from "@/lib/cart-coupon";
@@ -248,7 +248,7 @@ export async function finalizeOrderPayment(args: {
         ${normalized.trackingId ?? null},
         ${`sibling-of:${orderId} success:${normalized.trackingId ?? ""} (via ${source})`},
         true, 'NOT_REQUESTED', 1, 0,
-        ${normalized.rawResponse ?? null}::jsonb
+        ${normalized.rawResponse != null ? JSON.stringify(normalized.rawResponse) : null}::jsonb
       FROM orders sib
       WHERE sib.order_group_id = ${primary.orderGroupId}
         AND sib.id <> ${orderId}
@@ -336,7 +336,15 @@ export async function finalizeOrderPayment(args: {
   }
 
   await clearCart(snap.parentId);
-  void notifyOrderStatus(orderId, "confirmed");
+  // DLT-backed SMS + email per order (siblings fanned out inside; the
+  // order_notifications log doubles as the cross-path idempotency guard).
+  // MUST be awaited, not fire-and-forget: callers return their HTTP response
+  // (the callback route redirects) the instant finalize resolves, and the
+  // Next runtime drops any still-pending floating promise — so a `void` here
+  // silently never sent the SMS/email (confirmed in prod 2026-06-13).
+  // notifyOrderConfirmed is best-effort internally and never throws, so
+  // awaiting it can't downgrade the order.
+  await notifyOrderConfirmed(orderId);
   // Multi-school baskets settle one CCAvenue payment against multiple
   // sibling orders sharing an orderGroupId (see the update block above).
   // Audit needs to learn about each sibling, not just the primary; missing

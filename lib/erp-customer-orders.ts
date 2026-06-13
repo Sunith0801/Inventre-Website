@@ -133,7 +133,8 @@ function uiStatus(
   sealedPackingUnits: number,
   dispatchedPackingUnits = 0,
   shipOfd = 0,
-  auditCatAllDelivered = false
+  auditCatAllDelivered = false,
+  shipInTransit = 0
 ): string {
   const d = (displayStatus ?? "").toLowerCase();
   if (d.includes("cancel")) return "cancelled";
@@ -171,6 +172,10 @@ function uiStatus(
     // and delivered — surface it on the list card the same way the
     // category badge on the detail page does.
     if (shipOfd > 0) return "out for delivery";
+    // "In transit" sits between shipped (parcel handed to carrier) and
+    // OFD (last hop). Any carrier-confirmed in-transit scan lifts the
+    // order off "shipped" so the stepper shows real movement.
+    if (shipInTransit > 0) return "in transit";
     return "shipped";
   }
   // No shipment row yet, but packing units carry truth: any
@@ -371,6 +376,7 @@ export async function listParentOrdersFromErp(
     ship_n: number;
     ship_delivered: number;
     ship_ofd: number;
+    ship_in_transit: number;
     audit_cat_all_delivered: boolean;
     sealed_pu: number;
     dispatched_pu: number;
@@ -448,6 +454,7 @@ export async function listParentOrdersFromErp(
              COALESCE(sh.n, 0)::int AS ship_n,
              COALESCE(sh.delivered, 0)::int AS ship_delivered,
              COALESCE(sh.ofd, 0)::int AS ship_ofd,
+             COALESCE(sh.in_transit, 0)::int AS ship_in_transit,
              COALESCE(
                (SELECT bool_and(
                   lower(coalesce(so.raw->'derived_delivery_by_category'->>k, ''))
@@ -516,8 +523,9 @@ export async function listParentOrdersFromErp(
         ) li ON true
         LEFT JOIN LATERAL (
           SELECT count(*) AS n,
-                 count(*) FILTER (WHERE x.status = 'delivered')       AS delivered,
-                 count(*) FILTER (WHERE x.status = 'out_for_delivery') AS ofd
+                 count(*) FILTER (WHERE x.status = 'delivered')        AS delivered,
+                 count(*) FILTER (WHERE x.status = 'out_for_delivery') AS ofd,
+                 count(*) FILTER (WHERE x.status = 'in_transit')       AS in_transit
             FROM erp.outward_shipments x
            WHERE x.order_erp_name = po.order_no
              -- Mirror the detail-page filters: hide soft-deleted rows
@@ -575,7 +583,8 @@ export async function listParentOrdersFromErp(
         o.sealed_pu,
         o.dispatched_pu,
         o.ship_ofd,
-        o.audit_cat_all_delivered
+        o.audit_cat_all_delivered,
+        o.ship_in_transit
       );
       const auditQuiet = !o.display_status || o.display_status.trim() === "";
       return auditQuiet && o.local_status ? o.local_status : erp;
@@ -1169,7 +1178,10 @@ export async function getParentOrderDetailFromErp(
           const v = byCatLc[(p ?? "").toLowerCase()] ?? "";
           return v === "delivered" || v === "fully delivered" || v === "completed";
         });
-      })()
+      })(),
+      // in-transit shipment count — lifts the order header off "shipped"
+      // onto "in transit" the moment the carrier scans a line-haul leg.
+      shipments.filter((s) => s.status === "in_transit").length
     ),
     paymentStatus:
       (o.payment_status ?? "").toUpperCase() === "SUCCESS"
@@ -1293,7 +1305,12 @@ export async function getParentOrderDetailFromErp(
           badge: "Carrier scan",
         });
       }
-      events.sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
+      // Newest event first — customers care about "what's happening
+      // right now" and don't want to scroll past the entire history to
+      // find the latest scan. Carrier app convention is also
+      // descending-by-time on a parcel page, so this matches the
+      // mental model people already have.
+      events.sort((a, b) => (a.at > b.at ? -1 : a.at < b.at ? 1 : 0));
       return {
         shipmentId: s.shipment_id,
         partner: s.partner ?? "—",

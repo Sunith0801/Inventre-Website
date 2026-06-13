@@ -1,3 +1,6 @@
+// Run with NODE_OPTIONS="--conditions=react-server" — the audit-sync
+// enqueue below pulls in lib/erp-bridge, whose `server-only` marker throws
+// under plain tsx without that resolution condition.
 import { config } from "dotenv";
 config({ path: ".env.local" });
 config({ path: ".env" });
@@ -39,6 +42,14 @@ async function main() {
       confirmedAt: before.confirmedAt ?? new Date(),
     })
     .where(eq(orders.id, before.id));
+
+  // Script-side cancellations must reach audit too — same buffered queue
+  // the admin-UI cancel uses (app/api/admin/orders/[id]/route.ts).
+  if (newStatus === "cancelled") {
+    const { enqueueOrderEvent } = await import("@/lib/erp-bridge");
+    await enqueueOrderEvent(before.id, "order.cancelled");
+    console.log("enqueued order.cancelled for audit sync");
+  }
 
   const [after] = await db
     .select({

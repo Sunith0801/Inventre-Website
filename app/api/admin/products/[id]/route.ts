@@ -133,6 +133,22 @@ export async function PATCH(
   if (body.sizeChartUrl !== undefined)
     update.sizeChartUrl = body.sizeChartUrl || null;
 
+  // Snapshot the pre-update base price: the itemPrices propagation below
+  // must fire only when the admin actually CHANGED it. The Basics/Pricing
+  // form always includes basePrice in its payload, so an unconditional
+  // propagation stomps per-variant prices (saved minutes earlier through
+  // the variants editor) back to the stale base on every unrelated save —
+  // that's how SMS Caps/Belt kept reverting to ₹0.
+  let priorBasePricePaise: number | null = null;
+  if (body.basePrice !== undefined) {
+    const [prior] = await db
+      .select({ basePrice: products.basePrice })
+      .from(products)
+      .where(eq(products.id, id))
+      .limit(1);
+    priorBasePricePaise = prior?.basePrice ?? null;
+  }
+
   if (Object.keys(update).length > 0)
     await db.update(products).set(update).where(eq(products.id, id));
 
@@ -143,7 +159,7 @@ export async function PATCH(
   // edited here would never surface on the shop or cart. School-specific
   // overrides (itemPrices rows with non-null schoolId) are left untouched
   // so per-school pricing keeps working.
-  if (body.basePrice !== undefined) {
+  if (body.basePrice !== undefined && body.basePrice * 100 !== priorBasePricePaise) {
     const newPricePaise = body.basePrice * 100;
     const [defaultPL] = await db
       .select({ id: priceLists.id })

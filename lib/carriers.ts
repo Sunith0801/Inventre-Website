@@ -9,6 +9,13 @@ export type Carrier = {
   trackingUrlTemplate: string; // {tracking} is replaced with the AWB number
 };
 
+// Tracking-URL strategy: most courier sites in India rotate their public
+// tracker paths quietly (DTDC's .in domain moved to .com mid-2026 and
+// dropped query-string lookups in the process; Shiprocket's customer
+// portal needs a logged-in session). To keep the parent's "Track on
+// carrier" button reliable, we route through trackcourier.io as a stable
+// aggregator that accepts any AWB for the carriers we use. The
+// aggregator URL pattern itself is also stable across years.
 export const CARRIERS: Carrier[] = [
   {
     code: "delhivery",
@@ -24,7 +31,17 @@ export const CARRIERS: Carrier[] = [
   {
     code: "dtdc",
     name: "DTDC",
-    trackingUrlTemplate: "https://www.dtdc.in/tracking/tracking_results.asp?Ttype=awb_no&strCnno={tracking}",
+    trackingUrlTemplate: "https://trackcourier.io/track-and-trace/dtdc/{tracking}",
+  },
+  {
+    code: "srocket",
+    name: "Shiprocket",
+    trackingUrlTemplate: "https://trackcourier.io/track-and-trace/shiprocket/{tracking}",
+  },
+  {
+    code: "shiprocket",
+    name: "Shiprocket",
+    trackingUrlTemplate: "https://trackcourier.io/track-and-trace/shiprocket/{tracking}",
   },
   {
     code: "indiapost",

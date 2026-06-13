@@ -25,7 +25,7 @@ import { sql } from "drizzle-orm";
 // Cron routes use the isolated `dbCron` pool (max=8) so a tight drain
 // loop can't starve the customer request pool (`db`, max=30).
 import { dbCron as db } from "@/db/client";
-import { erpInboundDisabledResponse } from "@/lib/erp-inbound-guard";
+import { erpOrderPollDisabledResponse } from "@/lib/erp-inbound-guard";
 import {
   dispatchWebhookEvents,
   type WebhookEnvelope,
@@ -55,8 +55,12 @@ export async function GET(req: Request) {
   if (!process.env.CRON_TOKEN || auth !== expected) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  // ERP inbound gated since 2026-05-28 (admin panel is canonical).
-  const off = erpInboundDisabledResponse();
+  // ERP inbound gated since 2026-05-28 (admin panel is canonical). The
+  // drain runs whenever the orders-poll slice is enabled — order/shipment/
+  // packing status is what storefront tracking needs; the dispatch layer
+  // skips customer-master events unless the full ERP_INBOUND_ENABLED
+  // switch is on, so this can't overwrite admin-canonical customer data.
+  const off = erpOrderPollDisabledResponse();
   if (off) return off;
 
   let processed = 0;
@@ -114,15 +118,30 @@ export async function GET(req: Request) {
     }
   }
   if (okIds.length > 0) {
+    // Bind the id list as a real Postgres array. Passing a JS array
+    // straight into `ANY(${okIds})` via drizzle's sql template serialises
+    // it as a record, not an array, so Postgres rejects it with "op
+    // ANY/ALL (array) requires array on right side" — the error was
+    // swallowed by the .catch below, leaving successfully-dispatched
+    // events stuck in 'processing' forever. sql.array() emits a proper
+    // text[] literal.
     await db
       .execute(sql`
         UPDATE erp_webhook_events
            SET processed_at = now(),
                processing_status = 'processed',
                processing_error = NULL
-         WHERE event_id = ANY(${okIds})
+         WHERE event_id = ANY(ARRAY[${sql.join(
+             okIds.map((id) => sql`${id}`),
+             sql`, `
+           )}]::text[])
       `)
-      .catch(() => {});
+      .catch((e) => {
+        console.warn(
+          "[erp-webhook-drain] mark-processed failed:",
+          e instanceof Error ? e.message.slice(0, 160) : e
+        );
+      });
   }
   for (const { id, msg } of errPairs) {
     await db

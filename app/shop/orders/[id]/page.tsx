@@ -128,7 +128,21 @@ const CATEGORY_STATUS_CLASS: Record<CategoryStatus, string> = {
   pending: "bg-ink-100 text-ink-600",
 };
 
-const stages = ["placed", "confirmed", "packed", "shipped", "delivered"] as const;
+// 7-stage pipeline. "in transit" and "out for delivery" are intentionally
+// distinct from "shipped" so the stage bar reflects audit's real progress
+// (a parcel that's been picked up but not yet on the truck is "shipped";
+// once the carrier scans a line-haul leg it's "in transit"; the final
+// hop is "out for delivery"). Multi-word labels wrap to two lines on
+// narrow viewports — full phrasing reads better than the OFD shorthand.
+const stages = [
+  "placed",
+  "confirmed",
+  "packed",
+  "shipped",
+  "in transit",
+  "out for delivery",
+  "delivered",
+] as const;
 
 export default function OrderDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -596,22 +610,24 @@ export default function OrderDetailPage() {
 
 type CategoryGroupForCard = NonNullable<OrderDetail["categoryGroups"]>[number];
 
-/** Map a per-category status to a stage index on the shared 5-step bar.
+/** Map a per-category status to a stage index on the shared 7-step bar.
+ *  Stages: placed(0) confirmed(1) packed(2) shipped(3) in transit(4)
+ *          out for delivery(5) delivered(6)
  *  - "pending"           → confirmed   (1)
- *  - "in transit"        → shipped     (3)
- *  - "out for delivery"  → shipped     (3) — last hop before delivered;
- *    the badge text carries the "OFD" nuance the stage bar can't.
- *  - "delivered"         → delivered   (4)
- *  - "returned"          → delivered   (4) but rendered with a returned tint
+ *  - "in transit"        → in transit  (4)
+ *  - "out for delivery"  → OFD         (5)
+ *  - "delivered"         → delivered   (6)
+ *  - "returned"          → delivered   (6) but rendered with a returned tint
  */
 function categoryStageIdx(status: CategoryGroupForCard["status"]): number {
   switch (status) {
     case "delivered":
     case "returned":
-      return 4;
+      return 6;
     case "out for delivery":
+      return 5;
     case "in transit":
-      return 3;
+      return 4;
     default:
       return 1;
   }
@@ -656,7 +672,21 @@ function StageBar({
   const segFill =
     accent === "emerald" ? "bg-emerald-400" : accent === "rose" ? "bg-rose-400" : "bg-brand";
   return (
-    <ol className="grid grid-cols-5">
+    // 7 columns: tighter than 5 but still scannable on a phone. Labels
+    // wrap to two lines at <= text-[9.5px] where needed; OFD is the
+    // shortened display for "out for delivery" to keep its column from
+    // overflowing.
+    //
+    // The column count is set with an inline grid-template rather than the
+    // `grid-cols-7` utility on purpose: in dev/JIT builds a freshly-added
+    // arbitrary column count can be missing from the emitted stylesheet,
+    // which silently collapses the bar to a single vertical column. An
+    // inline style is always present, so the horizontal layout can never
+    // depend on Tailwind having generated that exact utility.
+    <ol
+      className="grid gap-x-0.5"
+      style={{ gridTemplateColumns: `repeat(${stages.length}, minmax(0, 1fr))` }}
+    >
       {stages.map((s, i) => {
         const reached = i <= reachedIdx;
         const last = i === stages.length - 1;
@@ -685,7 +715,10 @@ function StageBar({
             </span>
             <span
               className={
-                "relative z-10 mt-2 text-[10px] font-semibold tracking-wider uppercase " +
+                // Each label gets its own grid cell, so wrapping
+                // "out for delivery" / "in transit" onto two lines
+                // stays contained without pushing siblings around.
+                "relative z-10 mt-2 text-[8.5px] sm:text-[9.5px] font-semibold tracking-wider uppercase leading-[1.1] break-words px-0.5 " +
                 (reached ? "text-ink-900" : "text-ink-400")
               }
             >

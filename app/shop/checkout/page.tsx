@@ -186,6 +186,13 @@ export default function CheckoutPage() {
       setError("Pincode must be 6 digits");
       return;
     }
+    // Saved addresses bypass the City input filter, so re-check here.
+    if (!/^[A-Za-z ]+$/.test(address.city.trim())) {
+      setError(
+        "City can only contain letters and spaces — please remove numbers or special characters like (), [] or commas"
+      );
+      return;
+    }
     const trimmedEmail = email.trim();
     const focusEmail = () => {
       emailFieldRef.current?.scrollIntoView({
@@ -404,7 +411,15 @@ export default function CheckoutPage() {
                 <Field
                   label="City"
                   value={address.city}
-                  onChange={(v) => setAddress({ ...address, city: v })}
+                  onChange={(v) =>
+                    setAddress({
+                      ...address,
+                      // CCAvenue's billing_city accepts alphabets and spaces
+                      // ONLY — anything else bounces the payment with an
+                      // instant "Invalid Parameter" on the hosted page.
+                      city: v.replace(/[^A-Za-z ]/g, ""),
+                    })
+                  }
                 />
                 <Field
                   label="State"

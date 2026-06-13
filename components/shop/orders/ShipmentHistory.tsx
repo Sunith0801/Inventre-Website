@@ -130,8 +130,11 @@ export function ShipmentCard({
           scroll-snap so parents can swipe through the history. */}
       {shipment.events.length > 0 && (
         <div className="relative overflow-x-auto px-4 sm:px-5 py-5">
+          {/* Events are sorted newest-first now, so the rail's "live"
+              colour starts on the LEFT (where the most recent scan
+              lives) and fades toward the older entries on the right. */}
           <div
-            className="absolute left-5 right-5 top-[34px] h-[2px] bg-gradient-to-r from-emerald-300 via-indigo-300 to-ink-200"
+            className="absolute left-5 right-5 top-[34px] h-[2px] bg-gradient-to-l from-emerald-300 via-indigo-300 to-ink-200"
             aria-hidden
           />
           <ol className="relative flex gap-6 snap-x snap-mandatory">
@@ -156,8 +159,10 @@ export function ShipmentCard({
                   ) : (
                     <Package className="h-3.5 w-3.5" />
                   )}
-                  {/* most-recent event pulses gently so the eye lands there */}
-                  {i === shipment.events.length - 1 && (
+                  {/* most-recent event pulses gently so the eye lands
+                      there. Events are now newest-first, so the pulse
+                      lives on index 0. */}
+                  {i === 0 && (
                     <span className="absolute inset-0 rounded-full ring-2 ring-emerald-300/60 motion-safe:animate-ping" />
                   )}
                 </div>
