@@ -140,12 +140,10 @@ export async function GET(
       // exchange / missing on orders they already used up.
       const anyOpen = !isExchangeScopeRelaxed() && (exBlocking || mcBlocking);
       canExchange = local.status === "delivered" && !anyOpen;
-      // Missing claims don't require the local row to be delivered (a
-      // parent can spot a short ship the moment the box arrives) — but
-      // we still gate it on "not still in pre-delivery state".
-      const preDelivery =
-        local.status === "placed" || local.status === "confirmed";
-      canMissing = !preDelivery && !anyOpen;
+      // Missing claims are gated on delivery, identical to exchange —
+      // the parent can only report a short ship once the order is marked
+      // delivered (no packed/shipped early-report allowance).
+      canMissing = local.status === "delivered" && !anyOpen;
     }
   }
 

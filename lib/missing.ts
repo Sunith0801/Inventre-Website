@@ -51,10 +51,9 @@ const computePickupDate = (): string => toDbDate(firstPickupSaturday(new Date())
 export async function createMissingClaim(
   input: CreateMissingClaimInput,
 ): Promise<CreateMissingClaimResult> {
-  // 1. Scope: order must belong to this parent. Status doesn't have to
-  //    be delivered — a customer can claim a missing item the moment
-  //    the box arrives (or even before, if they spot a short ship).
-  //    But it must NOT be in an obviously-pre-delivery state.
+  // 1. Scope: order must belong to this parent and be delivered —
+  //    identical gate to exchange. A missing-item claim can only be
+  //    raised once the order is marked delivered.
   const [order] = await db
     .select()
     .from(orders)
@@ -66,11 +65,11 @@ export async function createMissingClaim(
     )
     .limit(1);
   if (!order) return { ok: false, status: 404, error: "Order not found" };
-  if (order.status === "placed" || order.status === "confirmed") {
+  if (order.status !== "delivered") {
     return {
       ok: false,
       status: 400,
-      error: "Order hasn't been dispatched yet — wait for delivery before claiming missing items.",
+      error: "Missing-item claims are only available for delivered orders.",
     };
   }
 
