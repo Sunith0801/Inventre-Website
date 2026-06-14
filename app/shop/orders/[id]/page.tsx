@@ -7,6 +7,7 @@ import { ArrowLeft, CheckCircle2, Package } from "lucide-react";
 import { Nav } from "@/components/Nav";
 import { Footer } from "@/components/Footer";
 import { ExchangeStatusBanner } from "@/components/shop/orders/exchange/ExchangeStatusBanner";
+import { MissingStatusBanner } from "@/components/shop/orders/missing/MissingStatusBanner";
 import {
   ShipmentHistory,
   ShipmentCard,
@@ -328,6 +329,12 @@ export default function OrderDetailPage() {
             active exchange (which is always the case for non-allowlisted
             phones, since the API never returns `activeExchange` for them). */}
         <ExchangeStatusBanner orderId={id} activeExchange={activeExchange} />
+
+        {/* Missing-item claim status banner — mirrors the exchange banner.
+            Renders nothing when there is no active claim (always the case
+            for non-allowlisted phones, since the API never returns
+            `activeMissing` for them). */}
+        <MissingStatusBanner orderId={id} activeMissing={activeMissing} />
 
         <div className="mt-6 flex items-end justify-between flex-wrap gap-3">
           <div>
