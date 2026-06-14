@@ -116,10 +116,17 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, sub_state: "replacement_arrived" });
   }
 
-  const status = ex.status;
+  // Audit uses its own status vocabulary for some states; normalize the
+  // ones that differ from inventre's exchange enum before validating.
+  // Audit's terminal "exchange_completed" is our "received" (completed).
+  const AUDIT_EXCHANGE_ALIASES: Record<string, ExchangeStatus> = {
+    exchange_completed: "received",
+  };
+  const status =
+    (ex.status && AUDIT_EXCHANGE_ALIASES[ex.status]) ?? ex.status;
   if (!isExchangeStatus(status)) {
     return NextResponse.json(
-      { error: `Unknown or unsupported status: ${status ?? "(missing)"}` },
+      { error: `Unknown or unsupported status: ${ex.status ?? "(missing)"}` },
       { status: 400 }
     );
   }
