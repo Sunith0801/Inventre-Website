@@ -248,7 +248,13 @@ export const config = {
     "/api/admin/((?!upload).*)",
     "/api/orders/:path*",
     "/api/orders",
-    "/api/returns/:path*",
+    // Skip /api/returns/upload — exchange photo uploads are multipart bodies
+    // that can exceed Next 15.5's silent 10 MB middleware-body cap. Past the
+    // cap the body is truncated and the route's req.formData() fails, surfacing
+    // as a 400 (or the request times out → 499/408 → "Failed to fetch" on the
+    // client). Same fix as /api/admin/upload above; auth is still enforced
+    // inside the route via requireParent().
+    "/api/returns/((?!upload).*)",
     "/api/returns",
     "/api/addresses/:path*",
     "/api/addresses",

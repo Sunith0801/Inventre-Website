@@ -9,16 +9,28 @@ import { uploadFile } from "@/lib/storage";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const MAX_FILES = 5;
-const MAX_BYTES = 8 * 1024 * 1024; // 8 MB per file
-const ALLOWED_MIME = new Set(["image/jpeg", "image/png", "image/webp"]);
+const MAX_BYTES = 50 * 1024 * 1024; // 50 MB per file
+// No total/per-section count limit (sections accept unlimited photos).
+// HEIC/HEIF included for iPhone uploads; browsers often send HEIC with an
+// empty/odd MIME, so the gate also accepts by filename extension.
+const ALLOWED_MIME = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/heic",
+  "image/heif",
+]);
+const ALLOWED_EXT = [".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"];
+const isAllowedImage = (f: File): boolean =>
+  ALLOWED_MIME.has(f.type) ||
+  ALLOWED_EXT.some((ext) => f.name.toLowerCase().endsWith(ext));
 
 /**
  * Parent-gated photo upload for exchange requests.
  *
  *   POST /api/returns/upload?orderId=<uuid>
  *   Content-Type: multipart/form-data
- *   field "files" (one or more) — image/jpeg | image/png | image/webp
+ *   field "files" (one or more) — jpeg | png | webp | heic/heif, ≤50 MB each
  *
  * Returns: { photos: [{ url, key }, ...] }
  *
@@ -76,22 +88,18 @@ export async function POST(req: Request) {
   if (files.length === 0) {
     return NextResponse.json({ error: "No files attached" }, { status: 400 });
   }
-  if (files.length > MAX_FILES) {
-    return NextResponse.json(
-      { error: `Upload at most ${MAX_FILES} files per request` },
-      { status: 400 }
-    );
-  }
   for (const f of files) {
     if (f.size > MAX_BYTES) {
       return NextResponse.json(
-        { error: `"${f.name}" exceeds 8 MB` },
+        { error: `"${f.name}" exceeds 50 MB` },
         { status: 400 }
       );
     }
-    if (!ALLOWED_MIME.has(f.type)) {
+    if (!isAllowedImage(f)) {
       return NextResponse.json(
-        { error: `"${f.name}" must be JPEG, PNG, or WebP (got ${f.type})` },
+        {
+          error: `"${f.name}" must be a JPEG, PNG, WebP, or HEIC image (got ${f.type || "unknown type"})`,
+        },
         { status: 400 }
       );
     }

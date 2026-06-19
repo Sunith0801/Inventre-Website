@@ -64,9 +64,25 @@ type StagedPhoto = {
   previewUrl: string;
 };
 
-const MAX_FILES = 5;
-const MAX_BYTES = 8 * 1024 * 1024;
-const ALLOWED = ["image/jpeg", "image/png", "image/webp"];
+const MAX_BYTES = 50 * 1024 * 1024; // 50 MB per photo
+// HEIC/HEIF are included so iPhone photos (the default capture format) upload
+// without forcing users to switch to "Most Compatible". No per-section or
+// total count limit — every section accepts as many photos as the customer
+// wants. Browsers frequently report an empty/odd MIME type for HEIC, so the
+// gate also falls back to the filename extension (see isAllowedImage).
+const ALLOWED = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/heic",
+  "image/heif",
+];
+const ALLOWED_EXT = [".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"];
+const isAllowedImage = (f: File): boolean => {
+  if (ALLOWED.includes(f.type)) return true;
+  const name = f.name.toLowerCase();
+  return ALLOWED_EXT.some((ext) => name.endsWith(ext));
+};
 
 type ReplacementMode = "sibling" | "same_fresh" | "different_describe";
 
@@ -292,24 +308,23 @@ export function ExchangeForm({
     setError(null);
     const incoming: StagedPhoto[] = [];
     for (const f of Array.from(files)) {
-      if (!ALLOWED.includes(f.type)) {
-        setError(`"${f.name}" must be JPEG, PNG, or WebP.`);
+      if (!isAllowedImage(f)) {
+        setError(`"${f.name}" must be a JPEG, PNG, WebP, or HEIC image.`);
         return;
       }
       if (f.size > MAX_BYTES) {
-        setError(`"${f.name}" exceeds 8 MB.`);
+        // Explicit popup so the 50 MB cap is unmissable on large camera
+        // files; the inline error stays as a persistent reminder.
+        window.alert(
+          `"${f.name}" is larger than 50 MB and was not added.\n\nPlease upload a photo under 50 MB.`
+        );
+        setError(`"${f.name}" exceeds 50 MB and was not added.`);
         return;
       }
       incoming.push({ file: f, category, previewUrl: URL.createObjectURL(f) });
     }
-    setPhotos((prev) => {
-      const next = [...prev, ...incoming];
-      if (next.length > MAX_FILES) {
-        setError(`At most ${MAX_FILES} photos total.`);
-        return next.slice(0, MAX_FILES);
-      }
-      return next;
-    });
+    // No count cap — each section accepts unlimited photos.
+    setPhotos((prev) => [...prev, ...incoming]);
   };
 
   const removePhoto = (idx: number) => {
@@ -386,23 +401,55 @@ export function ExchangeForm({
     setError(null);
     setSubmitting(true);
     try {
-      // 1. Upload photos once. The same photo bundle is attached to
-      //    every per-unit request — customer care can match by unit
-      //    later, and re-uploading would be wasteful.
-      const form = new FormData();
-      for (const p of photos) form.append("files", p.file, p.file.name);
-      const upRes = await fetch(`/api/returns/upload?orderId=${orderId}`, {
-        method: "POST",
-        body: form,
-      });
-      if (!upRes.ok) {
-        const j = await upRes.json().catch(() => ({}));
-        throw new Error(j.error ?? `Upload failed (${upRes.status})`);
+      // 1. Upload photos in size-bounded BATCHES rather than one giant
+      //    multipart request. With 50 MB photos and no count cap a single
+      //    request could be hundreds of MB and get rejected upstream (nginx
+      //    client_max_body_size) before reaching the app. We pack files in
+      //    order until a batch would exceed BATCH_BYTES, then flush; a single
+      //    file larger than the target still goes alone (so nginx only needs
+      //    to clear one max-size photo, not the whole bundle). Batches are
+      //    sent sequentially and their results concatenated IN ORDER, so the
+      //    returned URL index still lines up 1:1 with photos[i].category.
+      const BATCH_BYTES = 10 * 1024 * 1024; // ~10 MB target per request
+      const batches: StagedPhoto[][] = [];
+      let cur: StagedPhoto[] = [];
+      let curBytes = 0;
+      for (const p of photos) {
+        if (cur.length > 0 && curBytes + p.file.size > BATCH_BYTES) {
+          batches.push(cur);
+          cur = [];
+          curBytes = 0;
+        }
+        cur.push(p);
+        curBytes += p.file.size;
       }
-      const uploadPayload = (await upRes.json()) as {
-        photos: { url: string; key: string }[];
-      };
-      const taggedPhotos = uploadPayload.photos.map((p, i) => ({
+      if (cur.length > 0) batches.push(cur);
+
+      const uploaded: { url: string; key: string }[] = [];
+      for (const batch of batches) {
+        const form = new FormData();
+        for (const p of batch) form.append("files", p.file, p.file.name);
+        const upRes = await fetch(`/api/returns/upload?orderId=${orderId}`, {
+          method: "POST",
+          body: form,
+        });
+        if (!upRes.ok) {
+          const j = await upRes.json().catch(() => ({}));
+          // nginx rejects an over-limit body with 413 before the route runs,
+          // so there's no JSON — surface a clear message in that case.
+          const msg =
+            j.error ??
+            (upRes.status === 413
+              ? "A photo was too large to upload. Please use photos under 50 MB."
+              : `Upload failed (${upRes.status})`);
+          throw new Error(msg);
+        }
+        const j = (await upRes.json()) as {
+          photos: { url: string; key: string }[];
+        };
+        uploaded.push(...j.photos);
+      }
+      const taggedPhotos = uploaded.map((p, i) => ({
         url: p.url,
         key: p.key,
         category: photos[i]?.category ?? "other",
@@ -1057,10 +1104,11 @@ export function ExchangeForm({
       {selectionConfirmed && (
         <div>
           <p className="text-[12px] font-semibold uppercase tracking-wider text-ink-700">
-            Photos · {photos.length} / {MAX_FILES}
+            Photos · {photos.length} added
           </p>
           <p className="mt-1 text-[11.5px] text-ink-500">
-            Clear photos in good lighting help us approve faster.
+            Clear photos in good lighting help us approve faster. Add as many as
+            you like to each section (JPEG, PNG, WebP or HEIC, up to 50 MB each).
           </p>
 
           {photos.length > 0 && (
@@ -1093,8 +1141,8 @@ export function ExchangeForm({
             </div>
           )}
 
-          {photos.length < MAX_FILES && (
-            <div className="mt-3 space-y-1.5">
+          {/* Always shown — sections accept unlimited photos. */}
+          <div className="mt-3 space-y-1.5">
               {PHOTO_CATEGORIES.map((c) => {
                 const have = photos.filter((p) => p.category === c.value).length;
                 return (
@@ -1121,12 +1169,11 @@ export function ExchangeForm({
                 );
               })}
             </div>
-          )}
 
           <input
             ref={fileInputRef}
             type="file"
-            accept={ALLOWED.join(",")}
+            accept={[...ALLOWED, ...ALLOWED_EXT].join(",")}
             multiple
             className="hidden"
             onChange={(e) => stageFiles(staging || "other", e.target.files)}
