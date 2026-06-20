@@ -14,6 +14,7 @@ import {
 import { OrderStatusForm } from "@/components/admin/OrderStatusForm";
 import { OrderActions } from "@/components/admin/OrderActions";
 import { DeleteOrderButton } from "@/components/admin/DeleteOrderButton";
+import { CancelOrderButton } from "@/components/admin/CancelOrderButton";
 import { RefreshCcaButton } from "@/components/admin/RefreshCcaButton";
 import {
   PageHeader,
@@ -197,6 +198,11 @@ export default async function AdminOrderDetailPage({
         actions={
           <div className="flex items-center gap-2">
             <OrderStatusForm orderId={order.id} status={order.status} />
+            <CancelOrderButton
+              orderId={order.id}
+              orderNumber={order.orderNumber}
+              status={order.status}
+            />
             <DeleteOrderButton
               orderId={order.id}
               orderNumber={order.orderNumber}

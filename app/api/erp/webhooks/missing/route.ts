@@ -67,6 +67,17 @@ export async function POST(req: Request) {
   }
   const cl = env.claim ?? {};
 
+  // Create event: customer-care raised this missing-item claim manually in
+  // audit (no inventre row exists yet). Build one so the parent sees it on
+  // their order page. Returns the new claim id for audit to pin as ecom_id.
+  if (env.event_type === "missing.created") {
+    const { createMissingFromAudit } = await import("@/lib/audit-inbound");
+    const res = await createMissingFromAudit(
+      cl as import("@/lib/audit-inbound").AuditMissingCreate
+    );
+    return NextResponse.json(res.body, { status: res.status });
+  }
+
   // Sub-state event: warehouse → school dispatch landed.
   if (env.event_type === "missing.replacement_arrived") {
     const arrivedAt = cl.replacement_arrived_at

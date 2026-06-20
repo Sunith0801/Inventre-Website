@@ -192,10 +192,24 @@ async function checkBookkitLimit(
   // Run school check + variant lookup + cart + order lookups in parallel.
   // The prior-orders lookup is scoped to (parentId, studentId) so siblings
   // are not penalised for each other's redemptions — the error message
-  // promises "per student", which is what we now enforce. When studentId
-  // is null (legacy session) we skip the order lookup entirely; the cart
-  // gate below still runs.
-  const activeStatuses = ["placed", "confirmed", "packed", "shipped", "delivered"] as const;
+  // promises "per student", which is what we enforce. When studentId is
+  // null (legacy session) we skip the order lookup entirely; the cart gate
+  // below still runs.
+  //
+  // A bookkit only counts as "already redeemed" when the order was actually
+  // PAID or fulfilled — NOT for a bare `placed`+`pending` checkout that
+  // never completed payment. Without this, repeated abandoned attempts
+  // (each carrying the free bookkit alongside paid uniforms) lock a student
+  // out of a bookkit they never received — exactly what happened to
+  // 23SMS0681 (4 unpaid ₹3860 orders, gateway "No Record Found"). A genuine
+  // ₹0 complimentary bookkit short-circuits to paid+confirmed in the
+  // create-order zero-value path, so real redemptions still count.
+  const redeemedStatuses: ("confirmed" | "packed" | "shipped" | "delivered")[] = [
+    "confirmed",
+    "packed",
+    "shipped",
+    "delivered",
+  ];
   const [schoolRow, variantRow, cartRow, priorOrders] = await Promise.all([
     db.select({ schoolCode: schools.schoolCode }).from(schools).where(eq(schools.id, schoolId)).limit(1),
     db
@@ -209,7 +223,10 @@ async function checkBookkitLimit(
       ? db.select({ id: orders.id }).from(orders).where(and(
           eq(orders.parentId, parentId),
           eq(orders.studentId, studentId),
-          inArray(orders.status, activeStatuses),
+          or(
+            eq(orders.paymentStatus, "paid"),
+            inArray(orders.status, redeemedStatuses),
+          ),
         ))
       : Promise.resolve([] as { id: string }[]),
   ]);

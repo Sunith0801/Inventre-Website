@@ -2,15 +2,12 @@ import { desc, and, eq, gte, ilike, or } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { db } from "@/db/client";
 import { orderNotifications } from "@/db/schema";
+import { PageHeader, Card, Th } from "@/components/admin/ui/primitives";
 import {
-  PageHeader,
-  Card,
-  Badge,
-  Th,
-  Td,
-  Tr,
-} from "@/components/admin/ui/primitives";
-import { NotificationResendButton } from "@/components/admin/NotificationResendButton";
+  NotificationOrderRow,
+  type ChannelRow,
+} from "@/components/admin/NotificationOrderRow";
+import { AutoRefresh } from "@/components/admin/AutoRefresh";
 import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
 
 export const dynamic = "force-dynamic";
@@ -89,6 +86,52 @@ export default async function OrderNotificationsPage({
     db.$count(orderNotifications, conds.length ? and(...conds) : undefined),
   ]);
 
+  // Collapse the flat per-attempt rows into one row per sale order, keeping
+  // the latest attempt for each channel. Rows arrive ordered by createdAt
+  // desc, so the first time an order is seen is its most recent activity and
+  // Map insertion order preserves that ordering for display.
+  type Group = {
+    orderId: string;
+    orderNumber: string;
+    createdAt: Date | null;
+    email: ChannelRow | null;
+    sms: ChannelRow | null;
+  };
+  const toChannelRow = (r: (typeof rows)[number]): ChannelRow => ({
+    id: r.id,
+    recipient: r.recipient,
+    status: r.status,
+    vendorId: r.vendorId,
+    error: r.error,
+    attempt: r.attempt,
+    subject: r.subject,
+    body: r.body,
+  });
+  const groups = new Map<string, Group>();
+  for (const r of rows) {
+    let g = groups.get(r.orderId);
+    if (!g) {
+      g = {
+        orderId: r.orderId,
+        orderNumber: r.orderNumber,
+        createdAt: r.createdAt,
+        email: null,
+        sms: null,
+      };
+      groups.set(r.orderId, g);
+    }
+    if (r.createdAt && (!g.createdAt || r.createdAt > g.createdAt)) {
+      g.createdAt = r.createdAt;
+    }
+    const ch = r.channel === "sms" ? "sms" : "email";
+    const existing = g[ch];
+    // Higher attempt = more recent send for this channel.
+    if (!existing || r.attempt >= existing.attempt) {
+      g[ch] = toChannelRow(r);
+    }
+  }
+  const orderRows = [...groups.values()];
+
   const totalPages = Math.max(1, Math.ceil(Number(total) / PAGE_SIZE));
 
   function qs(overrides: Record<string, string | undefined>) {
@@ -102,10 +145,11 @@ export default async function OrderNotificationsPage({
 
   return (
     <div>
+      <AutoRefresh seconds={15} />
       <PageHeader
         eyebrow="Engagement"
         title="Order Notifications"
-        description={`${Number(total).toLocaleString()} total send attempts · order-confirmation SMS & email (times in IST)`}
+        description={`${Number(total).toLocaleString()} total send attempts · order-confirmation SMS & email (times in IST) · auto-refreshes every 15s`}
       />
 
       {/* Filters */}
@@ -166,66 +210,31 @@ export default async function OrderNotificationsPage({
               <tr>
                 <Th>Time (IST)</Th>
                 <Th>Order</Th>
-                <Th>Channel</Th>
-                <Th>Recipient</Th>
-                <Th>Status</Th>
-                <Th>Vendor ID</Th>
-                <Th>Error</Th>
-                <Th>Attempt</Th>
-                {canWrite && <Th>{""}</Th>}
+                <Th>Email</Th>
+                <Th>SMS</Th>
               </tr>
             </thead>
             <tbody>
-              {rows.length === 0 && (
+              {orderRows.length === 0 && (
                 <tr>
                   <td
-                    colSpan={canWrite ? 9 : 8}
+                    colSpan={4}
                     className="px-4 py-8 text-center text-ink-400"
                   >
                     No notifications match these filters.
                   </td>
                 </tr>
               )}
-              {rows.map((r) => (
-                <Tr key={r.id}>
-                  <Td className="whitespace-nowrap">{fmtIst(r.createdAt)}</Td>
-                  <Td>
-                    <a
-                      href={`/admin/orders/${r.orderId}`}
-                      className="font-semibold text-ink-900 hover:underline"
-                    >
-                      {r.orderNumber}
-                    </a>
-                  </Td>
-                  <Td>
-                    <Badge tone={r.channel === "sms" ? "info" : "violet"} size="sm">
-                      {r.channel.toUpperCase()}
-                    </Badge>
-                  </Td>
-                  <Td className="whitespace-nowrap">{r.recipient || "—"}</Td>
-                  <Td>
-                    <Badge
-                      tone={r.status === "sent" ? "success" : "danger"}
-                      size="sm"
-                    >
-                      {r.status === "sent" ? "Sent" : "Failed"}
-                    </Badge>
-                  </Td>
-                  <Td className="max-w-[140px] truncate" title={r.vendorId ?? ""}>
-                    {r.vendorId ?? "—"}
-                  </Td>
-                  <Td className="max-w-[220px] truncate text-red-700" title={r.error ?? ""}>
-                    {r.error ?? "—"}
-                  </Td>
-                  <Td>{r.attempt}</Td>
-                  {canWrite && (
-                    <Td>
-                      {r.status === "failed" && (
-                        <NotificationResendButton logId={r.id} />
-                      )}
-                    </Td>
-                  )}
-                </Tr>
+              {orderRows.map((g) => (
+                <NotificationOrderRow
+                  key={g.orderId}
+                  orderId={g.orderId}
+                  orderNumber={g.orderNumber}
+                  time={fmtIst(g.createdAt)}
+                  email={g.email}
+                  sms={g.sms}
+                  canWrite={canWrite}
+                />
               ))}
             </tbody>
           </table>

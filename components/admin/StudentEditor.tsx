@@ -64,6 +64,10 @@ const FIELD_LABEL: Record<string, string> = {
 
 type Errors = Record<string, string>;
 
+// Fallback section list shown when a school/grade has no sections configured
+// in school_grade_mappings. Standard A–H.
+const DEFAULT_SECTIONS = ["A", "B", "C", "D", "E", "F", "G", "H"];
+
 type GradeMapping = {
   grade: string;              // canonical (e.g. "Grade 1") — what the API stores
   displayName: string | null; // school-given label (e.g. "Class I" or "Grade UKG")
@@ -273,6 +277,14 @@ export function StudentEditor({
     start(async () => {
       const url = mode === "create" ? "/api/admin/data/students" : `/api/admin/data/students/${studentId}`;
       const body = Object.fromEntries(Object.entries(form).map(([k, v]) => [k, typeof v === "string" && v === "" ? null : v]));
+      // On edit, don't re-send the email if it's unchanged. Saving any field
+      // re-runs the DB email-normaliser trigger (migration 0058), which NULLs
+      // any address that fails its strict regex — so an unrelated edit (e.g.
+      // changing the grade) would silently wipe a still-imperfect but valid
+      // student email. Only send it when the admin actually edited it.
+      if (mode === "edit" && form.studentEmailId === (initial?.studentEmailId ?? "")) {
+        delete body.studentEmailId;
+      }
       const r = await fetch(url, {
         method: mode === "create" ? "POST" : "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -378,7 +390,11 @@ export function StudentEditor({
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
-  const sectionChoices = sectionList.map((s) => ({ value: s, label: s }));
+  // When the school hasn't configured sections for this grade in
+  // school_grade_mappings, fall back to the standard A–H list so the admin
+  // always has something to pick instead of an empty "no sections" dropdown.
+  const effectiveSections = sectionList.length > 0 ? sectionList : DEFAULT_SECTIONS;
+  const sectionChoices = effectiveSections.map((s) => ({ value: s, label: s }));
   if (form.section && !sectionChoices.some((c) => c.value === form.section)) {
     sectionChoices.unshift({ value: form.section, label: `${form.section} (legacy)` });
   }
@@ -500,9 +516,7 @@ export function StudentEditor({
               value: "",
               label: !form.grade
                 ? "— select a grade first —"
-                : sectionChoices.length === 0
-                  ? "— no sections defined —"
-                  : "— select section —",
+                : "— select section —",
             },
             ...sectionChoices,
           ]}

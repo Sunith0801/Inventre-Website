@@ -16,6 +16,7 @@
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "db:seed": "tsx db/seed.ts",
+    "db:backfill:erp": "tsx --conditions=react-server scripts/backfill-erp-reemit.ts",
     "e2e": "tsx scripts/e2e.ts"
   },
   "dependencies": {

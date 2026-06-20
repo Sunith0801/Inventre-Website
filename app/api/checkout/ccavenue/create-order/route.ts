@@ -38,6 +38,15 @@ const Body = z.object({
   address: Address,
 });
 
+// Celestiia's students were added via the admin bulk-import, which stores the
+// REAL grade verbatim in students.grade/class (no ERP +3 offset). Every other
+// school's `class` carries the ERP-internal value that `erpGradeToReal()`
+// (applied in lib/session.ts) translates down by 3. Running that translation on
+// Celestiia's already-real grade shifts it 3 levels too low on the sales order
+// (e.g. Grade 1 → Nursery). So for Celestiia ONLY we pass students.grade as-is;
+// all other schools keep the translated value untouched.
+const CELESTIIA_SLUG = "cel-the-celestiia-school";
+
 export async function POST(req: Request) {
   // CCAvenue config is only required for non-zero baskets — zero-value
   // baskets short-circuit to a "complimentary" payment further down and
@@ -138,7 +147,10 @@ export async function POST(req: Request) {
         studentId: sid,
         schoolId: s.school.id,
         schoolName: s.school.name,
-        gradeClass: s.class ?? null,
+        gradeClass:
+          s.school.slug === CELESTIIA_SLUG
+            ? (s.grade ?? null) // Celestiia: pass students.grade verbatim, no ±offset
+            : (s.class ?? null), // all other schools: ERP→real translated value (unchanged)
         gradeRaw: s.grade ?? null,
         lines: [] as CartLine[],
       };

@@ -45,18 +45,17 @@ function receiverName(shippingAddress: unknown): string | null {
 }
 
 /**
- * The greeting name for an order's notifications. parents.name went blank
- * on a chunk of orders after a late-May 2026 checkout regression, so we
- * fall back to the order's shipping receiverName (a required checkout
- * field — present on 100% of recent blank-parent orders) and then the
- * linked student's name. sendOrderConfirmationSms still does the
- * first-word + 30-char trim, so pass the full name through.
+ * The greeting name for an order's notifications. We greet the STUDENT by
+ * name (the order is for them); fall back to the order's shipping
+ * receiverName (a required checkout field) and then the parent name for the
+ * rare orders with no linked student. sendOrderConfirmationSms trims to
+ * 30 chars, so pass the full name through.
  */
 function resolveDisplayName(order: OrderRow, parent: ParentRow): string | null {
   return (
-    parent.name?.trim() ||
-    receiverName(order.shippingAddress)?.trim() ||
     order.studentName?.trim() ||
+    receiverName(order.shippingAddress)?.trim() ||
+    parent.name?.trim() ||
     null
   );
 }

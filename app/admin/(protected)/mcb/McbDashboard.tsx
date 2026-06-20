@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { GraduationCap, Wallet } from "lucide-react";
+import { GraduationCap, Wallet, Download } from "lucide-react";
 import { PageHeader, Card, Th, Td, Tr, Badge, EmptyState, Button } from "@/components/admin/ui/primitives";
 import GrantAccessButton from "./GrantAccessButton";
 import { mcbGenderToLabel, mcbGradeToCbse } from "@/lib/mcb/mappings";
@@ -298,6 +298,16 @@ export default function McbDashboard({ initialData }: { initialData: InitialData
     return m;
   }, [data.counts]);
 
+  // Export URL carries the active filters (minus pagination — the export
+  // route emits every matching row). Built to match /api/admin/mcb/data's
+  // param contract so the spreadsheet equals the filtered on-screen view.
+  const exportHref = useMemo(() => {
+    const u = new URLSearchParams({ tab, school, access, from, to });
+    if (q) u.set("q", q);
+    if (month) u.set("month", month);
+    return `/api/admin/mcb/export?${u.toString()}`;
+  }, [tab, school, access, from, to, q, month]);
+
   const total = data.total;
   const lastPage = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const offset = (data.page - 1) * PAGE_SIZE;
@@ -366,6 +376,11 @@ export default function McbDashboard({ initialData }: { initialData: InitialData
           <span className="self-center text-[13px] text-rose-700 ml-2">{error}</span>
         )}
         <div className="ml-auto flex items-center gap-2">
+          <a href={exportHref} download>
+            <Button variant="secondary" icon={<Download className="h-3.5 w-3.5" />}>
+              Export Excel
+            </Button>
+          </a>
           <input
             type="search"
             value={qInput}

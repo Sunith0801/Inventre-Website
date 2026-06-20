@@ -101,3 +101,14 @@ backups/students-*.csv
 
 # Ad-hoc scratch workspaces created during data migrations.
 tmp/
+
+# --- data artifacts (do not commit) ---
+DEV_PROD_DIFF_*.md
+SESSION_LOG_*.md
+audit_grade_backfill_*.csv
+celes_kidlink_orders_review_*.csv
+legacy_grade_backup_*.csv
+stranded_*_orders_*.csv
+tsus-magicbox-remap-rollback-*.csv
+unpriced_skus_*.csv
+Screenshot *.png

@@ -128,7 +128,16 @@ export async function applyStockChange(
           updatedAt: new Date(),
         })
         .where(eq(bins.id, existing.id));
-    } else {
+    } else if (actualQty !== 0 || reservedQty !== 0) {
+      // Only mint a bin row when the change actually establishes stock.
+      // A no-op result (0 actual / 0 reserved) on a variant that never had a
+      // bin must NOT create one: cancelling an order containing a made-to-order
+      // item runs order_release (reservedDelta -qty) on a never-reserved
+      // variant, which clamps to 0/0 and previously inserted a phantom 0/0 bin.
+      // That phantom flips variant-resolver's "untracked = available" default
+      // (99999) into available=0, hard-blocking every future buyer at checkout.
+      // Skipping the insert keeps the variant untracked/available. The ledger
+      // row below still records the event for audit.
       await tx.insert(bins).values({
         variantId,
         warehouseId,

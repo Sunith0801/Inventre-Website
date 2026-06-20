@@ -254,6 +254,13 @@ type FamilyIdentity = {
    *  year/serial digits (e.g. "AW240005" vs "WF240005" vs "24KS0005"
    *  all share digits "240005"). */
   enrollKeys: string[];
+  /** ERP customer names explicitly bound to my students via
+   *  students.customer_link. This is the same bridge the admin student
+   *  page uses (resolveErpCustomerNames) — it matches orders placed under
+   *  a guest-style ERP customer (e.g. "VARUNTEJ SILIVERI") that shares no
+   *  phone / erp_name / enrollment with the student record. Student-scoped,
+   *  so it can't leak a co-guardian's unrelated orders. */
+  customerLinks: string[];
 };
 
 async function getFamilyIdentity(parentId: string): Promise<FamilyIdentity | null> {
@@ -263,6 +270,7 @@ async function getFamilyIdentity(parentId: string): Promise<FamilyIdentity | nul
     WITH my_students AS (
       SELECT s.id::text  AS id,
              s.erp_name  AS erp_name,
+             NULLIF(s.customer_link, '') AS customer_link,
              -- Composite enrollment key: lowercase alpha component + ':' +
              -- digit component. Audit and our local rows sometimes carry
              -- different orderings ("KS240005" vs "24KS0005") but the
@@ -308,7 +316,8 @@ async function getFamilyIdentity(parentId: string): Promise<FamilyIdentity | nul
       ARRAY(SELECT id  FROM all_parents)                                                  AS parent_ids,
       ARRAY(SELECT id  FROM my_students)                                                  AS student_ids,
       ARRAY(SELECT erp_name FROM my_students WHERE erp_name IS NOT NULL AND erp_name<>'') AS student_erp_names,
-      ARRAY(SELECT enroll_key FROM my_students WHERE enroll_key <> ':')                   AS enroll_keys
+      ARRAY(SELECT enroll_key FROM my_students WHERE enroll_key <> ':')                   AS enroll_keys,
+      ARRAY(SELECT DISTINCT customer_link FROM my_students WHERE customer_link IS NOT NULL) AS customer_links
   `);
   const row = ((r?.rows ?? r ?? [])[0] ?? {}) as {
     phones?: string[];
@@ -316,6 +325,7 @@ async function getFamilyIdentity(parentId: string): Promise<FamilyIdentity | nul
     student_ids?: string[];
     student_erp_names?: string[];
     enroll_keys?: string[];
+    customer_links?: string[];
   };
   return {
     myPhone: phone,
@@ -324,6 +334,7 @@ async function getFamilyIdentity(parentId: string): Promise<FamilyIdentity | nul
     studentIds: row.student_ids ?? [],
     studentErpNames: row.student_erp_names ?? [],
     enrollKeys: row.enroll_keys ?? [],
+    customerLinks: row.customer_links ?? [],
   };
 }
 
@@ -358,6 +369,7 @@ export async function listParentOrdersFromErp(
   const studentIds = sqlInOrNull(fam.studentIds);
   const studentErpNames = sqlInOrNull(fam.studentErpNames);
   const enrollKeys = sqlInOrNull(fam.enrollKeys);
+  const customerLinks = sqlInOrNull(fam.customerLinks);
 
   // Source of truth = LOCAL `orders` table for any parent_id / student_id
   // in this family UNION mirror rows matched by family phone, the
@@ -421,6 +433,15 @@ export async function listParentOrdersFromErp(
               -- which share the same trailing digits across schools.
              WHERE right(regexp_replace(coalesce(so.contact_mobile,''), '\\D', '', 'g'), 10) = ${fam.myPhone}
                 OR so.customer IN ${studentErpNames}
+                -- Guest-style orders placed under a separate ERP customer
+                -- that is explicitly bound to my student via
+                -- students.customer_link (same bridge the admin student page
+                -- uses). Student-scoped — only my own students' links — so
+                -- it surfaces stranded orders without leaking co-guardians'
+                -- unrelated orders. Fixes accounts where the order's
+                -- customer (e.g. "VARUNTEJ SILIVERI") shares no phone /
+                -- erp_name / enrollment with the linked student record.
+                OR so.customer IN ${customerLinks}
                 OR (
                   cu.custom_enrollment_number IS NOT NULL
                   AND lower(regexp_replace(cu.custom_enrollment_number, '[^a-zA-Z]', '', 'g'))
@@ -718,6 +739,7 @@ export async function getParentOrderDetailFromErp(
   if (!fam) return null;
   const studentErpNames = sqlInOrNull(fam.studentErpNames);
   const enrollKeys = sqlInOrNull(fam.enrollKeys);
+  const customerLinks = sqlInOrNull(fam.customerLinks);
 
   const [o] = rows<{
     order_no: string;
@@ -781,6 +803,10 @@ export async function getParentOrderDetailFromErp(
         AND (
           right(regexp_replace(coalesce(so.contact_mobile,''), '\\D', '', 'g'), 10) = ${fam.myPhone}
           OR so.customer IN ${studentErpNames}
+          -- Guest-style order bound to my student via customer_link (mirrors
+          -- the list query in listParentOrdersFromErp; keeps the detail page
+          -- reachable for the same orders the list now surfaces).
+          OR so.customer IN ${customerLinks}
           OR (
             c.custom_enrollment_number IS NOT NULL
             AND lower(regexp_replace(c.custom_enrollment_number, '[^a-zA-Z]', '', 'g'))

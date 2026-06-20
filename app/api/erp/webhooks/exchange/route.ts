@@ -85,6 +85,18 @@ export async function POST(req: Request) {
   }
   const ex = env.exchange ?? {};
 
+  // Create event: customer-care raised this exchange manually in audit
+  // (no inventre row exists yet). Build one so the parent sees it on their
+  // order page. Returns the new returns.id so audit can pin it as ecom_id
+  // and route subsequent status flips through the normal channel.
+  if (env.event_type === "exchange.created") {
+    const { createExchangeFromAudit } = await import("@/lib/audit-inbound");
+    const res = await createExchangeFromAudit(
+      ex as import("@/lib/audit-inbound").AuditExchangeCreate
+    );
+    return NextResponse.json(res.body, { status: res.status });
+  }
+
   // Sub-state event: warehouse → school dispatch landed. Stamp
   // `replacement_arrived_at` on the matching returns row without
   // changing its status, so the customer page can render an

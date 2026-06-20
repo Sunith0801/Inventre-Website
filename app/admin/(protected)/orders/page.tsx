@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { Download, ShoppingBag } from "lucide-react";
+import { ShoppingBag } from "lucide-react";
 import { db } from "@/db/client";
 import { sql } from "drizzle-orm";
 import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
@@ -15,6 +15,7 @@ import {
 import { SyncFromErpButton } from "@/components/admin/SyncFromErpButton";
 import { OrdersBulkRefresh } from "@/components/admin/OrdersBulkRefresh";
 import { AutoSubmitForm } from "@/components/admin/AutoSubmitForm";
+import { ExportOrdersButton } from "@/components/admin/ExportOrdersButton";
 
 export const dynamic = "force-dynamic";
 
@@ -368,8 +369,8 @@ export default async function AdminOrdersPage({
         description={`${total.toLocaleString("en-IN")} orders to deliver — from ERPNext (Inventre Edu Services Pvt Ltd).`}
         actions={
           <div className="flex items-center gap-2">
-            <a
-              href={`/admin/orders/export${(() => {
+            <ExportOrdersButton
+              baseHref={`/admin/orders/export${(() => {
                 const p = new URLSearchParams();
                 if (term) p.set("q", term);
                 if (statusBucket) p.set("statusBucket", statusBucket);
@@ -378,11 +379,7 @@ export default async function AdminOrdersPage({
                 if (to) p.set("to", to);
                 return p.toString() ? `?${p}` : "";
               })()}`}
-            >
-              <Button variant="secondary" icon={<Download className="h-3.5 w-3.5" />}>
-                Export Excel
-              </Button>
-            </a>
+            />
             {guard.role === "super" ? <SyncFromErpButton /> : null}
           </div>
         }

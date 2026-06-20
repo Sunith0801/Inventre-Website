@@ -9,6 +9,31 @@ const DLT_TEMPLATE_ID = "380462";
 const DLT_CONTENT_ID = "1107173978479110904";
 const SENDER_ID = "IESPL";
 
+const SMS_TIMEOUT_MS = 8000;
+const SMS_ATTEMPTS = 2;
+const SMS_RETRY_DELAY_MS = 400;
+
+/**
+ * POST to the gateway with a per-attempt timeout and one retry. Transient
+ * network failures ("fetch failed") were ~99% of our send_failed logs and
+ * almost always succeed on an immediate retry; without a timeout a hung
+ * connection would block the request indefinitely.
+ */
+async function fetchSms(url: string): Promise<Response> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < SMS_ATTEMPTS; attempt++) {
+    try {
+      return await fetch(url, { signal: AbortSignal.timeout(SMS_TIMEOUT_MS) });
+    } catch (err) {
+      lastErr = err;
+      if (attempt < SMS_ATTEMPTS - 1) {
+        await new Promise((r) => setTimeout(r, SMS_RETRY_DELAY_MS));
+      }
+    }
+  }
+  throw lastErr;
+}
+
 export async function sendOtpSms(
   phone: string,
   otp: string
@@ -38,7 +63,7 @@ export async function sendOtpSms(
     dltContentId: DLT_CONTENT_ID,
   });
 
-  const res = await fetch(`${baseUrl}?${params}`);
+  const res = await fetchSms(`${baseUrl}?${params}`);
   // Vendor returns JSON even on errors
   const json = (await res.json()) as {
     transactionId?: number;
@@ -68,9 +93,10 @@ export async function sendOtpSms(
  * SERVICES PVT LTD" footer — all part of the registered skeleton and must
  * survive any edit here.)
  *
- * DLT variables are capped at 30 chars — name collapses to its first word
- * (fallback "Customer"), the order number is truncated, and var3 carries
- * the tracking link as a bare domain (the full https:// URL is 31 chars).
+ * DLT variables are capped at 30 chars — the full name is used (fallback
+ * "Customer") truncated to 30, the order number is truncated, and var3
+ * carries the tracking link as a bare domain (the full https:// URL is 31
+ * chars).
  *
  * Credentials: SMS_TRANS_API_USERNAME/PASSWORD when the transactional
  * account differs from the OTP one, else the shared SMS_API_USERNAME/
@@ -92,7 +118,11 @@ export async function sendOrderConfirmationSms(
     process.env.SMS_API_URL ??
     "https://control.arihantglobal.in/fe/api/v1/send";
 
-  const var1 = (parentName?.trim().split(/\s+/)[0] || "Customer").slice(0, 30);
+  // DLT variables cap at 30 chars; use the full name (collapsing internal
+  // whitespace) truncated to fit, not just the first word.
+  const var1 = (
+    parentName?.trim().replace(/\s+/g, " ") || "Customer"
+  ).slice(0, 30);
   const var2 = orderNumber.slice(0, 30);
   const var3 = "inventre.in/shop/orders";
   const text = `Dear ${var1}, Your Order has been successful with Order ID ${var2}. You will receive updates once it is processed. You can also track your order here ${var3} -INVENTRE EDU SERVICES PVT LTD`;
@@ -114,7 +144,7 @@ export async function sendOrderConfirmationSms(
     dltContentId: ORDER_CONFIRM_DLT_CONTENT_ID,
   });
 
-  const res = await fetch(`${baseUrl}?${params}`);
+  const res = await fetchSms(`${baseUrl}?${params}`);
   const json = (await res.json()) as {
     transactionId?: number;
     state?: string;

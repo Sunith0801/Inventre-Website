@@ -65,8 +65,28 @@ const ENDPOINT_NAME = "erp-bridge";
 // All ERP env reads go through lib/erp-config. Never read process.env.ERP_*
 // directly here so the staging↔prod switch stays a one-variable change.
 
+// The event sequence only needs to be created once per process, not on every
+// emit. Issuing `CREATE SEQUENCE IF NOT EXISTS` per call took a catalog lock
+// that serialized concurrent emitters (and spammed NOTICE logs). Cache the
+// ensure-promise so the DDL runs at most once; concurrent first-callers all
+// await the same promise.
+let eventSeqEnsured: Promise<void> | null = null;
+function ensureEventSeq(): Promise<void> {
+  if (!eventSeqEnsured) {
+    eventSeqEnsured = db
+      .execute(sql`CREATE SEQUENCE IF NOT EXISTS erp_event_seq`)
+      .then(() => undefined)
+      .catch((e) => {
+        // Reset on failure so the next call retries rather than caching a reject.
+        eventSeqEnsured = null;
+        throw e;
+      });
+  }
+  return eventSeqEnsured;
+}
+
 async function nextSeq(): Promise<number> {
-  await db.execute(sql`CREATE SEQUENCE IF NOT EXISTS erp_event_seq`);
+  await ensureEventSeq();
   const result: any = await db.execute(
     sql`SELECT nextval('erp_event_seq') AS seq`
   );
@@ -116,6 +136,19 @@ function sign(secret: string, body: string): string {
 function isoDate(d: Date | string | null | undefined): string {
   const dd = d instanceof Date ? d : d ? new Date(d) : new Date();
   return dd.toISOString().slice(0, 10);
+}
+
+/**
+ * Full ISO-8601 timestamp WITH timezone (UTC "Z"), e.g. "2026-06-01T01:59:00.000Z".
+ * Unlike `isoDate` (date-only, for ERPNext's date-typed `transaction_date`),
+ * this preserves the actual time-of-day so audit can record the order's real
+ * placed moment. Returns null when no timestamp is available so the payload
+ * key is explicitly null rather than silently "now".
+ */
+function isoTimestamp(d: Date | string | null | undefined): string | null {
+  if (d == null) return null;
+  const dd = d instanceof Date ? d : new Date(d);
+  return Number.isNaN(dd.getTime()) ? null : dd.toISOString();
 }
 
 /** Build the ERPNext-shaped `data` blob the ingest router expects. */
@@ -315,13 +348,28 @@ export async function buildErpOrderPayload(
       status: order.status,
       payment_status: order.paymentStatus,
       transaction_date: isoDate(order.placedAt ?? order.createdAt),
+      // Full timestamp of when the order was actually placed (date-only
+      // `transaction_date` above loses the time-of-day). `placedAt` is the
+      // real checkout moment; fall back to row creation if it was never
+      // stamped. ISO-8601 UTC, e.g. "2026-06-01T01:59:00.000Z".
+      placed_at: isoTimestamp(order.placedAt ?? order.createdAt),
       currency: "INR",
       subtotal: order.subtotal,
       tax: order.tax,
       total: order.total,
       school_code: school?.schoolCode ?? null,
       school_name: order.schoolNameSnapshot ?? school?.name ?? null,
-      grade: order.gradeSnapshot ?? student?.grade ?? null,
+      // Send the original student grade (students.grade) to audit, not the
+      // translated gradeSnapshot. Audit uses this value verbatim (the master
+      // override + re-stamp were removed), so it must be the real grade.
+      // Quantum Leap (QLPHP) is the one school whose students.grade column was
+      // imported one band low; its real grade lives in students.class. Send
+      // class for QLP only, grade for every other school. See memory
+      // audit-uses-inventre-grade-verbatim.
+      grade:
+        (student?.schoolCode ?? school?.schoolCode) === "QLPHP"
+          ? (student?.class ?? student?.grade ?? order.gradeSnapshot ?? null)
+          : (student?.grade ?? order.gradeSnapshot ?? null),
       magic_box: hasMagicBox,
       customer: {
         name: parent
@@ -539,6 +587,38 @@ export async function replayDelivery(deliveryId: number): Promise<{ ok: boolean;
 // (outside the order flow) needs to land on the ERP. /api/ecom/ingest
 // already accepts these event types; this just wires the emit path.
 
+/**
+ * Resolve a student's reference / admission code — the same "ref" rendered on
+ * /admin/students. It lives on the MCB mirror (`mcb_students.raw`), keyed by
+ * enrolment number, NOT on the students table, so this is a raw lookup.
+ * Returns null when the student has no enrolment number or no MCB row / ref.
+ */
+async function getStudentReferenceCode(
+  enrollmentNumber: string | null | undefined
+): Promise<string | null> {
+  if (!enrollmentNumber) return null;
+  try {
+    const res = await db.execute(sql`
+      SELECT COALESCE(raw->>'StudentReferencesCode', raw->>'AdmissionNo') AS ref_code
+        FROM mcb_students
+       WHERE enrolment_number = ${enrollmentNumber}
+       LIMIT 1
+    `);
+    const rows = (Array.isArray(res) ? res : (res as { rows?: unknown[] }).rows ?? []) as {
+      ref_code: string | null;
+    }[];
+    return rows[0]?.ref_code ?? null;
+  } catch (e) {
+    // Never let a ref lookup failure sink the whole student emit — the
+    // mcb_students table isn't guaranteed present in every environment.
+    console.warn(
+      `[erp-bridge] reference_code lookup failed for ${enrollmentNumber}:`,
+      e instanceof Error ? e.message.slice(0, 200) : e
+    );
+    return null;
+  }
+}
+
 export async function buildStudentPayload(
   studentId: string
 ): Promise<{ student: Record<string, unknown> } | null> {
@@ -549,10 +629,16 @@ export async function buildStudentPayload(
     .limit(1);
   if (!s) return null;
   if (!s.erpName && !s.enrollmentNumber) return null;
+  const referenceCode = await getStudentReferenceCode(s.enrollmentNumber);
   return {
     student: {
       erp_name: s.erpName,
       enrollment_number: s.enrollmentNumber,
+      // Student reference / admission code (the "ref" on /admin/students).
+      // Null when the student has no MCB-mirrored ref. Existing fields below
+      // (enrollment_number, grade, school_code, section) are the authoritative
+      // students-table columns.
+      reference_code: referenceCode,
       name: s.name,
       first_name: s.firstName,
       school_code: s.schoolCode,
