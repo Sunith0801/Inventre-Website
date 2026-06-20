@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { FileText, Truck, Undo2 } from "lucide-react";
+import { FileText, Truck, Undo2, Repeat } from "lucide-react";
 import { Button } from "@/components/admin/ui/primitives-client";
 
 export function OrderActions({
@@ -69,6 +69,20 @@ export function OrderActions({
             className="w-full"
           >
             Start return
+          </Button>
+        </a>
+        {/* SPOC / staff: raise an exchange on behalf of the parent. The page
+            + API enforce the spoc-exchange permission and per-school scope,
+            so this link is safe to show unconditionally (non-permitted admins
+            get a 404). */}
+        <a href={`/admin/exchanges/new?orderId=${orderId}`}>
+          <Button
+            variant="secondary"
+            size="sm"
+            icon={<Repeat className="h-3.5 w-3.5" />}
+            className="w-full"
+          >
+            Raise exchange
           </Button>
         </a>
       </div>
