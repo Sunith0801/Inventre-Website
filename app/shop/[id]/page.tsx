@@ -1231,7 +1231,15 @@ export default function ProductPage() {
             <PdpSelectionProvider>
               <div className="grid lg:grid-cols-[380px_1fr] gap-10 lg:gap-16 items-start">
                 <Gallery product={product} />
-                <BuyBox product={product} onSizeGuide={scrollToSizeGuide} />
+                {/* key by product.id so navigating to a different product
+                    remounts BuyBox with fresh size/qty/attribute defaults —
+                    otherwise its selection state persists across products and
+                    desyncs from the pills shown (wrong size/qty added). */}
+                <BuyBox
+                  key={product.id}
+                  product={product}
+                  onSizeGuide={scrollToSizeGuide}
+                />
               </div>
             </PdpSelectionProvider>
           </section>
