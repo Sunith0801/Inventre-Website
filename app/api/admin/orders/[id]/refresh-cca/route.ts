@@ -5,6 +5,7 @@ import { db } from "@/db/client";
 import { orders, payments } from "@/db/schema";
 import { requirePermission, isResponse } from "@/lib/admin-guard";
 import { fetchCCAvenueOrderStatus } from "@/lib/ccavenue";
+import { finalizeOrderPayment } from "@/lib/ccavenue-finalize";
 
 /**
  * Live-refresh the CCAvenue reference for a single order. Hits
@@ -67,6 +68,35 @@ export async function POST(
       },
       { status: 502 }
     );
+  }
+
+  // If CCAvenue says this order is PAID but our local row isn't, this is a
+  // captured-but-stranded payment (the success callback never landed, or a
+  // retry's success was swallowed by the old finalize latch). Run the shared
+  // finaliser so the order actually SETTLES — order→confirmed, stock
+  // decrement, SMS, invoice, ERP push — instead of only cosmetically
+  // patching the payment row (which is what left rows showing a success ref +
+  // paid_amount on a still-`failed` order).
+  if (result.status === "paid" && order.paymentStatus !== "paid") {
+    const fin = await finalizeOrderPayment({
+      orderId: order.id,
+      source: "status-poll",
+      normalized: result,
+    });
+    revalidatePath(`/admin/orders/${encodeURIComponent(order.orderNumber)}`);
+    revalidatePath(`/admin/orders/${order.id}`);
+    revalidatePath("/admin/orders");
+    return NextResponse.json({
+      ok: true,
+      refreshedAt: new Date().toISOString(),
+      finalized: fin.kind,
+      status: result.status,
+      rawStatus: result.rawStatus,
+      trackingId: result.trackingId,
+      paidAmount: result.paidAmount,
+      paymentMode: result.paymentMode,
+      paymentDate: result.paymentDate,
+    });
   }
 
   // Merge fields onto the payment row only when CCAvenue returned a

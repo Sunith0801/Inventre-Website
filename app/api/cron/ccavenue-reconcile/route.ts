@@ -17,7 +17,7 @@
  * scheduler can use the same secret.
  */
 import { NextResponse } from "next/server";
-import { and, asc, eq, isNull, lt, or, sql } from "drizzle-orm";
+import { and, asc, eq, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { orders, payments } from "@/db/schema";
 import {
@@ -63,8 +63,22 @@ export async function GET(req: Request) {
     .innerJoin(orders, eq(orders.id, payments.orderId))
     .where(
       and(
-        eq(payments.status, "pending"),
-        eq(payments.paymentFinalized, false),
+        // Pending rows that never finalised, OR recently-failed rows that
+        // carry a CCAvenue tracking id. The latter covers a retry whose
+        // success callback we missed: re-polling lets finalizeOrderPayment
+        // heal `failed` → `paid` server-side. Paid/refunded are terminal and
+        // excluded. (The MAX_AGE window keeps this to recent failures; the
+        // historical backlog is handled by a one-off remediation script.)
+        or(
+          and(
+            eq(payments.status, "pending"),
+            eq(payments.paymentFinalized, false),
+          ),
+          and(
+            eq(payments.status, "failed"),
+            isNotNull(payments.gatewayTrackingId),
+          ),
+        ),
         lt(payments.createdAt, sql`now() - ${SETTLE_GRACE}`),
         sql`${payments.createdAt} > now() - ${MAX_AGE}`,
         or(

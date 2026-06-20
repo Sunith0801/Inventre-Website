@@ -74,17 +74,16 @@ export async function POST(
   const now = new Date();
   const respond = (b: Body) => NextResponse.json(b);
 
-  // Already finalised — return the stored verdict, no API call.
-  if (snap.paymentFinalized) {
+  // Short-circuit only for a terminal SUCCESS state — no API call needed.
+  // A `failed` order deliberately falls through to the poll below so a retry
+  // whose success callback we missed can still be detected and healed
+  // (finalizeOrderPayment is idempotent and only heals failed → paid).
+  if (
+    snap.paymentFinalized &&
+    (snap.paymentStatus === "paid" || snap.paymentStatus === "refunded")
+  ) {
     return respond({
-      status:
-        snap.paymentStatus === "paid"
-          ? "paid"
-          : snap.paymentStatus === "failed"
-            ? "failed"
-            : snap.paymentStatus === "refunded"
-              ? "unknown"
-              : "pending",
+      status: snap.paymentStatus === "paid" ? "paid" : "unknown",
       finalized: true,
       checkedAt: now.toISOString(),
     });
@@ -125,7 +124,10 @@ export async function POST(
   try {
     const normalized = await fetchCCAvenueOrderStatus({
       referenceNo: snap.gatewayTrackingId ?? null,
-      orderNo: snap.orderNumber,
+      // CCAvenue knows this txn by the order_id we sent at session-init,
+      // which is orders.id (the UUID) — see buildRedirectPayload. Passing
+      // orderNumber here returns "No Record Found".
+      orderNo: orderId,
     });
     result = await finalizeOrderPayment({
       orderId,

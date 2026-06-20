@@ -15,7 +15,7 @@
  * Not `server-only`: also imported by tsx admin tools that run outside
  * the Next.js runtime, same convention as lib/repos/product-attribute-groups.
  */
-import { eq, sql } from "drizzle-orm";
+import { and, eq, ne, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import {
   orders,
@@ -112,15 +112,7 @@ export async function finalizeOrderPayment(args: {
     };
   }
 
-  if (snap.paymentFinalized) {
-    return {
-      kind: "no-change",
-      reason: "already_finalized",
-      orderId,
-      paymentStatus: snap.paymentStatus,
-    };
-  }
-
+  // Verdicts that never mutate local state, regardless of the local row.
   if (normalized.status === "pending") {
     return {
       kind: "no-change",
@@ -142,7 +134,36 @@ export async function finalizeOrderPayment(args: {
     };
   }
 
+  // A terminal SUCCESS (paid / refunded) is final — never re-run the paid
+  // side effects, and never let a late `failed` verdict downgrade a captured
+  // payment. This REPLACES the old blanket `payment_finalized` guard, which
+  // also latched on a FAILED first attempt and so silently swallowed the
+  // success callback of a retry (CCAvenue reuses the same order_id across
+  // retries → the retry's `paid` callback hit the latch and was dropped,
+  // leaving money captured but the order stuck `failed`). Gating on the
+  // actual payment STATUS instead lets a `paid` verdict heal a previously
+  // failed+finalized order through the paid path below.
+  if (snap.paymentStatus === "paid" || snap.paymentStatus === "refunded") {
+    return {
+      kind: "no-change",
+      reason: "already_finalized",
+      orderId,
+      paymentStatus: snap.paymentStatus,
+    };
+  }
+
   if (normalized.status === "failed") {
+    // Already recorded as failed — don't rewrite the row (keep the first
+    // failure's forensic trail and avoid status churn). A later `paid`
+    // verdict for the same order can still heal it via the paid path.
+    if (snap.paymentStatus === "failed") {
+      return {
+        kind: "no-change",
+        reason: "already_finalized",
+        orderId,
+        paymentStatus: "failed",
+      };
+    }
     await db
       .update(payments)
       .set({
@@ -167,8 +188,55 @@ export async function finalizeOrderPayment(args: {
     };
   }
 
-  // ── Paid path ─────────────────────────────────────────────────────
+  // ── Paid path (status was pending, or a retry success healing a
+  //    previously failed+finalized order) ─────────────────────────────
   const now = new Date();
+
+  // Atomically CLAIM the paid transition on the primary payment row. The
+  // `status <> 'paid'` predicate makes this both:
+  //   * race-safe — only the caller whose UPDATE actually flips the row
+  //     runs the one-time side effects below; a concurrent callback /
+  //     status-poll / cron caller claims 0 rows and bails as a no-op
+  //     (this also replaces the old read-then-write payment_finalized latch).
+  //   * self-healing — it transitions `failed` → `paid` for a retry whose
+  //     success arrived after the first attempt's failure latched the row.
+  const claimed = await db
+    .update(payments)
+    .set({
+      status: "paid",
+      method: "ccavenue",
+      paymentMode: normalized.paymentMode ?? "CCAvenue",
+      paymentDate: normalized.paymentDate ?? formatPaymentDate(now),
+      // Always use the primary order's own total for paid_amount, never the
+      // gateway-reported amount (which is the basket total in multi-sibling
+      // baskets — would inflate the primary's per-order display).
+      // payment.amount stays per-order too (see create-order/route.ts:308),
+      // so SUM across the group still equals the gateway capture.
+      paidAmount: ((snap.orderTotal ?? 0) / 100).toFixed(2),
+      paidCurrency: "INR",
+      gatewayProvider: "CCAVENUE",
+      gatewayTrackingId: normalized.trackingId,
+      gatewayResponseMessage: `success:${normalized.trackingId ?? ""} (via ${source})`,
+      paymentFinalized: true,
+      raw: normalized.rawResponse,
+      lastStatusPollAt: source === "callback" ? undefined : new Date(),
+    })
+    .where(and(eq(payments.orderId, orderId), ne(payments.status, "paid")))
+    .returning({ id: payments.id });
+
+  if (claimed.length === 0) {
+    // Another finalize caller already flipped this order to paid (or it was
+    // paid before we read the snapshot). The winning caller runs the side
+    // effects; we bail as a no-op so they don't run twice.
+    return {
+      kind: "no-change",
+      reason: "already_finalized",
+      orderId,
+      paymentStatus: "paid",
+    };
+  }
+
+  // We won the claim → settle the order(s) and run the one-time side effects.
   // Look up whether this order is part of a sibling group. If yes, mark
   // every order sharing the orderGroupId as paid + confirmed in one
   // statement so per-sibling orders all settle on a single payment.
@@ -196,29 +264,6 @@ export async function finalizeOrderPayment(args: {
       })
       .where(eq(orders.id, orderId));
   }
-
-  await db
-    .update(payments)
-    .set({
-      status: "paid",
-      method: "ccavenue",
-      paymentMode: normalized.paymentMode ?? "CCAvenue",
-      paymentDate: normalized.paymentDate ?? formatPaymentDate(now),
-      // Always use the primary order's own total for paid_amount, never the
-      // gateway-reported amount (which is the basket total in multi-sibling
-      // baskets — would inflate the primary's per-order display).
-      // payment.amount stays per-order too (see create-order/route.ts:308),
-      // so SUM across the group still equals the gateway capture.
-      paidAmount: ((snap.orderTotal ?? 0) / 100).toFixed(2),
-      paidCurrency: "INR",
-      gatewayProvider: "CCAVENUE",
-      gatewayTrackingId: normalized.trackingId,
-      gatewayResponseMessage: `success:${normalized.trackingId ?? ""} (via ${source})`,
-      paymentFinalized: true,
-      raw: normalized.rawResponse,
-      lastStatusPollAt: source === "callback" ? undefined : new Date(),
-    })
-    .where(eq(payments.orderId, orderId));
 
   // Fan the captured payment out to every sibling order in the basket.
   // The order-status update above already flips each sibling to
