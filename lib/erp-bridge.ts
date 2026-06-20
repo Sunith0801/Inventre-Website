@@ -151,6 +151,37 @@ function isoTimestamp(d: Date | string | null | undefined): string | null {
   return Number.isNaN(dd.getTime()) ? null : dd.toISOString();
 }
 
+// Fallback grade source when students.grade/class is missing: a Magic Box's
+// item name encodes the grade (e.g. "SMS GRADE 5 MAGIC BOX GIRLS"). Mirrors
+// audit's _magic_box_grade. Returns a canonical "Grade N" / "LKG" / "UKG" /
+// "Nursery" only when the order's magic-box line(s) agree on one grade; null
+// when there's no magic box or they disagree (ambiguous — never guess).
+const MB_GRADE_NUM = /grade\s*([0-9]+)/i;
+const MB_GRADE_KG = /\b(UKG|LKG|nursery)\b/i;
+function deriveMagicBoxGrade(
+  rows: Array<{
+    item: { nameSnapshot: string | null };
+    product: { kind: string | null };
+  }>
+): string | null {
+  const grades = new Set<string>();
+  for (const { item, product } of rows) {
+    if (product.kind !== "magic_box") continue;
+    const nm = item.nameSnapshot ?? "";
+    const m = MB_GRADE_NUM.exec(nm);
+    if (m) {
+      grades.add(`Grade ${parseInt(m[1], 10)}`);
+      continue;
+    }
+    const k = MB_GRADE_KG.exec(nm);
+    if (k) {
+      const tok = k[1].toLowerCase();
+      grades.add(tok === "nursery" ? "Nursery" : tok.toUpperCase());
+    }
+  }
+  return grades.size === 1 ? [...grades][0] : null;
+}
+
 /** Build the ERPNext-shaped `data` blob the ingest router expects. */
 export async function buildErpOrderPayload(
   orderId: string
@@ -323,6 +354,23 @@ export async function buildErpOrderPayload(
 
   const hasMagicBox = rawItems.some(({ product }) => product.kind === "magic_box");
 
+  // Resolve the student's REAL grade to send to audit. Rules:
+  //  - students.grade is the real CBSE grade for every school EXCEPT QLPHP
+  //    (Quantum Leap), whose grade column was imported one band low — its
+  //    real grade lives in students.class.
+  //  - CRITICAL: never fall back to order.gradeSnapshot. gradeSnapshot carries
+  //    the ±3 ERP offset and was the cause of wrong grades landing in audit
+  //    (audit stores order.grade verbatim). When the student grade is missing,
+  //    derive it from the Magic Box line name (which encodes "Grade N");
+  //    otherwise send null so a missing grade is visibly missing rather than
+  //    silently wrong. See [[audit-grade-from-students-grade-not-snapshot]].
+  const schoolCodeForGrade = student?.schoolCode ?? school?.schoolCode ?? null;
+  const realStudentGrade =
+    schoolCodeForGrade === "QLPHP"
+      ? (student?.class ?? student?.grade ?? null)
+      : (student?.grade ?? null);
+  const resolvedGrade = realStudentGrade ?? deriveMagicBoxGrade(rawItems) ?? null;
+
   const paymentBlock = payment
     ? {
         internal_reference:
@@ -359,17 +407,10 @@ export async function buildErpOrderPayload(
       total: order.total,
       school_code: school?.schoolCode ?? null,
       school_name: order.schoolNameSnapshot ?? school?.name ?? null,
-      // Send the original student grade (students.grade) to audit, not the
-      // translated gradeSnapshot. Audit uses this value verbatim (the master
-      // override + re-stamp were removed), so it must be the real grade.
-      // Quantum Leap (QLPHP) is the one school whose students.grade column was
-      // imported one band low; its real grade lives in students.class. Send
-      // class for QLP only, grade for every other school. See memory
-      // audit-uses-inventre-grade-verbatim.
-      grade:
-        (student?.schoolCode ?? school?.schoolCode) === "QLPHP"
-          ? (student?.class ?? student?.grade ?? order.gradeSnapshot ?? null)
-          : (student?.grade ?? order.gradeSnapshot ?? null),
+      // Corrected real grade (see resolvedGrade above). Audit stores this
+      // verbatim as custom_student_grade — it must NOT carry the gradeSnapshot
+      // ±3 offset.
+      grade: resolvedGrade,
       magic_box: hasMagicBox,
       customer: {
         name: parent
@@ -396,7 +437,9 @@ export async function buildErpOrderPayload(
               `STU-${student.id.slice(0, 8)}`,
             enrollment_number: student.enrollmentNumber ?? null,
             school_code: student.schoolCode ?? school?.schoolCode ?? null,
-            grade: student.grade ?? null,
+            // Use the corrected grade too, so the student-master mirror in
+            // audit never carries the offset value either.
+            grade: resolvedGrade,
           }
         : null,
       payment: paymentBlock,
