@@ -685,7 +685,14 @@ export async function buildStudentPayload(
       name: s.name,
       first_name: s.firstName,
       school_code: s.schoolCode,
-      grade: s.grade,
+      // Corrected grade. Audit uses the student master as the grade source of
+      // truth and re-stamps Sales Orders from it (ingest._apply_student), so a
+      // wrong grade here propagates to every SO of this student. QLPHP's
+      // students.grade was imported one band low — its real grade lives in
+      // students.class. Keep students.grade for every other school. Mirror of
+      // the resolver in buildErpOrderPayload. See
+      // [[audit-grade-from-students-grade-not-snapshot]].
+      grade: s.schoolCode === "QLPHP" ? (s.class ?? s.grade) : s.grade,
       section: s.section,
       mobile: s.studentMobileNumber,
       email: s.studentEmailId,
