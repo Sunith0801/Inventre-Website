@@ -46,6 +46,7 @@ export const ADMIN_PAGES: AdminPage[] = [
   { slug: "shipments",            label: "Shipments",             group: "Sales" },
   { slug: "invoices",             label: "Invoices",              group: "Sales" },
   { slug: "returns",              label: "Returns",               group: "Sales" },
+  { slug: "spoc-exchange",        label: "Raise Exchange",        group: "Sales" },
   { slug: "schools",              label: "Schools",               group: "Network" },
   { slug: "grades",               label: "Grades",                group: "Network" },
   { slug: "delivery-fees",        label: "Delivery fees",         group: "Network" },

@@ -9,7 +9,7 @@ import {
   orderItems,
   parents,
 } from "@/db/schema";
-import { requirePermission, isResponse } from "@/lib/admin-guard";
+import { requirePermission, isResponse, assertSchoolAccess } from "@/lib/admin-guard";
 import { logActivity } from "@/lib/activity";
 
 export async function GET(req: Request) {
@@ -87,6 +87,13 @@ export async function POST(req: Request) {
     .limit(1);
   if (!order)
     return NextResponse.json({ error: "Order not found" }, { status: 404 });
+
+  // School scope: a school_admin (incl. SPOCs) may only act on their own
+  // school's orders. The GET already scopes its list; this closes the POST
+  // gap that let a school-scoped user create a return for any school's order.
+  // No-op for super/ops.
+  const schoolBlock = assertSchoolAccess(guard, order.schoolId);
+  if (schoolBlock) return schoolBlock;
 
   // Compute refund amount as sum of (orderItem.unit_price * qty) for the selected lines.
   const selectedLineIds = body.items.map((i) => i.orderItemId);
