@@ -118,11 +118,11 @@ export async function GET(req: Request) {
                  round((o.total::numeric / 100), 0)::int       AS grand_total,
                  COALESCE(o.school_name_snapshot, s.school_name, s.name) AS school_name,
                  COALESCE(NULLIF(stu.enrollment_number, ''), NULLIF(c_l.custom_enrollment_number, ''), NULLIF(so_l.student, '')) AS enrollment_number,
-                 COALESCE(o.grade_snapshot, stu.grade)         AS grade,
-                 -- ACTUAL grade: students.grade is the real CBSE grade on
-                 -- every school (the +3 ERP offset lives in students.class,
-                 -- not here). Never use grade_snapshot for this — it carries
-                 -- the ERP-offset / bulk-import-bugged value.
+                 -- Clean grade = students.grade (the real CBSE grade on every
+                 -- school). Never grade_snapshot (carries the ERP-offset /
+                 -- bulk-import-bugged value). grade and real_grade are the
+                 -- same canonical value now.
+                 NULLIF(stu.grade, '')                         AS grade,
                  NULLIF(stu.grade, '')                         AS real_grade,
                  COALESCE(o.placed_at, o.created_at)::text     AS ordered_at,
                  o.payment_status::text                        AS payment_status,
@@ -144,7 +144,7 @@ export async function GET(req: Request) {
                  round(so.grand_total::numeric, 0)::int        AS grand_total,
                  so.custom_student_school                      AS school_name,
                  COALESCE(NULLIF(c.custom_enrollment_number, ''), so.student) AS enrollment_number,
-                 so.custom_student_grade                       AS grade,
+                 NULLIF(stu_m.grade, '')                       AS grade,
                  NULLIF(stu_m.grade, '')                       AS real_grade,
                  so.creation_at::text                          AS ordered_at,
                  so.custom_payment_status                      AS payment_status,

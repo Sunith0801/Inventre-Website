@@ -267,8 +267,8 @@ export default async function CCAvenuePaymentDetailPage({
               value={order.schoolNameSnapshot ?? "—"}
             />
             <KVRow
-              label="Grade (snapshot)"
-              value={order.gradeSnapshot ?? "—"}
+              label="Grade"
+              value={student?.grade ?? "—"}
             />
           </dl>
           {parent ? (

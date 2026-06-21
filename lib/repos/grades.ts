@@ -144,82 +144,24 @@ export const toUniformGrade = toTargetedGrade;
 export const makeUniformGradeResolver = makeTargetedGradeResolver;
 
 /**
- * SQL fragment that resolves a student's grade to what the admin should
- * SEE in /admin/students. Three layers:
+ * The grade to SHOW for a student, anywhere in the app/admin.
  *
- *   1. The school's `school_given_grade_name` from `school_grade_mappings`
- *      keyed on the student's *real* CBSE grade (e.g. TSUSC "Grade 1" → "1",
- *      SAMYU "Nursery" → "IK 1").
- *   2. The real CBSE grade itself.
- *   3. `students.grade` as a last resort (zero-data fallback).
+ * This is simply `students.grade` — the canonical grade. It is the value the
+ * storefront catalog filters on (an exact match against `product_grades.grade`,
+ * verified correct for ~100% of active students at every school), so it is by
+ * definition the grade the parent shopped on and the one we must display.
  *
- * "Real CBSE grade" is derived per-row, not per-school, because different
- * schools — and even different students within the same school — have
- * inconsistent sync histories:
+ * DELIBERATELY no ERPNext derivation: we do NOT translate `erp_raw->>'grade'`
+ * by the ±3 ERP offset, do NOT prefer `students.class` (the ERP-uniform /
+ * academic number, which is offset from the real grade at most schools), and
+ * do NOT relabel through `school_grade_mappings`. Those layers produced the
+ * wrong grades that were showing across the admin (e.g. QLPHP/SAMYU students
+ * displaying the offset value). Clean data only — `students.grade`.
  *
- *   - For most ERP-only schools (CAS, QLPHP, SAMYU, SMS partial), the +3
- *     offset was applied at sync time to `students.grade` so `class` holds
- *     the real value (CASLRCBSE 26CAG10682: grade=Grade 2, class=Grade 5,
- *     real=Grade 5; QLPHP 25QLS0183: grade=Grade 7, class=Grade 10,
- *     real=Grade 10).
- *   - For YIPS, TSUSC, and most MCB-linked schools, `students.grade` is
- *     correct and `class` carries the raw ERP value instead (YIPS 100%
- *     stored-grade match; Sunith Kumar at TSUSC has stored=Grade 11 = real).
- *   - KLINK has both patterns mixed within one school (43% stored, 57%
- *     class), so any school-level switch would still be wrong for half its
- *     students.
- *
- * Per-row heuristic: pick whichever of `class` / `grade` matches the value
- * that the +3 translation of `erp_raw->>'grade'` says is real. If neither
- * matches (manually-corrected records like Sunith whose raw payload is
- * stale), fall back to `students.grade`.
+ * Kept as a helper (rather than inlining `students.grade`) so there is a single
+ * named source of truth for "the grade to display" and every call site reads
+ * the same value.
  */
 export function studentDisplayGradeSql(): SQL<string | null> {
-  // Mirror of ERP_TO_REAL in lib/grade-translate.ts. Inline so the whole
-  // resolution happens in a single SQL pass with no Postgres function
-  // dependency. Returns NULL when erp_raw->>'grade' isn't recognised.
-  const realFromRaw = sql`
-    CASE ${studentsTable.erpRaw}->>'grade'
-      WHEN 'Grade 1'  THEN 'Nursery'
-      WHEN 'Grade 2'  THEN 'LKG'
-      WHEN 'Grade 3'  THEN 'UKG'
-      WHEN 'Grade 4'  THEN 'Grade 1'
-      WHEN 'Grade 5'  THEN 'Grade 2'
-      WHEN 'Grade 6'  THEN 'Grade 3'
-      WHEN 'Grade 7'  THEN 'Grade 4'
-      WHEN 'Grade 8'  THEN 'Grade 5'
-      WHEN 'Grade 9'  THEN 'Grade 6'
-      WHEN 'Grade 10' THEN 'Grade 7'
-      WHEN 'Grade 11' THEN 'Grade 8'
-      WHEN 'Grade 12' THEN 'Grade 9'
-      WHEN 'Grade 13' THEN 'Grade 10'
-      WHEN 'Grade 14' THEN 'Grade 11'
-      WHEN 'Grade 15' THEN 'Grade 12'
-      WHEN 'Nursery'  THEN 'Nursery'
-      WHEN 'LKG'      THEN 'LKG'
-      WHEN 'UKG'      THEN 'UKG'
-      ELSE NULL
-    END
-  `;
-  // Prefer the column that agrees with ERPNext; if neither does, take
-  // students.grade (covers manual corrections + rows with no erp_raw).
-  const realGrade = sql`
-    CASE
-      WHEN ${realFromRaw} IS NOT NULL AND ${studentsTable.class} = ${realFromRaw}
-        THEN ${studentsTable.class}
-      WHEN ${realFromRaw} IS NOT NULL AND ${studentsTable.grade} = ${realFromRaw}
-        THEN ${studentsTable.grade}
-      ELSE ${studentsTable.grade}
-    END
-  `;
-  return sql<string | null>`COALESCE(
-    (
-      SELECT m.school_given_grade_name
-        FROM school_grade_mappings m
-       WHERE m.school_id = ${studentsTable.schoolId}
-         AND lower(m.grade) = lower(${realGrade})
-       LIMIT 1
-    ),
-    ${realGrade}
-  )`;
+  return sql<string | null>`${studentsTable.grade}`;
 }

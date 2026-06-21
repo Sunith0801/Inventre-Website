@@ -499,7 +499,7 @@ export default async function AdminOrderDetailPage({
               <p className="mt-2 text-[12px] text-ink-500">
                 For:{" "}
                 <span className="font-semibold text-ink-800">{student.name}</span>
-                {student.class ? ` · ${student.class}` : ""}
+                {student.grade ? ` · ${student.grade}` : ""}
                 {student.section ? ` · ${student.section}` : ""}
               </p>
             ) : null}
