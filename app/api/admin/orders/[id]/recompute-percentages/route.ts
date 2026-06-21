@@ -8,7 +8,7 @@ import {
   shipmentItems,
   invoices,
 } from "@/db/schema";
-import { requirePermission, isResponse } from "@/lib/admin-guard";
+import { requirePermission, isResponse, assertSchoolAccess } from "@/lib/admin-guard";
 
 /**
  * Recompute delivered_percent + billed_percent for an order
@@ -31,6 +31,9 @@ export async function POST(
     .where(eq(orders.id, id))
     .limit(1);
   if (!order) return NextResponse.json({ error: "not found" }, { status: 404 });
+  // School scope: a school_admin may only act on their own school's orders.
+  const denied = assertSchoolAccess(guard, order.schoolId);
+  if (denied) return denied;
 
   // delivered % from shipment items where shipment is shipped or delivered
   const items = await db

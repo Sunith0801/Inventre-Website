@@ -4,7 +4,7 @@ import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { orders, orderItems } from "@/db/schema";
-import { requirePermission, isResponse } from "@/lib/admin-guard";
+import { requirePermission, isResponse, assertSchoolAccess } from "@/lib/admin-guard";
 import { generateOrderNumber } from "@/lib/repos/orders";
 import { financialYearOf } from "@/lib/invoice-numbering";
 
@@ -45,6 +45,9 @@ export async function POST(
     .where(eq(orders.id, originalOrderId))
     .limit(1);
   if (!original) return NextResponse.json({ error: "not found" }, { status: 404 });
+  // School scope: a school_admin may only replace their own school's orders.
+  const denied = assertSchoolAccess(guard, original.schoolId);
+  if (denied) return denied;
 
   const originalItems = await db
     .select()

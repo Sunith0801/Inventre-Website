@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { eq, inArray, sql, asc } from "drizzle-orm";
+import { and, eq, inArray, sql, asc } from "drizzle-orm";
 import { db } from "@/db/client";
 import { orders, payments } from "@/db/schema";
 import { requirePermission, isResponse } from "@/lib/admin-guard";
@@ -103,7 +103,18 @@ export async function POST(req: Request) {
     })
     .from(orders)
     .leftJoin(payments, eq(payments.orderId, orders.id))
-    .where(inArray(orders.orderNumber, parsed.orderNumbers))
+    // School scope: a school_admin only refreshes their own school's orders;
+    // super/ops are unscoped. Fail closed if a school_admin has no schoolId.
+    .where(
+      (() => {
+        const sel = inArray(orders.orderNumber, parsed.orderNumbers);
+        if (guard.role !== "school_admin") return sel;
+        return and(
+          sel,
+          guard.schoolId ? eq(orders.schoolId, guard.schoolId) : sql`false`
+        );
+      })()
+    )
     .orderBy(asc(orders.orderNumber), asc(payments.createdAt));
 
   // Collapse to the FIRST payment per order. asc-ordered by createdAt

@@ -3,7 +3,7 @@ import { revalidatePath } from "next/cache";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { orders, payments } from "@/db/schema";
-import { requirePermission, isResponse } from "@/lib/admin-guard";
+import { requirePermission, isResponse, assertSchoolAccess } from "@/lib/admin-guard";
 import { fetchCCAvenueOrderStatus } from "@/lib/ccavenue";
 
 /**
@@ -42,6 +42,9 @@ export async function POST(
   if (!order) {
     return NextResponse.json({ error: "Order not found in local DB" }, { status: 404 });
   }
+  // School scope: a school_admin may only act on their own school's orders.
+  const denied = assertSchoolAccess(guard, order.schoolId);
+  if (denied) return denied;
 
   const [paymentRow] = await db
     .select()

@@ -48,6 +48,12 @@ const Body = z.union([
 export async function POST(req: Request) {
   const guard = await requirePermission("orders.write");
   if (isResponse(guard)) return guard;
+  // ERP import is a global, cross-school operation (no per-school scoping is
+  // possible — it pulls whatever ERPNext returns). Restrict to non-school_admin
+  // so a school-scoped admin can't pull other schools' orders. Matches the
+  // documented super/ops intent.
+  if (guard.role === "school_admin")
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const off = erpInboundDisabledResponse();
   if (off) return off;
 
