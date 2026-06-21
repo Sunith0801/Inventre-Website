@@ -233,6 +233,20 @@ export async function PATCH(
     if (body.status === "cancelled") {
       const { enqueueOrderEvent } = await import("@/lib/erp-bridge");
       void enqueueOrderEvent(id, "order.cancelled");
+    } else if (
+      body.status === "confirmed" ||
+      body.status === "packed" ||
+      body.status === "shipped" ||
+      body.status === "delivered"
+    ) {
+      // Fulfillment transitions must reach audit so its Sales Order's
+      // status / delivery_status reflect reality. Audit maps the inbound
+      // `status` string onto ERP delivery_status (e.g. "delivered" ->
+      // "Fully Delivered"); without this re-emit audit stays frozen at the
+      // create-time status ("To Deliver and Bill" / "Not Delivered").
+      // Buffered queue, best-effort — never throws.
+      const { enqueueOrderEvent } = await import("@/lib/erp-bridge");
+      void enqueueOrderEvent(id, "order.updated");
     }
     if (body.status === "delivered") {
       const { awardForOrder } = await import("@/lib/repos/loyalty");

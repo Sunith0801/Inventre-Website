@@ -218,7 +218,27 @@ async function maybeAdvanceOrderStatus(orderId: string) {
   }
 
   if (Object.keys(update).length > 1) {
+    // Capture the prior status so we only re-notify audit on a real
+    // fulfillment transition (not on a pure delivered_percent / updatedAt
+    // touch), avoiding redundant queue rows.
+    const [prior] = await db
+      .select({ status: orders.status })
+      .from(orders)
+      .where(eq(orders.id, orderId))
+      .limit(1);
     await db.update(orders).set(update).where(eq(orders.id, orderId));
+    if (
+      typeof update.status === "string" &&
+      prior &&
+      prior.status !== update.status
+    ) {
+      // Re-emit so audit's Sales Order status / delivery_status reflect the
+      // new fulfillment state (audit maps the inbound `status` string).
+      // Without this, audit stays frozen at the create-time status. Buffered
+      // queue, best-effort — never throws.
+      const { enqueueOrderEvent } = await import("@/lib/erp-bridge");
+      void enqueueOrderEvent(orderId, "order.updated");
+    }
   }
 }
 

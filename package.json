@@ -17,7 +17,8 @@
     "db:studio": "drizzle-kit studio",
     "db:seed": "tsx db/seed.ts",
     "db:backfill:erp": "tsx --conditions=react-server scripts/backfill-erp-reemit.ts",
-    "e2e": "tsx scripts/e2e.ts"
+    "e2e": "tsx scripts/e2e.ts",
+    "db:replay:erp-fulfillment": "tsx --conditions=react-server scripts/replay-erp-fulfillment-grade.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1040.0",
