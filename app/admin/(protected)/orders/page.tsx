@@ -234,7 +234,7 @@ export default async function AdminOrdersPage({
                  o.id::text                                    AS local_id,
                  COALESCE(o.school_name_snapshot, s.school_name, s.name) AS school_name,
                  stu.enrollment_number                         AS enrollment_number,
-                 COALESCE(o.grade_snapshot, stu.grade)         AS grade,
+                 stu.grade                                     AS grade,
                  COALESCE(o.placed_at, o.created_at)::text     AS ordered_at,
                  fp.gateway_tracking_id                        AS cca_tracking_id,
                  fp.gateway_order_id                           AS cca_order_id,

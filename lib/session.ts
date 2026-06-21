@@ -3,7 +3,6 @@ import { cache } from "react";
 import { cookies } from "next/headers";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db/client";
-import { erpGradeToReal } from "@/lib/grade-translate";
 import { last10 } from "@/lib/phone";
 import {
   parents,
@@ -12,7 +11,6 @@ import {
   users,
   studentGuardianLinks,
   guardians,
-  schoolGradeMappings,
 } from "@/db/schema";
 import {
   SESSION_COOKIE,
@@ -359,41 +357,6 @@ export const getCurrentParent = cache(async (): Promise<CurrentParent | null> =>
     if (name) firstGuardianByStudent.set(sid, name);
   }
 
-  // School-given grade label per (school, Targeted-grade).
-  //
-  // `students.grade` holds the Targeted value (Nursery / LKG / UKG /
-  // Grade 1..12). `school_grade_mappings.grade` still holds the ERP-uniform
-  // value (Grade 1..15). Translate the mapping's `grade` through
-  // erpGradeToReal so the key is in Targeted space and the lookup
-  // matches the student's stored value correctly. Without this
-  // translation, a Targeted "Grade 6" student would accidentally match
-  // the uniform "Grade 6" row (school-given "Grade 3") and the header
-  // would read "Class 3" instead of "Class 6".
-  const gradeLabel = new Map<string, string>();
-  const mapKeys = reshapedRows
-    .map((r) => ({ schoolId: r.student.schoolId, grade: r.student.grade }))
-    .filter((k) => k.grade);
-  if (mapKeys.length) {
-    const schoolIds = [...new Set(mapKeys.map((k) => k.schoolId))];
-    const mappings = await db
-      .select({
-        schoolId: schoolGradeMappings.schoolId,
-        grade: schoolGradeMappings.grade,
-        label: schoolGradeMappings.schoolGivenGradeName,
-      })
-      .from(schoolGradeMappings)
-      .where(inArray(schoolGradeMappings.schoolId, schoolIds));
-    for (const m of mappings) {
-      if (!m.grade || !m.label) continue;
-      // Raw-to-raw keying. Each school's mapping vocabulary must match
-      // the vocabulary of its students.grade — MCB schools use CBSE
-      // throughout post-cleanup; ERP-only schools still use ERP. Either
-      // way both sides line up at the same string so no translation
-      // needed.
-      gradeLabel.set(`${m.schoolId}::${m.grade}`, m.label);
-    }
-  }
-
   return {
     kind: "parent",
     id: parent.id,
@@ -406,12 +369,11 @@ export const getCurrentParent = cache(async (): Promise<CurrentParent | null> =>
     students: reshapedRows.map((r) => ({
       id: r.student.id,
       name: r.student.name,
-      class: erpGradeToReal(r.student.class) ?? r.student.class,
+      class: r.student.grade,
       grade: r.student.grade,
-      schoolGivenGrade:
-        (r.student.grade
-          ? gradeLabel.get(`${r.student.schoolId}::${r.student.grade}`)
-          : null) ?? r.student.grade,
+      // Clean display grade = students.grade (the canonical catalog grade) for
+      // every school. No school_grade_mappings relabel, no class/erp offset.
+      schoolGivenGrade: r.student.grade,
       section: r.student.section,
       enrollmentNumber: r.student.enrollmentNumber,
       isNewStudent: r.student.isNewStudent,
