@@ -111,6 +111,21 @@ export function BuyBox({
       ? product.sizes[Math.floor(product.sizes.length / 2)] ?? ""
       : product.sizes[0] ?? ""
   );
+  // If a focus-refetch (the PDP re-fetches the product on window focus) changes
+  // the available variants and drops the currently-selected size, fall back to
+  // a sensible default so the chosen size can't silently desync from the size
+  // pills shown — the root of "parent picked 40, cart stored 28". Product →
+  // product SPA navigation is handled by the `key={product.id}` remount at the
+  // call site, which resets every selection to the new product's defaults.
+  useEffect(() => {
+    if (size && product.sizes.length > 0 && !product.sizes.includes(size)) {
+      setSize(
+        product.sizes.length > 6
+          ? product.sizes[Math.floor(product.sizes.length / 2)] ?? ""
+          : product.sizes[0] ?? ""
+      );
+    }
+  }, [product.sizes, size]);
   // Non-size attribute selections (Colour, House, etc.). Default each axis
   // to its first value so a parent who never clicks still has a valid pick.
   // Lifted out of AttributeGroupPicker because the picker's earlier
@@ -275,19 +290,24 @@ export function BuyBox({
           Object.values(product.variantIds ?? {})[0] ??
           null
         : null;
-    const adder =
+    // Send the chosen quantity in ONE request. The previous code fired
+    // `qty` parallel +1 POSTs (Promise.all of N adders), which race on the
+    // (cart_id, variant_id) upsert and lost-update each other — the final
+    // cart qty could land BELOW what the parent selected (the "quantity
+    // jumping" report). addByVariantId / add both take a qty the server
+    // upserts atomically, so one call is correct and race-free.
+    const addOnce =
       useMultiAxisPicker && resolvedVariantId
-        ? () => addByVariantId(resolvedVariantId, 1)
+        ? () => addByVariantId(resolvedVariantId, qty)
         : resolvedAttrVariantId
-          ? () => addByVariantId(resolvedAttrVariantId, 1)
+          ? () => addByVariantId(resolvedAttrVariantId, qty)
           : kitVariantId
-            ? () => addByVariantId(kitVariantId, 1)
-            : () => add(product, size);
-    const results = await Promise.all(Array.from({ length: qty }, adder));
+            ? () => addByVariantId(kitVariantId, qty)
+            : () => add(product, size, qty);
+    const result = await addOnce();
     setAddBusy(false);
-    const failed = results.find((r) => !r.ok);
-    if (failed) {
-      setAddError(failed.error ?? "Could not add to cart");
+    if (!result.ok) {
+      setAddError(result.error ?? "Could not add to cart");
       return;
     }
     setAdded(true);
@@ -303,9 +323,14 @@ export function BuyBox({
   // template-level fallback price (e.g. ₹6,735) instead of its own.
   const resolvedSize =
     useMultiAxisPicker && resolvedVariantId
-      ? Object.entries(product.variantIds ?? {}).find(
-          ([, vid]) => vid === resolvedVariantId
-        )?.[0]
+      ? // Prefer the resolved variant's own `size` column (authoritative)
+        // over a value-based reverse-lookup of `variantIds`, whose `.find()`
+        // returns the FIRST id match and can pick the wrong size if the map
+        // reordered on a refetch or two labels share an id.
+        (product.variants?.find((v) => v.id === resolvedVariantId)?.size ??
+          Object.entries(product.variantIds ?? {}).find(
+            ([, vid]) => vid === resolvedVariantId
+          )?.[0])
       : null;
   const priceKey = resolvedSize ?? size;
 

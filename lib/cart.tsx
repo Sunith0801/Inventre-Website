@@ -79,7 +79,7 @@ type CartCtx = {
    */
   revision: number;
   /** Add/remove via UI. Looks up variant by size. */
-  add: (product: Product, size: string) => Promise<{ ok: boolean; error?: string }>;
+  add: (product: Product, size: string, qty?: number) => Promise<{ ok: boolean; error?: string }>;
   /** Add directly by variantId — skips the extra getVariantId round-trip. */
   addByVariantId: (variantId: string, qty?: number) => Promise<{ ok: boolean; error?: string }>;
   setQty: (variantId: string, qty: number) => Promise<{ ok: boolean; error?: string }>;
@@ -188,7 +188,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
   }, [refresh]);
 
   const add = useCallback(
-    async (product: Product, size: string): Promise<{ ok: boolean; error?: string }> => {
+    async (product: Product, size: string, qty = 1): Promise<{ ok: boolean; error?: string }> => {
       const variantId = await getVariantId(product.id, size);
       if (!variantId) return { ok: false, error: "Size not available" };
       const r = await fetch("/api/cart", {
@@ -196,7 +196,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           variantId,
-          qty: 1,
+          qty,
           studentId: studentId || undefined,
         }),
       });
