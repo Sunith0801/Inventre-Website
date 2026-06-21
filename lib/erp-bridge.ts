@@ -354,21 +354,30 @@ export async function buildErpOrderPayload(
 
   const hasMagicBox = rawItems.some(({ product }) => product.kind === "magic_box");
 
-  // Resolve the student's REAL grade to send to audit. Rules:
-  //  - students.grade is the real CBSE grade for every school EXCEPT QLPHP
-  //    (Quantum Leap), whose grade column was imported one band low — its
-  //    real grade lives in students.class.
-  //  - CRITICAL: never fall back to order.gradeSnapshot. gradeSnapshot carries
-  //    the ±3 ERP offset and was the cause of wrong grades landing in audit
-  //    (audit stores order.grade verbatim). When the student grade is missing,
-  //    derive it from the Magic Box line name (which encodes "Grade N");
-  //    otherwise send null so a missing grade is visibly missing rather than
-  //    silently wrong. See [[audit-grade-from-students-grade-not-snapshot]].
-  const schoolCodeForGrade = student?.schoolCode ?? school?.schoolCode ?? null;
-  const realStudentGrade =
-    schoolCodeForGrade === "QLPHP"
-      ? (student?.class ?? student?.grade ?? null)
-      : (student?.grade ?? null);
+  // Resolve the grade to send to audit. Rule (verified 2026-06-21 against
+  // prod DB + the storefront catalog path):
+  //  - `students.grade` IS the canonical grade for EVERY school, with no
+  //    exceptions. The storefront catalog filters products by an exact match
+  //    `product_grades.grade = students.grade` (app/api/shop/products
+  //    -> lib/repos/products.ts:listProductsForStudent), and `students.grade`
+  //    resolves to a real catalog row for ~100% of active students at every
+  //    school — QLPHP included (1344/1344). So whatever the parent saw in the
+  //    shop is exactly `students.grade`, and that is what audit must mirror.
+  //  - NO QLPHP -> class special-case. `students.class` is the ERP-uniform /
+  //    academic number (offset from the real grade — e.g. QLPHP class is
+  //    mostly grade+1) and is wrong as a catalog/real grade at every school
+  //    (class != grade for the majority of students at most schools).
+  //  - CRITICAL: never fall back to order.gradeSnapshot. gradeSnapshot is set
+  //    from mixed, unreliable sources (student.class, the ERP custom_student_
+  //    grade offset, a checkout-time gradeClass) and matches neither grade nor
+  //    class for a large fraction of orders, so it silently lands wrong grades
+  //    in audit (which stores order.grade verbatim).
+  //  - When students.grade is missing (or the order has no linked student),
+  //    derive from the Magic Box line name, which encodes "Grade N" in the
+  //    catalog vocabulary; otherwise send null so a missing grade is visibly
+  //    missing rather than silently wrong.
+  //  See [[audit-grade-from-students-grade-not-snapshot]].
+  const realStudentGrade = student?.grade ?? null;
   const resolvedGrade = realStudentGrade ?? deriveMagicBoxGrade(rawItems) ?? null;
 
   const paymentBlock = payment
@@ -685,14 +694,15 @@ export async function buildStudentPayload(
       name: s.name,
       first_name: s.firstName,
       school_code: s.schoolCode,
-      // Corrected grade. Audit uses the student master as the grade source of
-      // truth and re-stamps Sales Orders from it (ingest._apply_student), so a
-      // wrong grade here propagates to every SO of this student. QLPHP's
-      // students.grade was imported one band low — its real grade lives in
-      // students.class. Keep students.grade for every other school. Mirror of
-      // the resolver in buildErpOrderPayload. See
+      // Canonical grade = students.grade for EVERY school (verified against the
+      // storefront catalog: product_grades.grade = students.grade is an exact
+      // match for ~100% of active students, QLPHP included). Audit uses the
+      // student master as the grade source of truth and re-stamps Sales Orders
+      // from it (ingest._apply_student), so this must be the catalog grade —
+      // never students.class (the ERP-uniform/offset value) and never the
+      // gradeSnapshot. Mirror of buildErpOrderPayload. See
       // [[audit-grade-from-students-grade-not-snapshot]].
-      grade: s.schoolCode === "QLPHP" ? (s.class ?? s.grade) : s.grade,
+      grade: s.grade,
       section: s.section,
       mobile: s.studentMobileNumber,
       email: s.studentEmailId,
