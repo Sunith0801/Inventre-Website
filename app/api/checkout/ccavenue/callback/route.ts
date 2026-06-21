@@ -96,14 +96,16 @@ export async function POST(req: Request) {
     .where(eq(payments.orderId, orderId))
     .limit(1);
 
-  if (pmtSnapshot?.paymentFinalized) {
+  // Short-circuit ONLY for an order already in a terminal SUCCESS state — a
+  // fresh callback can't improve a paid order. A `failed` order is
+  // deliberately NOT short-circuited: CCAvenue reuses the same order_id when
+  // a parent retries, so the retry's success callback must fall through to
+  // finalizeOrderPayment to heal the previously failed+finalized row.
+  // (finalize is idempotent — a repeat `failed` callback no-ops there.)
+  if (pmtSnapshot?.paymentFinalized && pmtSnapshot.status === "paid") {
     if (isBrowserRedirect(req)) {
-      const qs =
-        pmtSnapshot.status === "paid"
-          ? "?payment=success&placed=1"
-          : "?payment=failed";
       return NextResponse.redirect(
-        `${publicBase}/shop/orders/${orderId}${qs}`,
+        `${publicBase}/shop/orders/${orderId}?payment=success&placed=1`,
         303
       );
     }
