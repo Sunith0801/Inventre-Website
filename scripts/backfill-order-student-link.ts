@@ -1,45 +1,44 @@
 /* eslint-disable no-console */
 /**
- * One-time backfill: attach `orders.student_id` on orders that have none, for
- * parents who have EXACTLY ONE student.
+ * One-time backfill: attach `orders.student_id` on unlinked orders by resolving
+ * the student through a LAYERED rule (first layer that yields a UNIQUE student
+ * wins). Linking durably fixes both the parent-visibility/exchange path AND the
+ * grade sent to audit (a linked order sends `students.grade` — the catalog
+ * grade — instead of falling back to the unreliable `grade_snapshot`).
  *
- * WHY
- *   Imported / guest / parent-as-customer orders frequently land with
- *   `orders.student_id = NULL` and an audit Sales Order whose `customer` is the
- *   parent's name with a blank `enrollment_number`. Such an order is
- *   "stranded": `listParentOrdersFromErp` (lib/erp-customer-orders.ts) can only
- *   surface it via the exact local `parent_id` branch or a `contact_mobile ==
- *   myPhone` match — the student phone-graph fan-out has nothing to grab onto.
- *   Result: the order is invisible from any co-guardian number, and the
- *   Exchange / Report-missing buttons never appear. (Root case: order
- *   SAL-ORD-2026-11116, KODAM family, 2026-06-20.)
+ * LAYERS (priority order, each scoped to the order's school + enabled/active
+ * students):
+ *   B  parent_id + school_id has exactly ONE active student  -> that student.
+ *   C  parent has multiple actives, but exactly one whose `grade` OR `class`
+ *      equals the order's `grade_snapshot`                    -> that student.
+ *   D  guardian phone-graph: the order's parent phone (last-10) matches the
+ *      `student_guardian_links.phone_no` of exactly one active student at the
+ *      order's school                                         -> that student.
  *
- *   Linking `student_id` lets the student-identity branch match, so the whole
- *   family sees the order and exchange/missing work normally.
+ * Orders that resolve to no unique student under any layer are left unlinked
+ * (RESIDUAL) — they then send a NULL grade to audit (visibly missing) rather
+ * than a possibly-wrong snapshot. (Magic-Box orders still recover a grade via
+ * deriveMagicBoxGrade in buildErpOrderPayload — that's grade recovery, not
+ * student linking, so it's out of scope here.)
  *
- * SAFE SET
- *   Only parents with exactly one student are touched — the target student is
- *   then unambiguous. Multi-student parents are intentionally left alone (they
- *   need enrollment / customer_link / item-grade matching, out of scope here).
+ * Validated layer counts on the 2026-06-21 prod clone: B=8,738 C=1,606 D=1,137
+ * (residual ~4,496 of 16,443 unlinked).
  *
- * USAGE
- *   Dry-run (default — prints counts + a sample, writes NOTHING):
- *     DATABASE_URL=… npx tsx scripts/backfill-order-student-link.ts
- *   Commit:
- *     DATABASE_URL=… npx tsx scripts/backfill-order-student-link.ts --commit
+ * USAGE (dry-run by default — writes NOTHING):
+ *   npx tsx scripts/backfill-order-student-link.ts            # dry-run + per-layer report
+ *   npx tsx scripts/backfill-order-student-link.ts --commit   # apply
  *
  * FLAGS
  *   --commit            Perform the UPDATE. Without it, nothing is written.
  *   --delivered-only    Restrict to orders.status = 'delivered'.
- *   --batch-size=N      Rows per UPDATE batch (default 500).
+ *   --layers=B,C,D      Which layers to apply (default all). e.g. --layers=B
+ *   --school=CODE       Restrict to one school_code.
  *
  * SAFETY / IDEMPOTENCY
  *   - WHERE guards on `student_id IS NULL`, so re-running never re-touches a
  *     linked row and never overwrites an existing link.
- *   - The single-student constraint is enforced in SQL (HAVING count(*) = 1),
- *     so a parent who gains a 2nd student mid-run simply drops out of the set.
- *   - Batched by order id; a partial run is safe to resume (already-linked
- *     rows are excluded next time).
+ *   - Each layer's uniqueness is enforced in SQL (correlated count = 1), so an
+ *     ambiguous parent is never linked to an arbitrary student.
  */
 import { config } from "dotenv";
 import path from "node:path";
@@ -52,109 +51,113 @@ import { db } from "../db/client";
 const args = process.argv.slice(2);
 const COMMIT = args.includes("--commit");
 const DELIVERED_ONLY = args.includes("--delivered-only");
-const BATCH_SIZE = Number(
-  (args.find((a) => a.startsWith("--batch-size=")) ?? "").split("=")[1] || 500
+const SCHOOL = (args.find((a) => a.startsWith("--school=")) ?? "").split("=")[1] || null;
+const LAYERS = new Set(
+  ((args.find((a) => a.startsWith("--layers=")) ?? "--layers=B,C,D").split("=")[1] || "B,C,D")
+    .split(",")
+    .map((s) => s.trim().toUpperCase())
+    .filter((s) => ["B", "C", "D"].includes(s)),
 );
 
-// Orders eligible for an unambiguous link: no student yet, and their parent
-// owns exactly one student. `single_student` resolves the (parent → student)
-// pair once; the join then targets the orders.
-const eligibleCte = sql`
-  WITH single_student AS (
-    -- Exactly one student per group (HAVING count = 1), so array_agg[1] is
-    -- the sole student id. (Postgres has no min()/max() aggregate for uuid.)
-    SELECT parent_id, (array_agg(id))[1] AS student_id
-      FROM students
-     WHERE parent_id IS NOT NULL
-     GROUP BY parent_id
-    HAVING count(*) = 1
+const last10 = (col: ReturnType<typeof sql>) =>
+  sql`right(regexp_replace(coalesce(${col},''), '\D', '', 'g'), 10)`;
+
+// Per-order resolved student + layer. Each layer's subquery returns a student id
+// only when it resolves UNIQUELY (correlated count = 1); COALESCE picks the
+// highest-priority non-null. Layers not selected are forced to NULL.
+const resolveCte = sql`
+  filt AS (
+    SELECT o.id AS order_id, o.parent_id, o.school_id, o.grade_snapshot
+      FROM orders o
+     WHERE o.student_id IS NULL
+       AND o.parent_id IS NOT NULL
+       ${DELIVERED_ONLY ? sql`AND o.status = 'delivered'` : sql``}
+       ${SCHOOL ? sql`AND o.school_id IN (SELECT id FROM schools WHERE school_code = ${SCHOOL})` : sql``}
+  ),
+  cand AS (
+    SELECT f.order_id,
+      ${LAYERS.has("B")
+        ? sql`(SELECT s.id FROM students s
+                WHERE s.parent_id=f.parent_id AND s.school_id=f.school_id AND s.enabled AND s.status='active'
+                  AND (SELECT count(*) FROM students s2 WHERE s2.parent_id=f.parent_id AND s2.school_id=f.school_id AND s2.enabled AND s2.status='active')=1
+                LIMIT 1)`
+        : sql`NULL::uuid`} AS b_sid,
+      ${LAYERS.has("C")
+        ? sql`(SELECT s.id FROM students s
+                WHERE s.parent_id=f.parent_id AND s.school_id=f.school_id AND s.enabled AND s.status='active'
+                  AND (s.grade=f.grade_snapshot OR s.class=f.grade_snapshot)
+                  AND (SELECT count(*) FROM students s2 WHERE s2.parent_id=f.parent_id AND s2.school_id=f.school_id AND s2.enabled AND s2.status='active' AND (s2.grade=f.grade_snapshot OR s2.class=f.grade_snapshot))=1
+                LIMIT 1)`
+        : sql`NULL::uuid`} AS c_sid,
+      ${LAYERS.has("D")
+        ? sql`(SELECT s.id FROM student_guardian_links gl JOIN students s ON s.id=gl.student_id
+                WHERE s.school_id=f.school_id AND s.enabled AND s.status='active'
+                  AND ${last10(sql`gl.phone_no`)} = (SELECT ${last10(sql`p.phone`)} FROM parents p WHERE p.id=f.parent_id)
+                  AND (SELECT count(DISTINCT s2.id) FROM student_guardian_links gl2 JOIN students s2 ON s2.id=gl2.student_id
+                        WHERE s2.school_id=f.school_id AND s2.enabled AND s2.status='active'
+                          AND ${last10(sql`gl2.phone_no`)} = (SELECT ${last10(sql`p2.phone`)} FROM parents p2 WHERE p2.id=f.parent_id))=1
+                LIMIT 1)`
+        : sql`NULL::uuid`} AS d_sid
+      FROM filt f
+  ),
+  resolved AS (
+    SELECT order_id,
+           COALESCE(b_sid, c_sid, d_sid) AS student_id,
+           CASE WHEN b_sid IS NOT NULL THEN 'B'
+                WHEN c_sid IS NOT NULL THEN 'C'
+                WHEN d_sid IS NOT NULL THEN 'D' END AS layer
+      FROM cand
   )
 `;
 
-const deliveredFilter = DELIVERED_ONLY ? sql`AND o.status = 'delivered'` : sql``;
+async function rows<T>(q: ReturnType<typeof sql>): Promise<T[]> {
+  const res = await db.execute(q);
+  return (Array.isArray(res) ? res : (res as { rows?: unknown[] }).rows ?? []) as T[];
+}
 
 async function main() {
   console.log(
-    `[backfill-order-student-link] mode=${COMMIT ? "COMMIT" : "DRY-RUN"} ` +
-      `deliveredOnly=${DELIVERED_ONLY} batchSize=${BATCH_SIZE}`
+    `[relink] mode=${COMMIT ? "COMMIT" : "DRY-RUN"} layers=${[...LAYERS].join(",")} ` +
+      `deliveredOnly=${DELIVERED_ONLY} school=${SCHOOL ?? "*"}`,
   );
 
-  // 1. Scope report.
-  const scope = (await db.execute(sql`
-    ${eligibleCte}
-    SELECT
-      count(*)                                            AS total_eligible,
-      count(*) FILTER (WHERE o.status = 'delivered')      AS delivered_eligible
-    FROM orders o
-    JOIN single_student ss ON ss.parent_id = o.parent_id
-    WHERE o.student_id IS NULL
-  `)) as unknown as { total_eligible: number; delivered_eligible: number }[];
-  console.log(
-    `[scope] eligible (single-student parents, student_id NULL): ` +
-      `total=${scope[0]?.total_eligible} delivered=${scope[0]?.delivered_eligible}`
+  const [tot] = await rows<{ unlinked: number }>(
+    sql`SELECT count(*)::int AS unlinked FROM orders WHERE student_id IS NULL`,
   );
+  console.log(`[relink] unlinked orders total: ${tot.unlinked}`);
 
-  // 2. Sample for eyeballing before commit.
-  const sample = (await db.execute(sql`
-    ${eligibleCte}
-    SELECT o.order_number, o.status::text AS status, s.name AS student_name,
-           s.enrollment_number
-    FROM orders o
-    JOIN single_student ss ON ss.parent_id = o.parent_id
-    JOIN students s ON s.id = ss.student_id
-    WHERE o.student_id IS NULL ${deliveredFilter}
-    ORDER BY o.created_at DESC
-    LIMIT 10
-  `)) as unknown as {
-    order_number: string;
-    status: string;
-    student_name: string;
-    enrollment_number: string | null;
-  }[];
-  console.log(`[sample] newest ${sample.length} that would be linked:`);
-  for (const r of sample) {
-    console.log(
-      `   ${r.order_number} [${r.status}] -> ${r.student_name} (${r.enrollment_number ?? "—"})`
-    );
-  }
+  const byLayer = await rows<{ layer: string | null; n: number }>(
+    sql`WITH ${resolveCte} SELECT layer, count(*)::int AS n FROM resolved WHERE student_id IS NOT NULL GROUP BY layer ORDER BY layer`,
+  );
+  const linkable = byLayer.reduce((s, r) => s + r.n, 0);
+  console.log(`[relink] resolvable in scope: ${linkable}`);
+  for (const r of byLayer) console.log(`    layer ${r.layer}: ${r.n}`);
 
   if (!COMMIT) {
-    console.log(
-      `[dry-run] no rows written. Re-run with --commit to apply.` +
-        (DELIVERED_ONLY ? "" : " (add --delivered-only to restrict to delivered orders)")
-    );
+    console.log(`[dry-run] nothing written. Re-run with --commit to link ${linkable} orders.`);
     return;
   }
 
-  // 3. Batched update. Each batch links a bounded set of eligible orders; the
-  //    `student_id IS NULL` guard makes the loop self-terminating.
-  let totalLinked = 0;
-  for (;;) {
-    const updated = (await db.execute(sql`
-      ${eligibleCte}
-      , batch AS (
-        SELECT o.id, ss.student_id
-        FROM orders o
-        JOIN single_student ss ON ss.parent_id = o.parent_id
-        WHERE o.student_id IS NULL ${deliveredFilter}
-        LIMIT ${BATCH_SIZE}
-      )
-      UPDATE orders o
-         SET student_id = batch.student_id
-        FROM batch
-       WHERE o.id = batch.id
-       RETURNING o.id
-    `)) as unknown as { id: string }[];
-    if (updated.length === 0) break;
-    totalLinked += updated.length;
-    console.log(`[commit] linked ${updated.length} (running total ${totalLinked})`);
-  }
-  console.log(`[done] linked ${totalLinked} orders to their sole student.`);
+  const updated = await rows<{ layer: string }>(
+    sql`WITH ${resolveCte}
+        , upd AS (
+          UPDATE orders o SET student_id = r.student_id
+            FROM resolved r
+           WHERE o.id = r.order_id AND r.student_id IS NOT NULL AND o.student_id IS NULL
+          RETURNING r.layer
+        )
+        SELECT layer FROM upd`,
+  );
+  const counts = updated.reduce<Record<string, number>>((m, r) => {
+    m[r.layer] = (m[r.layer] ?? 0) + 1;
+    return m;
+  }, {});
+  console.log(`[done] linked ${updated.length} orders:`, counts);
 }
 
 main()
   .then(() => process.exit(0))
   .catch((e) => {
-    console.error("[backfill-order-student-link] FAILED:", e);
+    console.error("[relink] FAILED:", e);
     process.exit(1);
   });
