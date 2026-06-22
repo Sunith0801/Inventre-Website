@@ -274,7 +274,6 @@ async function backfillMissingOrders(custToParent: Map<string, ParentRow>): Prom
         shippingAddress,
         placedAt: new Date(so.transaction_date),
         confirmedAt: paymentStatus === "paid" ? new Date(so.transaction_date) : null,
-        gradeSnapshot: so.custom_student_grade ?? null,
         schoolNameSnapshot: so.custom_student_school ?? null,
         financialYear: financialYearOf(new Date(so.transaction_date)),
         placeOfSupply: so.place_of_supply ?? null,

@@ -344,7 +344,6 @@ async function applyImport(b: BuiltOrder): Promise<{ orderId: string; itemsImpor
         shippingAddress,
         placedAt,
         confirmedAt: paymentStatus === "paid" ? placedAt : null,
-        gradeSnapshot: h.custom_student_grade ?? null,
         schoolNameSnapshot: h.custom_student_school ?? null,
         financialYear: financialYearOf(placedAt),
         gstCategory: "Unregistered",

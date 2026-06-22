@@ -318,7 +318,6 @@ async function importFromMirror(
         shippingAddress,
         placedAt,
         confirmedAt: placedAt,
-        gradeSnapshot: h.custom_student_grade ?? null,
         schoolNameSnapshot: h.custom_student_school ?? null,
         financialYear: financialYearOf(placedAt),
         gstCategory: "Unregistered",

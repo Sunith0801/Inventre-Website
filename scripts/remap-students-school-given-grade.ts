@@ -232,13 +232,9 @@ async function main() {
       }
       oTouched++;
       overall.ordersUpdated++;
-      if (APPLY) {
-        await db.execute(sql`
-          UPDATE orders
-             SET grade_snapshot = ${given}
-           WHERE id = ${o.id}::uuid
-        `);
-      }
+      // grade_snapshot is no longer written/maintained (it carried the legacy
+      // +3 offset and nothing reads it). The per-school count below is now a
+      // "would-have-updated" diagnostic only — no write happens.
     }
 
     console.log(
