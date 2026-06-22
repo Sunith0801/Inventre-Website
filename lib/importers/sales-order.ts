@@ -233,7 +233,6 @@ async function flush(erpName: string): Promise<{ result: "new" | "updated" | "sk
         shippingAddress,
         notes: `erp_so:${erpName}`,
         placedAt: new Date(stage.txnDate),
-        gradeSnapshot: stage.studentGrade,
         schoolNameSnapshot: stage.schoolName,
         financialYear: financialYearOf(new Date(stage.txnDate)),
         placeOfSupply:

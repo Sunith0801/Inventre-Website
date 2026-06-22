@@ -217,7 +217,6 @@ export async function POST(req: Request) {
           notes: body.notes ?? null,
           placedAt: now,
           confirmedAt: body.paymentStatus === "paid" ? now : null,
-          gradeSnapshot: student?.class ?? null,
           schoolNameSnapshot: school.name,
           warehouseId,
           financialYear: financialYearOf(),

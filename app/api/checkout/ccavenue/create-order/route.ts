@@ -236,7 +236,6 @@ export async function POST(req: Request) {
         total: tot,
         shippingAddress: body.address,
         placedAt: new Date(),
-        gradeSnapshot: g.gradeClass,
         schoolNameSnapshot: g.schoolName,
         warehouseId,
         financialYear: financialYearOf(),

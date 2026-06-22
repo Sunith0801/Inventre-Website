@@ -476,7 +476,6 @@ export async function importSalesOrder(
           shippingAddress,
           placedAt,
           confirmedAt: paymentStatus === "paid" ? placedAt : null,
-          gradeSnapshot: so.custom_student_grade ?? null,
           schoolNameSnapshot: so.custom_student_school ?? null,
           financialYear: financialYearOf(placedAt),
           placeOfSupply: so.place_of_supply ?? null,

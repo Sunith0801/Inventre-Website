@@ -92,7 +92,6 @@ export async function POST(
       notes: body.reason ?? `Replacement for ${original.orderNumber}`,
       placedAt: new Date(),
       confirmedAt: new Date(),
-      gradeSnapshot: original.gradeSnapshot,
       schoolNameSnapshot: original.schoolNameSnapshot,
       warehouseId: original.warehouseId,
       financialYear: financialYearOf(),

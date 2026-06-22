@@ -218,7 +218,6 @@ export async function POST(
           notes: `Replacement for ${original.orderNumber} (return ${ret.returnNumber})`,
           placedAt: now,
           confirmedAt: now,
-          gradeSnapshot: original.gradeSnapshot,
           schoolNameSnapshot: original.schoolNameSnapshot,
           warehouseId: original.warehouseId,
           financialYear: original.financialYear,
