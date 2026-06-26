@@ -69,7 +69,14 @@ export default function AccountPage() {
   }, []);
 
   useEffect(() => {
-    if (loaded && !me) router.push("/login");
+    if (!loaded) return;
+    // /account is the PARENT area. Anyone else must be routed away or the
+    // render falls through to `return null` and shows a blank white page:
+    //   • not logged in      → /login
+    //   • logged in as admin → /admin (their actual home; /login would be
+    //                          wrong since they ARE logged in)
+    if (!me) router.push("/login");
+    else if (me.kind !== "parent") router.push("/admin");
   }, [loaded, me, router]);
 
   async function save(field: "name" | "email") {
