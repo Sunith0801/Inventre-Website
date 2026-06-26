@@ -132,7 +132,7 @@ mirrors the popup Inventre now shows parents
   lifecycle and pushes flips to Inventre via
   `/api/erp/webhooks/exchange|missing`.
 
-## Acceptance test
+## Acceptance test (dedup)
 
 1. Parent raises an Exchange on Inventre for SO `SAL-ORD-…`.
 2. CC opens the Audit portal, tries to add an Exchange (or Missing) for
@@ -141,3 +141,58 @@ mirrors the popup Inventre now shows parents
    new one (slot released).
 4. CC approves the request → both CC and parent are **permanently
    blocked** with the "already approved" message.
+
+---
+
+# Part 2 — Request-number single source of truth
+
+## The rule
+
+**Inventre is the ONLY system that generates Exchange/Missing request
+numbers.** Audit must never mint its own number again. All NEW requests
+must be `RTN-2026-XXXXX` / `MIS-2026-XXXXX` (5-digit, zero-padded).
+
+- Legacy `RTN-M-XXXXX` / `MIS-M-XXXXX` (audit-minted) must **never** be
+  generated for new requests.
+- **Existing `-M-` records stay UNCHANGED forever** — they're linked to
+  packing, dispatch, QR/barcodes, printed labels, reports, activity
+  timelines. Do NOT rename or migrate them (a prefix swap also collides
+  with existing `-YYYY-` numbers — they're not unique across the two
+  sequences).
+
+## Required Audit-side flow (manual CC create)
+
+1. CC fills the create form. Audit does **NOT** assign a number.
+2. Audit calls Inventre's create webhook **without** `return_number` /
+   `claim_number`.
+3. Inventre mints the number and **returns it** in the response:
+   - exchange → `{ ok: true, id, returnNumber }`
+   - missing  → `{ ok: true, id, claimNumber }`
+   - (on idempotent re-fire the same response now also includes
+     `returnNumber`/`claimNumber` so audit can always reconcile.)
+4. Audit **stores + displays** that number, and pins `id` as `ecom_id`
+   for subsequent status-flip webhooks. Status flips should key on
+   `ecom_id`/`id` (not the number) so they're robust.
+
+> Do NOT have audit mint `RTN-2026-` from its own counter — two
+> independent counters collide. Inventre's single atomic counter is the
+> only safe source.
+
+## Inventre side (already implemented)
+
+Behind env flag **`RETURNS_NUMBER_SINGLE_SOURCE`** (in `lib/audit-inbound.ts`):
+- `false` (current default): legacy — uses audit's number if sent.
+- `true`: Inventre ignores any number audit sends and always mints.
+
+**Coordinated go-live:** flip `RETURNS_NUMBER_SINGLE_SOURCE=true` on
+Inventre **at the same time** Audit ships the flow above. Flipping it
+before audit adopts the returned number would desync the two systems'
+numbers on new audit requests.
+
+## Acceptance test (numbering)
+
+1. With the flag on + audit updated: CC creates an Exchange in Audit →
+   both Inventre and Audit show the **same** `RTN-2026-XXXXX`.
+2. Same for Missing → `MIS-2026-XXXXX`.
+3. An existing `RTN-M-…` order still flips Approved→Packed→Delivered
+   correctly (resolved by `ecom_id`), proving history is unaffected.

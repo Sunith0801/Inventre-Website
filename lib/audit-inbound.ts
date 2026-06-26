@@ -37,6 +37,23 @@ import { isExchangeStatus } from "@/lib/exchange-shared";
 
 const computePickup = (): string => toDbDate(firstPickupSaturday(new Date()));
 
+/**
+ * Single-source-of-truth rollout switch.
+ *
+ * When `true`, Inventre ALWAYS mints the request number (RTN-/MIS-{year}-{seq})
+ * and IGNORES any number audit sends — audit must adopt the number Inventre
+ * returns. This retires audit's legacy "-M-" format for all NEW requests.
+ *
+ * Default `false` keeps the legacy behaviour (use audit's number if it sends
+ * one) so this can ship to prod with ZERO behaviour change, then be flipped
+ * ON in lockstep with the audit-side change that stops audit from generating
+ * its own number. Flipping it before audit is updated would desync the two
+ * systems' numbers on new audit-created requests, so they must go together.
+ */
+function inventreMintsNumbers(): boolean {
+  return process.env.RETURNS_NUMBER_SINGLE_SOURCE === "true";
+}
+
 // Mirror of lib/erp-bridge.ts resolveItemCode — keep in sync.
 function resolveItemCode(
   v: { id: string; erpName: string | null; sku: string | null },
@@ -126,6 +143,9 @@ async function resolveOrder(
 
 export interface AuditExchangeCreate {
   audit_ref?: string;
+  /** @deprecated IGNORED — Inventre is the sole minter. Adopt the
+   *  `returnNumber` from the response instead. Kept only so older audit
+   *  builds that still send it don't fail schema-wise. */
   return_number?: string;
   so_erp_name?: string;
   status?: string;
@@ -145,6 +165,8 @@ export interface AuditExchangeCreate {
 
 export interface AuditMissingCreate {
   audit_ref?: string;
+  /** @deprecated IGNORED — Inventre is the sole minter. Adopt the
+   *  `claimNumber` from the response instead. */
   claim_number?: string;
   so_erp_name?: string;
   status?: string;
@@ -166,11 +188,15 @@ export async function createExchangeFromAudit(
   // Idempotency: one exchange per order lifetime. If a non-rejected exchange
   // already exists for this order, return it (audit may re-fire on retry).
   const existing = await db
-    .select({ id: returns.id, status: returns.status })
+    .select({ id: returns.id, status: returns.status, returnNumber: returns.returnNumber })
     .from(returns)
     .where(and(eq(returns.orderId, ord.id), eq(returns.kind, "exchange")));
   const live = existing.find((r) => r.status !== "rejected");
-  if (live) return { status: 200, body: { ok: true, id: live.id, deduped: true } };
+  if (live)
+    return {
+      status: 200,
+      body: { ok: true, id: live.id, returnNumber: live.returnNumber, deduped: true },
+    };
 
   const byCode = await loadOrderItemMap(ord.id);
   const matched: Array<{
@@ -207,7 +233,12 @@ export async function createExchangeFromAudit(
     };
 
   const status = isExchangeStatus(p.status) ? p.status : "requested";
-  const returnNumber = p.return_number?.trim() || (await allocReturnNumber());
+  // Inventre is the sole minter when the single-source switch is on (it then
+  // IGNORES audit's number; audit adopts the one returned below). Off → legacy
+  // pass-through. Either way existing RTN-M-… rows are untouched.
+  const returnNumber = inventreMintsNumbers()
+    ? await allocReturnNumber()
+    : p.return_number?.trim() || (await allocReturnNumber());
   const pickupDate = p.pickup_date?.trim() || computePickup();
   const primary = matched[0];
 
@@ -254,11 +285,15 @@ export async function createMissingFromAudit(
   if (!ord.ok) return { status: ord.status, body: { error: ord.error } };
 
   const existing = await db
-    .select({ id: missingItemClaims.id, status: missingItemClaims.status })
+    .select({ id: missingItemClaims.id, status: missingItemClaims.status, claimNumber: missingItemClaims.claimNumber })
     .from(missingItemClaims)
     .where(eq(missingItemClaims.orderId, ord.id));
   const live = existing.find((r) => r.status !== "rejected");
-  if (live) return { status: 200, body: { ok: true, id: live.id, deduped: true } };
+  if (live)
+    return {
+      status: 200,
+      body: { ok: true, id: live.id, claimNumber: live.claimNumber, deduped: true },
+    };
 
   const byCode = await loadOrderItemMap(ord.id);
   const matched: Array<{ orderItemId: string; qtyShort: number; notes: string | null }> = [];
@@ -285,7 +320,12 @@ export async function createMissingFromAudit(
 
   const VALID = ["requested", "approved", "rejected", "received_at_school", "delivered"];
   const status = typeof p.status === "string" && VALID.includes(p.status) ? p.status : "requested";
-  const claimNumber = p.claim_number?.trim() || (await allocClaimNumber());
+  // Inventre is the sole minter when the single-source switch is on (it then
+  // IGNORES audit's number; audit adopts the one returned below). Off → legacy
+  // pass-through. Existing MIS-M-… rows are untouched.
+  const claimNumber = inventreMintsNumbers()
+    ? await allocClaimNumber()
+    : p.claim_number?.trim() || (await allocClaimNumber());
   const pickupDate = computePickup();
 
   const head = await db.transaction(async (tx) => {

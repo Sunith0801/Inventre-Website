@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { eq, and, desc, sql } from "drizzle-orm";
+import { eq, and, desc } from "drizzle-orm";
 import { db } from "@/db/client";
 import {
   returns,
@@ -11,6 +11,7 @@ import {
 } from "@/db/schema";
 import { requirePermission, isResponse, assertSchoolAccess } from "@/lib/admin-guard";
 import { logActivity } from "@/lib/activity";
+import { allocReturnNumber } from "@/lib/numbering";
 
 export async function GET(req: Request) {
   const guard = await requirePermission("returns.read");
@@ -57,14 +58,6 @@ const Body = z.object({
     .min(1),
 });
 
-async function nextReturnNumber(): Promise<string> {
-  const [{ count }] = await db
-    .select({ count: sql<number>`COUNT(*)::int` })
-    .from(returns);
-  const year = new Date().getFullYear();
-  return `RTN-${year}-${String(Number(count) + 1).padStart(5, "0")}`;
-}
-
 export async function POST(req: Request) {
   const guard = await requirePermission("returns.write");
   if (isResponse(guard)) return guard;
@@ -110,7 +103,10 @@ export async function POST(req: Request) {
     refund += unit * r.qty;
   }
 
-  const returnNumber = await nextReturnNumber();
+  // Centralized atomic generator (numbering_counters) — same RTN-{year}-{seq}
+  // source as the website + audit-inbound paths. Replaces the old COUNT(*)+1
+  // logic, which was collision-prone under concurrency and on row deletes.
+  const returnNumber = await allocReturnNumber();
   const created = await db.transaction(async (tx) => {
     const [r] = await tx
       .insert(returns)
