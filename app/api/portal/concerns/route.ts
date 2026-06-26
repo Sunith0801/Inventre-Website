@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { concerns, orders } from "@/db/schema";
 import { requireParent, isResponse } from "@/lib/parent-guard";
@@ -20,11 +20,38 @@ import { emitConcernEvent } from "@/lib/erp-bridge";
 export const dynamic = "force-dynamic";
 
 const Body = z.object({
-  category: z.enum(["payment", "order_delivery", "customer_care"]),
+  category: z.enum([
+    "payment",
+    "order_delivery",
+    "customer_care",
+    "student_details",
+    "login",
+  ]),
   orderId: z.string().uuid().nullish(),
   description: z.string().trim().min(1, "Please describe the issue").max(4000),
   contactPhone: z.string().trim().max(20).optional(),
 });
+
+/** List the caller's own concerns (for "View My Concern History"). */
+export async function GET() {
+  const me = await requireParent();
+  if (isResponse(me)) return me;
+  const rows = await db
+    .select({
+      id: concerns.id,
+      concernNumber: concerns.concernNumber,
+      category: concerns.category,
+      description: concerns.description,
+      status: concerns.status,
+      createdAt: concerns.createdAt,
+    })
+    .from(concerns)
+    .where(eq(concerns.parentId, me.id))
+    .orderBy(desc(concerns.createdAt));
+  return NextResponse.json({
+    concerns: rows.map((r) => ({ ...r, createdAt: r.createdAt.toISOString() })),
+  });
+}
 
 export async function POST(req: Request) {
   const me = await requireParent();
