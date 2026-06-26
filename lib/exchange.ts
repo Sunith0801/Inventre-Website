@@ -14,8 +14,10 @@ import { firstPickupSaturday, toDbDate } from "@/lib/date";
 import { emitExchangeEvent } from "@/lib/erp-bridge";
 import { notifyExchangeStatus } from "@/lib/notifications";
 import { isExchangeScopeRelaxed } from "@/lib/exchange-gate";
+import { isOrderDeliveredForReturns } from "@/lib/return-eligibility";
 import {
   canTransition,
+  isApprovedStatus,
   isExchangeStatus,
   type ExchangeStatus,
 } from "@/lib/exchange-shared";
@@ -172,11 +174,20 @@ export async function createExchange(
     )
     .limit(1);
   if (!order) return { ok: false, status: 404, error: "Order not found" };
-  if (order.status !== "delivered") {
+  // Delivered gate matches the button + form page: local status OR the
+  // audit/ERP shipment-mirror-derived status. See isOrderDeliveredForReturns.
+  const delivered = await isOrderDeliveredForReturns(
+    input.parentId,
+    order.orderNumber,
+    order.status,
+    order.deliveredAt ?? null
+  );
+  if (!delivered) {
     return {
       ok: false,
       status: 400,
-      error: "Exchange is only available for delivered orders",
+      error:
+        "Exchange is only available for delivered orders, within 15 days of delivery.",
     };
   }
 
@@ -217,10 +228,10 @@ export async function createExchange(
     ? null
     : await findOpenRequestForOrder(input.orderId, input.parentId);
   if (open) {
-    const msg =
-      open.kind === "exchange"
-        ? "An exchange request already exists for this order. Customer care will handle it; you can't raise another."
-        : "A missing-item claim is already in progress for this order — please wait for it to close before raising an exchange.";
+    const label = open.kind === "exchange" ? "Exchange" : "Missing";
+    const msg = isApprovedStatus(open.status)
+      ? `An ${label} request has already been approved for this Sales Order. You cannot raise another request for this order.`
+      : `A${open.kind === "exchange" ? "n exchange" : " missing-item"} request is already in progress for this order — please wait for it to close before raising another.`;
     return {
       ok: false,
       status: 409,

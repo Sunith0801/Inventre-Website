@@ -13,9 +13,12 @@ import {
 } from "@/db/schema";
 import { getCurrentParent } from "@/lib/session";
 import { isExchangeTester, isExchangeScopeRelaxed } from "@/lib/exchange-gate";
+import { isOrderDeliveredForReturns } from "@/lib/return-eligibility";
+import { findOpenRequestForOrder } from "@/lib/exchange";
 import { Nav } from "@/components/Nav";
 import { Footer } from "@/components/Footer";
 import { ExchangeForm } from "@/components/shop/orders/exchange/ExchangeForm";
+import { RequestBlockedNotice } from "@/components/shop/orders/RequestBlockedNotice";
 
 /**
  * Customer-facing form for raising an exchange request. Server-rendered
@@ -41,20 +44,28 @@ async function resolveLocalOrderId(
     ? undefined
     : eq(orders.parentId, parentId);
   const isUuid = /^[0-9a-f-]{36}$/i.test(idOrNumber);
-  if (isUuid) {
-    const [row] = await db
-      .select({ id: orders.id, status: orders.status })
-      .from(orders)
-      .where(and(eq(orders.id, idOrNumber), ownerScope))
-      .limit(1);
-    return row?.status === "delivered" ? row.id : null;
-  }
-  const [row] = await db
-    .select({ id: orders.id, status: orders.status })
-    .from(orders)
-    .where(and(eq(orders.orderNumber, idOrNumber), ownerScope))
-    .limit(1);
-  return row?.status === "delivered" ? row.id : null;
+  const [row] = isUuid
+    ? await db
+        .select({ id: orders.id, status: orders.status, orderNumber: orders.orderNumber, deliveredAt: orders.deliveredAt })
+        .from(orders)
+        .where(and(eq(orders.id, idOrNumber), ownerScope))
+        .limit(1)
+    : await db
+        .select({ id: orders.id, status: orders.status, orderNumber: orders.orderNumber, deliveredAt: orders.deliveredAt })
+        .from(orders)
+        .where(and(eq(orders.orderNumber, idOrNumber), ownerScope))
+        .limit(1);
+  if (!row) return null;
+  // Delivered gate matches the Request-exchange button: delivered (local
+  // status OR mirror-derived) AND within the 15-day window from delivery.
+  // See isOrderDeliveredForReturns.
+  const delivered = await isOrderDeliveredForReturns(
+    parentId,
+    row.orderNumber,
+    row.status,
+    row.deliveredAt ?? null
+  );
+  return delivered ? row.id : null;
 }
 
 type SiblingLite = {
@@ -89,6 +100,36 @@ export default async function NewExchangePage({
     .where(eq(orders.id, orderId))
     .limit(1);
   if (!order) notFound();
+
+  // Cross-flow lifetime lock: if a non-rejected exchange OR missing
+  // request already exists for this order, the parent can't start a new
+  // one — show the popup instead of the form. (Approved → permanent;
+  // pending → "in progress". Dev relaxes the lock so testers can re-raise.)
+  const blocker = isExchangeScopeRelaxed()
+    ? null
+    : await findOpenRequestForOrder(orderId, me.id);
+  if (blocker) {
+    return (
+      <main className="min-h-screen">
+        <Nav />
+        <div className="mx-auto max-w-2xl px-5 lg:px-8 pt-8 pb-16">
+          <a
+            href={`/shop/orders/${id}`}
+            className="text-[13px] font-medium text-ink-500 hover:text-ink-900"
+          >
+            ← Back to order
+          </a>
+        </div>
+        <RequestBlockedNotice
+          flow="exchange"
+          existingKind={blocker.kind}
+          existingStatus={blocker.status}
+          orderHref={`/shop/orders/${id}`}
+        />
+        <Footer />
+      </main>
+    );
+  }
 
   const items = await db
     .select({

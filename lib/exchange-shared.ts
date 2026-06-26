@@ -145,6 +145,28 @@ export function isExchangeStatus(v: unknown): v is ExchangeStatus {
   return typeof v === "string" && (EXCHANGE_STATUSES as readonly string[]).includes(v);
 }
 
+/**
+ * "Approved or beyond" — a request that customer-care has accepted (or
+ * already fulfilled) and which therefore PERMANENTLY blocks any further
+ * exchange/missing on the same sale order. Covers both flows' vocab:
+ * exchange (approved → received) and missing (approved →
+ * received_at_school → delivered), plus audit's terminal aliases.
+ * `requested` (still pending) and `rejected` (slot released) are NOT
+ * approved. Client-safe so the blocked-request popup can use it too.
+ */
+const APPROVED_STATUSES: ReadonlySet<string> = new Set([
+  "approved",
+  "received",
+  "received_at_school",
+  "delivered",
+  "completed",
+  "exchange_completed",
+]);
+
+export function isApprovedStatus(status: string | null | undefined): boolean {
+  return !!status && APPROVED_STATUSES.has(status);
+}
+
 const RANK: Record<ExchangeStatus, number> = {
   requested: 0,
   approved: 1,

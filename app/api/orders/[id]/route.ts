@@ -8,6 +8,7 @@ import {
   getParentOrderDetailLocal,
 } from "@/lib/erp-customer-orders";
 import { isExchangeTester, isExchangeScopeRelaxed } from "@/lib/exchange-gate";
+import { isWithinReturnsWindow } from "@/lib/return-eligibility";
 
 export async function GET(
   _: Request,
@@ -72,7 +73,12 @@ export async function GET(
       // the live-site caution; widen once we trust the override for
       // every parent.
       const apiStatus = (order as { status?: string }).status;
-      if (apiStatus === "shipped" && local.status === "delivered") {
+      if (
+        local.status === "delivered" &&
+        apiStatus !== "delivered" &&
+        apiStatus !== "cancelled" &&
+        apiStatus !== "returned"
+      ) {
         (order as { status?: string }).status = local.status;
       }
       const [exRow] = await db
@@ -139,11 +145,43 @@ export async function GET(
       // Dev: the lifetime lock is disabled so testers can re-raise
       // exchange / missing on orders they already used up.
       const anyOpen = !isExchangeScopeRelaxed() && (exBlocking || mcBlocking);
-      canExchange = local.status === "delivered" && !anyOpen;
+      // Delivery gate: the order is "delivered" for exchange/missing
+      // purposes if EITHER authoritative signal says so —
+      //   • the audit/ERP shipment-mirror–derived status (`order.status`,
+      //     computed by uiStatus() from outward_shipments + audit's
+      //     category map / display status — the SAME value the header
+      //     shows), OR
+      //   • the local `orders.status` column.
+      // We must OR them, not pick one: the mirror-derived status routinely
+      // runs AHEAD of the local column (the column only advances when an
+      // audit→inventre status webhook lands, which is frequently missed —
+      // ~1,305 fully-delivered orders were stuck at packed/shipped/placed
+      // with the buttons hidden because the old gate read local.status
+      // alone). Conversely the old code guarded against the mirror briefly
+      // lagging a just-delivered local order. OR-ing covers both lags so
+      // neither can ever hide the button on a genuinely delivered order,
+      // and guarantees the buttons agree with the displayed header status.
+      const derivedDelivered =
+        (order as { status?: string }).status === "delivered";
+      const localDelivered = local.status === "delivered";
+      // 15-day window from the delivery date — exchange/missing close 15
+      // days after delivery. Prefer the local delivered_at; fall back to
+      // the mirror's shipment delivered_at (the SAME date the header
+      // timeline shows). Unknown date → in-window (see
+      // isWithinReturnsWindow). Keeps the button in lockstep with the form
+      // pages + submit handlers, which apply the identical gate.
+      const mirrorDeliveredAt = (order as { deliveredAt?: string | null })
+        .deliveredAt;
+      const deliveredAt =
+        local.deliveredAt ?? (mirrorDeliveredAt ? new Date(mirrorDeliveredAt) : null);
+      const isDelivered =
+        (derivedDelivered || localDelivered) &&
+        isWithinReturnsWindow(deliveredAt);
+      canExchange = isDelivered && !anyOpen;
       // Missing claims are gated on delivery, identical to exchange —
       // the parent can only report a short ship once the order is marked
       // delivered (no packed/shipped early-report allowance).
-      canMissing = local.status === "delivered" && !anyOpen;
+      canMissing = isDelivered && !anyOpen;
     }
   }
 
@@ -165,25 +203,30 @@ export async function GET(
 async function resolveLocalOrder(
   idOrNumber: string,
   parentId: string
-): Promise<{ id: string; status: string } | null> {
+): Promise<{ id: string; status: string; deliveredAt: Date | null } | null> {
   // Dev: ownership scope relaxed so testers get the buttons on any
   // delivered order (drizzle's and() drops the undefined operand).
   const ownerScope = isExchangeScopeRelaxed()
     ? undefined
     : eq(orders.parentId, parentId);
   const isUuid = /^[0-9a-f-]{36}$/i.test(idOrNumber);
-  if (isUuid) {
-    const [row] = await db
-      .select({ id: orders.id, status: orders.status })
-      .from(orders)
-      .where(and(eq(orders.id, idOrNumber), ownerScope))
-      .limit(1);
-    return row ? { id: row.id, status: row.status as string } : null;
-  }
-  const [row] = await db
-    .select({ id: orders.id, status: orders.status })
-    .from(orders)
-    .where(and(eq(orders.orderNumber, idOrNumber), ownerScope))
-    .limit(1);
-  return row ? { id: row.id, status: row.status as string } : null;
+  const cols = {
+    id: orders.id,
+    status: orders.status,
+    deliveredAt: orders.deliveredAt,
+  };
+  const [row] = isUuid
+    ? await db
+        .select(cols)
+        .from(orders)
+        .where(and(eq(orders.id, idOrNumber), ownerScope))
+        .limit(1)
+    : await db
+        .select(cols)
+        .from(orders)
+        .where(and(eq(orders.orderNumber, idOrNumber), ownerScope))
+        .limit(1);
+  return row
+    ? { id: row.id, status: row.status as string, deliveredAt: row.deliveredAt }
+    : null;
 }

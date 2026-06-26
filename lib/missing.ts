@@ -5,7 +5,9 @@ import { missingItemClaims, missingItemClaimItems, orders } from "@/db/schema";
 import { allocClaimNumber } from "@/lib/numbering";
 import { firstPickupSaturday, toDbDate } from "@/lib/date";
 import { findOpenRequestForOrder } from "@/lib/exchange";
+import { isApprovedStatus } from "@/lib/exchange-shared";
 import { isExchangeScopeRelaxed } from "@/lib/exchange-gate";
+import { isOrderDeliveredForReturns } from "@/lib/return-eligibility";
 
 /**
  * Customer-raised "missing-item" claim service.
@@ -65,11 +67,20 @@ export async function createMissingClaim(
     )
     .limit(1);
   if (!order) return { ok: false, status: 404, error: "Order not found" };
-  if (order.status !== "delivered") {
+  // Delivered gate matches the button + form page: local status OR the
+  // audit/ERP shipment-mirror-derived status. See isOrderDeliveredForReturns.
+  const delivered = await isOrderDeliveredForReturns(
+    input.parentId,
+    order.orderNumber,
+    order.status,
+    order.deliveredAt ?? null
+  );
+  if (!delivered) {
     return {
       ok: false,
       status: 400,
-      error: "Missing-item claims are only available for delivered orders.",
+      error:
+        "Missing-item claims are only available for delivered orders, within 15 days of delivery.",
     };
   }
 
@@ -81,8 +92,10 @@ export async function createMissingClaim(
     ? null
     : await findOpenRequestForOrder(input.orderId, input.parentId);
   if (open) {
-    const msg =
-      open.kind === "missing"
+    const label = open.kind === "exchange" ? "Exchange" : "Missing";
+    const msg = isApprovedStatus(open.status)
+      ? `An ${label} request has already been approved for this Sales Order. You cannot raise another request for this order.`
+      : open.kind === "missing"
         ? "A missing-item claim for this order is already in progress."
         : "An exchange request is already in progress for this order — please wait for it to close before raising a missing claim.";
     return {

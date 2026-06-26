@@ -12,9 +12,12 @@ import {
 } from "@/db/schema";
 import { getCurrentParent } from "@/lib/session";
 import { isExchangeTester, isExchangeScopeRelaxed } from "@/lib/exchange-gate";
+import { isOrderDeliveredForReturns } from "@/lib/return-eligibility";
+import { findOpenRequestForOrder } from "@/lib/exchange";
 import { Nav } from "@/components/Nav";
 import { Footer } from "@/components/Footer";
 import { MissingForm } from "@/components/shop/orders/missing/MissingForm";
+import { RequestBlockedNotice } from "@/components/shop/orders/RequestBlockedNotice";
 
 /**
  * Customer-facing form for raising a missing-item claim.
@@ -37,20 +40,31 @@ async function resolveLocalOrderId(
     ? undefined
     : eq(orders.parentId, parentId);
   const isUuid = /^[0-9a-f-]{36}$/i.test(idOrNumber);
-  if (isUuid) {
-    const [row] = await db
-      .select({ id: orders.id, status: orders.status })
-      .from(orders)
-      .where(and(eq(orders.id, idOrNumber), ownerScope))
-      .limit(1);
-    return row && row.status !== "placed" ? row.id : null;
-  }
-  const [row] = await db
-    .select({ id: orders.id, status: orders.status })
-    .from(orders)
-    .where(and(eq(orders.orderNumber, idOrNumber), ownerScope))
-    .limit(1);
-  return row && row.status !== "placed" ? row.id : null;
+  const [row] = isUuid
+    ? await db
+        .select({ id: orders.id, status: orders.status, orderNumber: orders.orderNumber, deliveredAt: orders.deliveredAt })
+        .from(orders)
+        .where(and(eq(orders.id, idOrNumber), ownerScope))
+        .limit(1)
+    : await db
+        .select({ id: orders.id, status: orders.status, orderNumber: orders.orderNumber, deliveredAt: orders.deliveredAt })
+        .from(orders)
+        .where(and(eq(orders.orderNumber, idOrNumber), ownerScope))
+        .limit(1);
+  if (!row) return null;
+  // Delivered gate matches the Report-missing button + submit handler:
+  // delivered (local status OR mirror-derived) AND within the 15-day
+  // window from delivery. (Was previously `status !== "placed"` here —
+  // looser than both the button and createMissingClaim, which require
+  // delivered — so the form could load on an undelivered order only to
+  // have the submit 400.)
+  const delivered = await isOrderDeliveredForReturns(
+    parentId,
+    row.orderNumber,
+    row.status,
+    row.deliveredAt ?? null
+  );
+  return delivered ? row.id : null;
 }
 
 export default async function NewMissingClaimPage({
@@ -73,6 +87,36 @@ export default async function NewMissingClaimPage({
     .where(eq(orders.id, orderId))
     .limit(1);
   if (!order) notFound();
+
+  // Cross-flow lifetime lock: if a non-rejected missing OR exchange
+  // request already exists for this order, the parent can't start a new
+  // one — show the popup instead of the form. (Approved → permanent;
+  // pending → "in progress". Dev relaxes the lock so testers can re-raise.)
+  const blocker = isExchangeScopeRelaxed()
+    ? null
+    : await findOpenRequestForOrder(orderId, me.id);
+  if (blocker) {
+    return (
+      <main className="min-h-screen">
+        <Nav />
+        <div className="mx-auto max-w-2xl px-5 lg:px-8 pt-8 pb-16">
+          <a
+            href={`/shop/orders/${id}`}
+            className="text-[13px] font-medium text-ink-500 hover:text-ink-900"
+          >
+            ← Back to order
+          </a>
+        </div>
+        <RequestBlockedNotice
+          flow="missing"
+          existingKind={blocker.kind}
+          existingStatus={blocker.status}
+          orderHref={`/shop/orders/${id}`}
+        />
+        <Footer />
+      </main>
+    );
+  }
 
   const items = await db
     .select({
