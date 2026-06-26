@@ -1382,11 +1382,15 @@ export const concerns = pgTable(
     concernNumber: text("concern_number"), // CON-YYYY-NNNNN (inventre-minted)
     parentId: uuid("parent_id").references(() => parents.id),
     orderId: uuid("order_id").references(() => orders.id), // nullable
-    category: text("category").notNull(), // payment | order_delivery | customer_care
+    category: text("category").notNull(), // payment | order_delivery | customer_care | student_details | login
     description: text("description"),
+    contactName: text("contact_name"),
     contactPhone: text("contact_phone"),
+    orderRef: text("order_ref"), // free-text order no. a public parent types
     photos: jsonb("photos"),
     status: text("status").notNull().default("open"), // open|in_progress|resolved|rejected
+    assignedToName: text("assigned_to_name"),
+    assignedToUserId: uuid("assigned_to_user_id"),
     auditRef: text("audit_ref"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -1398,6 +1402,17 @@ export const concerns = pgTable(
     statusIdx: index("concerns_status_idx").on(t.status),
   }),
 );
+
+export const concernMessages = pgTable("concern_messages", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  concernId: uuid("concern_id")
+    .notNull()
+    .references(() => concerns.id, { onDelete: "cascade" }),
+  author: text("author").notNull(), // parent | agent | system
+  authorName: text("author_name"),
+  body: text("body").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
 
 export const payments = pgTable("payments", {
   id: uuid("id").defaultRandom().primaryKey(),

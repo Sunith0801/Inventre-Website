@@ -40,6 +40,7 @@ import {
   Wallet,
   Inbox,
   Send,
+  LifeBuoy,
 } from "lucide-react";
 import type { CurrentAdmin } from "@/lib/session";
 import { isReadOnlyAdmin, canSeePage } from "@/lib/admin-permissions";
@@ -133,6 +134,7 @@ const groups: NavGroup[] = [
       { href: "/admin/reviews",       label: "Reviews",       icon: Star,                perm: "nav:reviews" },
       { href: "/admin/testimonials",  label: "Testimonials",  icon: MessageSquareQuote,  perm: "nav:testimonials" },
       { href: "/admin/contact-forms", label: "Contact forms", icon: Inbox,               perm: "nav:contact-forms" },
+      { href: "/admin/parent-concerns", label: "Parent Concerns", icon: LifeBuoy,        perm: "nav:contact-forms" },
       { href: "/admin/gift-cards",    label: "Gift cards",    icon: Gift,                perm: "nav:gift-cards" },
     ],
   },
