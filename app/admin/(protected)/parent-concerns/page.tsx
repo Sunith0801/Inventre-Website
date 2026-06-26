@@ -17,21 +17,23 @@ import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
 export const dynamic = "force-dynamic";
 
 const CATEGORY_LABEL: Record<string, string> = {
-  payment: "Payment",
-  order_delivery: "Order & Delivery",
-  customer_care: "Customer Care",
-  student_details: "Student Details",
   login: "Website Login",
-  size_exchange: "Size Exchange",
+  grade_change: "Grade Change",
+  student_details: "Student Details",
+  guardian: "Guardian Details",
+  order_delivery: "Order & Delivery",
+  payment: "Payment",
+  customer_care: "Customer Care",
 };
-const STATUSES = ["open", "in_progress", "resolved", "rejected"] as const;
+const STATUSES = ["submitted", "in_progress", "waiting_customer", "waiting_school", "resolved"] as const;
 const CATEGORIES = Object.keys(CATEGORY_LABEL);
 
 const STATUS_TONE = {
-  open: "warning",
+  submitted: "warning",
   in_progress: "info",
+  waiting_customer: "violet",
+  waiting_school: "violet",
   resolved: "success",
-  rejected: "danger",
 } as const;
 
 export default async function ParentConcernsPage({

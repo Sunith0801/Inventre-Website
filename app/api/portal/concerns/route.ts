@@ -9,33 +9,56 @@ import { emitConcernEvent } from "@/lib/erp-bridge";
 /**
  * PUBLIC Parent Concern intake (inventre.in/portal) — no login.
  *
- * A parent scans the QR, picks a category, types their name + phone + the
- * issue, and submits. We mint a CON- ticket, store it (best-effort linking
- * to their parent/order by the phone/order-no they typed), open a message
- * thread, and push to the Audit call-centre. Returns the ticket number.
- *
- * Public is safe here because it only WRITES a concern the submitter
- * authored — it never reveals anyone's data. Tracking (GET) is by ticket
- * number only (the reference the submitter received), not by phone, so no
- * one can enumerate another parent's concerns.
+ * Captures the dynamic per-category form (details jsonb), routes to the right
+ * team, mints a CON- ticket, opens a message thread, and pushes to audit.
+ * Tracking (GET ?ref=) is by ticket number only.
  */
 
 export const dynamic = "force-dynamic";
 
+const CATEGORIES = [
+  "login",
+  "grade_change",
+  "student_details",
+  "guardian",
+  "order_delivery",
+  "payment",
+  "customer_care",
+] as const;
+
+// Which teams a category routes to in the audit dashboard.
+const TEAM_BY_CATEGORY: Record<string, string> = {
+  order_delivery: "customer_care,sales",
+  payment: "customer_care",
+  customer_care: "customer_care",
+  login: "customer_care",
+  grade_change: "customer_care",
+  student_details: "customer_care",
+  guardian: "customer_care",
+};
+const PHOTO_REQUIRED = new Set(["grade_change", "payment"]);
+
+const Photo = z.object({ url: z.string(), key: z.string() });
 const Body = z.object({
-  category: z.enum([
-    "payment",
-    "order_delivery",
-    "customer_care",
-    "student_details",
-    "login",
-    "size_exchange",
-  ]),
+  category: z.enum(CATEGORIES),
+  subType: z.string().trim().max(64).optional(),
   name: z.string().trim().min(1, "Please enter your name").max(120),
   phone: z.string().trim().min(6, "Please enter your mobile number").max(20),
-  description: z.string().trim().min(1, "Please describe the issue").max(4000),
+  description: z.string().trim().max(4000).optional(),
+  details: z.record(z.string(), z.unknown()).optional(),
+  photos: z.array(Photo).max(6).optional(),
+  studentId: z.string().uuid().optional(),
   orderRef: z.string().trim().max(64).optional(),
 });
+
+/** Build a readable summary when the form didn't send a description. */
+function summarize(category: string, details: Record<string, unknown> | undefined): string {
+  if (!details) return "";
+  const pairs = Object.entries(details)
+    .filter(([, v]) => v !== undefined && v !== null && String(v).trim() !== "")
+    .map(([k, v]) => `${k.replace(/_/g, " ")}: ${String(v)}`);
+  return pairs.join("\n");
+}
 
 export async function POST(req: Request) {
   let body: z.infer<typeof Body>;
@@ -47,10 +70,16 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: msg }, { status: 400 });
   }
 
-  const last10 = body.phone.replace(/\D/g, "").slice(-10);
+  if (PHOTO_REQUIRED.has(body.category) && (!body.photos || body.photos.length === 0)) {
+    return NextResponse.json({ error: "A photo is required for this request." }, { status: 400 });
+  }
 
-  // Best-effort link to a known parent by the phone they typed (so the
-  // support team sees the linked account); null is fine for a guest.
+  const description = (body.description?.trim() || summarize(body.category, body.details)).trim();
+  if (!description) {
+    return NextResponse.json({ error: "Please describe the issue." }, { status: 400 });
+  }
+
+  const last10 = body.phone.replace(/\D/g, "").slice(-10);
   let parentId: string | null = null;
   if (last10.length === 10) {
     const [p] = await db
@@ -61,7 +90,6 @@ export async function POST(req: Request) {
     parentId = p?.id ?? null;
   }
 
-  // Best-effort link to a local order by the order number they typed.
   let orderId: string | null = null;
   if (body.orderRef) {
     const [o] = await db
@@ -80,19 +108,24 @@ export async function POST(req: Request) {
         concernNumber,
         parentId,
         orderId,
+        studentId: body.studentId ?? null,
         category: body.category,
-        description: body.description,
+        subType: body.subType ?? null,
+        description,
+        details: body.details ?? null,
+        team: TEAM_BY_CATEGORY[body.category] ?? "customer_care",
         contactName: body.name,
         contactPhone: body.phone,
         orderRef: body.orderRef ?? null,
-        status: "open",
+        photos: body.photos ?? null,
+        status: "submitted",
       })
       .returning();
     await tx.insert(concernMessages).values({
       concernId: c.id,
       author: "parent",
       authorName: body.name,
-      body: body.description,
+      body: description,
     });
     return c;
   });
@@ -105,9 +138,8 @@ export async function POST(req: Request) {
 /** PUBLIC track-by-ticket: GET /api/portal/concerns?ref=CON-2026-00001 */
 export async function GET(req: Request) {
   const ref = new URL(req.url).searchParams.get("ref")?.trim();
-  if (!ref) {
-    return NextResponse.json({ error: "Provide a ticket number (?ref=)" }, { status: 400 });
-  }
+  if (!ref) return NextResponse.json({ error: "Provide a ticket number (?ref=)" }, { status: 400 });
+
   const [c] = await db
     .select({
       id: concerns.id,
@@ -141,7 +173,6 @@ export async function GET(req: Request) {
       description: c.description,
       createdAt: c.createdAt.toISOString(),
     },
-    // Only parent + agent messages are surfaced publicly (skip internal 'system').
     messages: msgs
       .filter((m) => m.author !== "system")
       .map((m) => ({ ...m, createdAt: m.createdAt.toISOString() })),

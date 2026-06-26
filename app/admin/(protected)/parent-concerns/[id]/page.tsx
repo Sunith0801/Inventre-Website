@@ -10,18 +10,20 @@ import { ConcernActions } from "@/components/admin/ConcernActions";
 export const dynamic = "force-dynamic";
 
 const CATEGORY_LABEL: Record<string, string> = {
-  payment: "Payment Issues",
-  order_delivery: "Order & Delivery",
-  customer_care: "Customer Care",
-  student_details: "Student Details",
   login: "Website Login",
-  size_exchange: "Size Exchange",
+  grade_change: "Grade Change",
+  student_details: "Student Details Incorrect",
+  guardian: "Guardian Details",
+  order_delivery: "Order & Delivery",
+  payment: "Payment Issues",
+  customer_care: "Customer Care",
 };
 const STATUS_TONE = {
-  open: "warning",
+  submitted: "warning",
   in_progress: "info",
+  waiting_customer: "violet",
+  waiting_school: "violet",
   resolved: "success",
-  rejected: "danger",
 } as const;
 
 function fmt(d: Date) {
@@ -99,9 +101,40 @@ export default async function ConcernDetailPage({ params }: { params: Promise<{ 
               <Row label="Parent" value={c.contactName} />
               <Row label="Mobile" value={c.contactPhone} />
               <Row label="Order" value={linkedOrder?.orderNumber ?? c.orderRef} />
+              {c.subType ? <Row label="Type" value={c.subType.replace(/_/g, " ")} /> : null}
+              <Row label="Route to" value={c.team ? c.team.split(",").join(", ").replace(/_/g, " ") : null} />
               <Row label="Raised" value={fmt(c.createdAt)} />
               <Row label="Assigned to" value={c.assignedToName ?? "Unassigned"} />
             </dl>
+
+            {c.details && typeof c.details === "object" ? (
+              <div className="mt-4 border-t border-cream-100 pt-3">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-400">Form answers</p>
+                <dl className="mt-2 space-y-1.5 text-[13px]">
+                  {Object.entries(c.details as Record<string, unknown>)
+                    .filter(([, v]) => v != null && String(v).trim() !== "")
+                    .map(([k, v]) => (
+                      <Row key={k} label={k.replace(/_/g, " ")} value={String(v)} />
+                    ))}
+                </dl>
+              </div>
+            ) : null}
+
+            {Array.isArray(c.photos) && c.photos.length > 0 ? (
+              <div className="mt-4 border-t border-cream-100 pt-3">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-400">Photos</p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {(c.photos as { url: string }[]).map((p, i) =>
+                    p?.url ? (
+                      <a key={i} href={p.url} target="_blank" rel="noreferrer">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={p.url} alt={`photo ${i + 1}`} className="h-16 w-16 rounded-lg object-cover ring-1 ring-cream-200" />
+                      </a>
+                    ) : null,
+                  )}
+                </div>
+              </div>
+            ) : null}
           </Card>
 
           <Card className="p-5">

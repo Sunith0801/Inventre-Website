@@ -9,7 +9,13 @@ import { useRouter } from "next/navigation";
  * server-rendered detail page (which re-reads the thread + status).
  */
 
-const STATUSES = ["open", "in_progress", "resolved", "rejected"] as const;
+const STATUSES = [
+  "submitted",
+  "in_progress",
+  "waiting_customer",
+  "waiting_school",
+  "resolved",
+] as const;
 
 export function ConcernActions({
   concernId,

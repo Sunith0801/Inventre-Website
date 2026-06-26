@@ -1068,7 +1068,11 @@ export async function emitConcernEvent(
         id: c.id,
         concern_number: c.concernNumber,
         category: c.category,
+        sub_type: c.subType ?? null,
+        team: c.team ?? null, // routing hint for the audit dashboard tabs
         description: c.description,
+        details: c.details ?? null,
+        contact_name: c.contactName ?? null,
         contact_phone: c.contactPhone,
         status: c.status,
         photos: c.photos ?? [],

@@ -1382,13 +1382,17 @@ export const concerns = pgTable(
     concernNumber: text("concern_number"), // CON-YYYY-NNNNN (inventre-minted)
     parentId: uuid("parent_id").references(() => parents.id),
     orderId: uuid("order_id").references(() => orders.id), // nullable
-    category: text("category").notNull(), // payment | order_delivery | customer_care | student_details | login
+    category: text("category").notNull(), // login|grade_change|student_details|guardian|order_delivery|payment|customer_care
+    subType: text("sub_type"),
     description: text("description"),
+    details: jsonb("details"), // per-category captured fields
+    team: text("team"), // customer_care | sales | "customer_care,sales"
     contactName: text("contact_name"),
     contactPhone: text("contact_phone"),
     orderRef: text("order_ref"), // free-text order no. a public parent types
+    studentId: uuid("student_id"),
     photos: jsonb("photos"),
-    status: text("status").notNull().default("open"), // open|in_progress|resolved|rejected
+    status: text("status").notNull().default("submitted"), // submitted|in_progress|waiting_customer|waiting_school|resolved
     assignedToName: text("assigned_to_name"),
     assignedToUserId: uuid("assigned_to_user_id"),
     auditRef: text("audit_ref"),

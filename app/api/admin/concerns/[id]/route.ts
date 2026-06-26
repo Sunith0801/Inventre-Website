@@ -14,7 +14,13 @@ import { logActivity } from "@/lib/activity";
 
 export const dynamic = "force-dynamic";
 
-const VALID_STATUS = ["open", "in_progress", "resolved", "rejected"] as const;
+const VALID_STATUS = [
+  "submitted",
+  "in_progress",
+  "waiting_customer",
+  "waiting_school",
+  "resolved",
+] as const;
 
 const Patch = z.object({
   status: z.enum(VALID_STATUS).optional(),

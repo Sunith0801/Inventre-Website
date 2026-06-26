@@ -14,18 +14,20 @@ import { Footer } from "@/components/Footer";
  */
 
 const CATEGORY_LABEL: Record<string, string> = {
-  payment: "Payment Issues",
-  order_delivery: "Order & Delivery",
-  customer_care: "Customer Care",
-  student_details: "Student Details",
   login: "Website Login",
-  size_exchange: "Size Exchange",
+  grade_change: "Grade Change",
+  student_details: "Student Details",
+  guardian: "Guardian Details",
+  order_delivery: "Order & Delivery",
+  payment: "Payment Issues",
+  customer_care: "Customer Care",
 };
 const STATUS_STYLE: Record<string, string> = {
-  open: "bg-amber-100 text-amber-700",
+  submitted: "bg-amber-100 text-amber-700",
   in_progress: "bg-blue-100 text-blue-700",
+  waiting_customer: "bg-violet-100 text-violet-700",
+  waiting_school: "bg-violet-100 text-violet-700",
   resolved: "bg-emerald-100 text-emerald-700",
-  rejected: "bg-red-100 text-red-700",
 };
 
 type Result = {
