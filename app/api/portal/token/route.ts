@@ -77,7 +77,12 @@ async function mint(req: Request, body: z.infer<typeof Body>) {
       ? body.ttlDays
       : PORTAL_TOKEN_DEFAULT_TTL_DAYS;
   const token = signPortalToken(parentId!, ttlDays);
-  const origin = new URL(req.url).origin;
+  // Public origin from forwarded headers — req.url's host is the internal
+  // container bind (0.0.0.0:3000) behind nginx, which would make a dead link.
+  const u = new URL(req.url);
+  const proto = req.headers.get("x-forwarded-proto") ?? u.protocol.replace(":", "");
+  const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host") ?? u.host;
+  const origin = `${proto}://${host}`;
   return NextResponse.json({
     parentId,
     token,

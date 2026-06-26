@@ -18,12 +18,20 @@ export const dynamic = "force-dynamic";
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
+  // Behind nginx the request URL's host is the internal bind (0.0.0.0:3000),
+  // so build the public origin from the forwarded headers — otherwise the
+  // browser gets redirected to a dead 0.0.0.0 URL.
+  const proto = req.headers.get("x-forwarded-proto") ?? url.protocol.replace(":", "");
+  const host =
+    req.headers.get("x-forwarded-host") ?? req.headers.get("host") ?? url.host;
+  const base = `${proto}://${host}`;
+
   const parentId = verifyPortalToken(url.searchParams.get("t"));
   if (!parentId) {
-    return NextResponse.redirect(new URL("/login?next=/portal", url.origin));
+    return NextResponse.redirect(`${base}/login?next=/portal`);
   }
   // Establish the parent session, then land on the clean /portal URL (drops
   // the token from the address bar / history).
   await createParentSession(parentId);
-  return NextResponse.redirect(new URL("/portal", url.origin));
+  return NextResponse.redirect(`${base}/portal`);
 }
