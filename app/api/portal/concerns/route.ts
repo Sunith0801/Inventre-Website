@@ -20,6 +20,7 @@ const CATEGORIES = [
   "login",
   "grade_change",
   "student_details",
+  "school_details",
   "guardian",
   "order_delivery",
   "payment",
@@ -34,6 +35,7 @@ const TEAM_BY_CATEGORY: Record<string, string> = {
   login: "customer_care",
   grade_change: "customer_care",
   student_details: "customer_care",
+  school_details: "customer_care",
   guardian: "customer_care",
 };
 const PHOTO_REQUIRED = new Set(["grade_change", "payment"]);

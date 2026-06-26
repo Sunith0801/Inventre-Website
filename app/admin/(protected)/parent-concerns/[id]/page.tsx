@@ -13,6 +13,7 @@ const CATEGORY_LABEL: Record<string, string> = {
   login: "Website Login",
   grade_change: "Grade Change",
   student_details: "Student Details Incorrect",
+  school_details: "School Details Incorrect",
   guardian: "Guardian Details",
   order_delivery: "Order & Delivery",
   payment: "Payment Issues",

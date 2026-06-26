@@ -8,6 +8,7 @@ import {
   LogIn,
   GraduationCap,
   UserCog,
+  School,
   Users,
   Truck,
   CreditCard,
@@ -61,7 +62,8 @@ type SearchResult = {
 const CATEGORIES: { key: string; title: string; blurb: string; Icon: typeof LogIn }[] = [
   { key: "login", title: "Website Login", blurb: "Login issues or update mobile number", Icon: LogIn },
   { key: "grade_change", title: "Grade Change", blurb: "Wrong grade shown on the website", Icon: GraduationCap },
-  { key: "student_details", title: "Student Details Incorrect", blurb: "School or grade is wrong", Icon: UserCog },
+  { key: "student_details", title: "Student Details Incorrect", blurb: "Student name is wrong", Icon: UserCog },
+  { key: "school_details", title: "School Details Incorrect", blurb: "School is wrong", Icon: School },
   { key: "guardian", title: "Guardian Details", blurb: "Update guardian / sibling info", Icon: Users },
   { key: "order_delivery", title: "Order & Delivery", blurb: "Track or report a delivery problem", Icon: Truck },
   { key: "payment", title: "Payment Issues", blurb: "Deductions or refund requests", Icon: CreditCard },
@@ -472,8 +474,21 @@ function ConcernForm({
 
         {category === "student_details" ? (
           <>
-            <Text label="Correct school" v={fields.school} on={(x) => set("school", x)} cls={field} />
-            <Select label="Correct grade" v={fields.grade} on={(x) => set("grade", x)} cls={field} options={GRADES} />
+            <div>
+              <label className="block text-[13px] font-semibold text-ink-800">Student ID</label>
+              <input value={student.enrollment ?? "—"} disabled className={`${field} bg-cream-100 text-ink-500`} />
+            </div>
+            <Text label="Correct student name" v={fields.correct_name} on={(x) => set("correct_name", x)} cls={field} />
+          </>
+        ) : null}
+
+        {category === "school_details" ? (
+          <>
+            <div>
+              <label className="block text-[13px] font-semibold text-ink-800">Student ID</label>
+              <input value={student.enrollment ?? "—"} disabled className={`${field} bg-cream-100 text-ink-500`} />
+            </div>
+            <Text label="Correct school" v={fields.correct_school} on={(x) => set("correct_school", x)} cls={field} />
           </>
         ) : null}
 
@@ -564,7 +579,8 @@ function ConcernForm({
 const TITLES: Record<string, { title: string; blurb: string }> = {
   login: { title: "Website Login", blurb: "We'll update your login mobile number." },
   grade_change: { title: "Grade Change", blurb: "Upload proof so we can correct the grade." },
-  student_details: { title: "Student Details Incorrect", blurb: "Tell us the correct school / grade." },
+  student_details: { title: "Student Details Incorrect", blurb: "Tell us the correct student name." },
+  school_details: { title: "School Details Incorrect", blurb: "Tell us the correct school." },
   guardian: { title: "Guardian Details", blurb: "Update guardian or sibling information." },
   order_delivery: { title: "Order & Delivery", blurb: "We'll route this to the right team." },
   payment: { title: "Payment Issues", blurb: "Upload proof of the deduction." },
