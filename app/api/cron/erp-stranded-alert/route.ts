@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import crypto from "crypto";
 import { getErpConfig } from "@/lib/erp-config";
-import { findStrandedOrders } from "@/lib/erp-stranded";
+import { findStrandedOrders, markStrandedAlerted } from "@/lib/erp-stranded";
 import { sendEmail, isEmailConfigured } from "@/lib/email";
 
 /**
@@ -98,6 +98,11 @@ export async function POST(req: Request) {
   const sent = results.filter(
     (r) => r.status === "fulfilled" && (r.value as { ok?: boolean })?.ok
   ).length;
+
+  // Stamp cooldown timestamp so these orders don't re-alert for 23 h.
+  if (sent > 0) {
+    await markStrandedAlerted(report.orderIds);
+  }
 
   return NextResponse.json({
     ok: true,

@@ -1082,6 +1082,7 @@ export const orders = pgTable(
     // ─── ERP bridge (poll worker) ─────────────────────────────────
     erpSoName: text("erp_so_name"),
     erpLastPolledAt: timestamp("erp_last_polled_at", { withTimezone: true }),
+    erpStrandedAlertedAt: timestamp("erp_stranded_alerted_at", { withTimezone: true }),
     /** Full ERPNext Sales Order doc + linked Address + Contact captured
      *  at import time. Lets the admin detail page render the ERP-side
      *  address, payment details, and sub-items exactly as they came from
