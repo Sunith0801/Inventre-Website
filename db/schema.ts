@@ -1371,6 +1371,34 @@ export const missingItemClaimItems = pgTable("missing_item_claim_items", {
   notes: text("notes"),
 });
 
+// Parent concern portal (inventre.in/portal) — migration 0064. A concern
+// raised by a parent (payment / order-delivery / customer-care), pushed to
+// the Audit call-centre Admin Panel via concern.created. Status flips return
+// from audit like exchange/missing.
+export const concerns = pgTable(
+  "concerns",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    concernNumber: text("concern_number"), // CON-YYYY-NNNNN (inventre-minted)
+    parentId: uuid("parent_id").references(() => parents.id),
+    orderId: uuid("order_id").references(() => orders.id), // nullable
+    category: text("category").notNull(), // payment | order_delivery | customer_care
+    description: text("description"),
+    contactPhone: text("contact_phone"),
+    photos: jsonb("photos"),
+    status: text("status").notNull().default("open"), // open|in_progress|resolved|rejected
+    auditRef: text("audit_ref"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    concernNumberIdx: uniqueIndex("concerns_concern_number_idx").on(t.concernNumber),
+    parentIdx: index("concerns_parent_idx").on(t.parentId),
+    orderIdx: index("concerns_order_idx").on(t.orderId),
+    statusIdx: index("concerns_status_idx").on(t.status),
+  }),
+);
+
 export const payments = pgTable("payments", {
   id: uuid("id").defaultRandom().primaryKey(),
   orderId: uuid("order_id")

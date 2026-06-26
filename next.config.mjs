@@ -48,19 +48,8 @@ const nextConfig = {
   async redirects() {
     const base = "https://pub-d46aef8f98ef4da0a1834fb6f554ae2c.r2.dev";
     return [
-      // Vanity alias: /portal → the parent account area. 307 (not pinned)
-      // so a real /portal page can be added later without fighting cached
-      // permanent redirects. Covers /portal and any /portal/<sub> path.
-      {
-        source: "/portal",
-        destination: "/account",
-        permanent: false,
-      },
-      {
-        source: "/portal/:path*",
-        destination: "/account",
-        permanent: false,
-      },
+      // (/portal is now a real page — the parent concern portal — so the
+      // earlier /portal → /account redirect was removed.)
       {
         source: "/images/:path*",
         destination: `${base}/v2/images/:path*`,
