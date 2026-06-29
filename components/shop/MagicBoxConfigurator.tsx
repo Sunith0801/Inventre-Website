@@ -31,6 +31,27 @@ function selectionFromVariantId(
   return null;
 }
 
+// ── House-colour consistency check ───────────────────────────────────
+// Scoped to specific Magic Boxes only. For these boxes we warn when the
+// parent picks different house colours across the configurable items —
+// a uniform set should be one house colour (Ruby/Sapphire/Emerald/Topaz).
+// Gated by box VARIANT id so it never affects any other product.
+const COLOR_CONSISTENCY_BOX_VARIANT_IDS = new Set<string>([
+  "10f893b9-4425-51f8-8c8e-4a8546892109", // SAS KS GRADE 1 MAGIC BOX BOYS
+]);
+
+/** The colour axis within an item's attribute groups, if any. */
+function colorAxisOf(groups: { name: string; values: string[] }[]) {
+  return groups.find((g) => /colou?r/i.test(g.name)) ?? null;
+}
+
+/** Canonical colour token for cross-item comparison: the parenthetical
+ *  real colour ("Ruby Spartans - (Red)" → "red"), else the whole value. */
+function canonicalColor(value: string): string {
+  const m = value.match(/\(([^)]+)\)/);
+  return (m ? m[1] : value).trim().toLowerCase();
+}
+
 type Variant = {
   id: string;
   size: string;
@@ -124,6 +145,25 @@ export function MagicBoxConfigurator({
   // now back). Surfaces a banner so they trust auto-save.
   const [prefilledFromDraft, setPrefilledFromDraft] = useState(false);
   const prefilledRef = useRef(false);
+
+  // House-colour consistency — only for the gated box(es). `settledRef`
+  // suppresses the warning during the initial load + restore wave (the
+  // MultiAttributePicker fires onResolve on mount, which routes through
+  // pick()); it flips true a tick after loading finishes, so only genuine
+  // user picks warn. `refColorRef` holds the FIRST house colour the parent
+  // chose (the reference every later pick is compared against).
+  const colorCheckEnabled = COLOR_CONSISTENCY_BOX_VARIANT_IDS.has(boxVariantId);
+  const settledRef = useRef(false);
+  const refColorRef = useRef<{
+    canon: string;
+    raw: string;
+    itemKey: string;
+  } | null>(null);
+  const [colorWarn, setColorWarn] = useState<
+    | { mode: "pick"; changedIdx: number; newRaw: string; refRaw: string; refItems: string[] }
+    | { mode: "final"; breakdown: { raw: string; count: number }[] }
+    | null
+  >(null);
 
   // Load variants for each bundle item.
   useEffect(() => {
@@ -282,6 +322,139 @@ export function MagicBoxConfigurator({
   const pickedCount = choosable.filter((it) => it.pickedVariantId).length;
   const allPicked = !stillLoading && pickedCount === choosable.length;
 
+  // Arm the colour check only after loading settles, so the picker's
+  // mount-time onResolve (restore wave) can establish the reference
+  // silently without popping the warning.
+  useEffect(() => {
+    if (!colorCheckEnabled || stillLoading) return;
+    const t = setTimeout(() => {
+      settledRef.current = true;
+    }, 0);
+    return () => clearTimeout(t);
+  }, [colorCheckEnabled, stillLoading]);
+
+  /** The chosen house colour for an item, or null when the item has no
+   *  genuine colour choice (no colour axis, or a single forced colour) or
+   *  isn't fully picked yet. */
+  function itemColor(it: ItemState): { raw: string; canon: string } | null {
+    if (!it.pickedVariantId) return null;
+    const axis = colorAxisOf(it.attributeGroups);
+    if (!axis || axis.values.length < 2) return null;
+    const sel = selectionFromVariantId(it.variantsByAttributeKey, it.pickedVariantId);
+    const raw = sel?.[axis.name];
+    return raw ? { raw, canon: canonicalColor(raw) } : null;
+  }
+
+  /** Distinct house colours currently across the box's colour-items. */
+  function colorBreakdown(): Map<string, { raw: string; names: string[] }> {
+    const m = new Map<string, { raw: string; names: string[] }>();
+    for (const it of items) {
+      const c = itemColor(it);
+      if (!c) continue;
+      const e = m.get(c.canon) ?? { raw: c.raw, names: [] };
+      e.names.push(it.node.name);
+      m.set(c.canon, e);
+    }
+    return m;
+  }
+
+  // After a genuine user pick, maintain the reference colour and warn on
+  // divergence. Reads the just-picked colour from `variantId` directly
+  // (state is async) and every other item from the current `items`.
+  function maybeWarnOnPick(idx: number, variantId: string | null) {
+    const it = items[idx];
+    const axis = colorAxisOf(it.attributeGroups);
+    if (!axis || axis.values.length < 2) return; // not a colour item
+    const newColor = variantId
+      ? (() => {
+          const sel = selectionFromVariantId(it.variantsByAttributeKey, variantId);
+          const raw = sel?.[axis.name];
+          return raw ? { raw, canon: canonicalColor(raw) } : null;
+        })()
+      : null;
+    const key = it.node.componentId;
+
+    if (!newColor) {
+      if (refColorRef.current?.itemKey === key) refColorRef.current = null;
+      return;
+    }
+    const ref = refColorRef.current;
+    if (!ref) {
+      refColorRef.current = { ...newColor, itemKey: key };
+      return;
+    }
+    if (ref.itemKey === key) {
+      // The reference item changed its OWN colour — it stays the reference.
+      refColorRef.current = { ...newColor, itemKey: key };
+      return;
+    }
+    if (newColor.canon !== ref.canon) {
+      if (!settledRef.current) return; // suppress during restore wave
+      const refItems = items
+        .map((other, i) => (i === idx ? null : other))
+        .filter((o): o is ItemState => o !== null)
+        .filter((o) => itemColor(o)?.canon === ref.canon)
+        .map((o) => o.node.name);
+      setColorWarn({ mode: "pick", changedIdx: idx, newRaw: newColor.raw, refRaw: ref.raw, refItems });
+    }
+  }
+
+  /** Modal action: switch this item to the reference colour, keeping its
+   *  current size when that colour+size combo exists. Updates
+   *  restoredSelection so the MultiAttributePicker remounts and reflects
+   *  the change. */
+  function applyReferenceColor(idx: number) {
+    const it = items[idx];
+    const axis = colorAxisOf(it.attributeGroups);
+    const ref = refColorRef.current;
+    setColorWarn(null);
+    if (!axis || !ref) return;
+    const curSel = it.pickedVariantId
+      ? selectionFromVariantId(it.variantsByAttributeKey, it.pickedVariantId)
+      : null;
+    let targetVid: string | null = null;
+    let targetSel: Record<string, string> | null = null;
+    for (const [k, vid] of Object.entries(it.variantsByAttributeKey)) {
+      let pairs: [string, string][];
+      try {
+        pairs = JSON.parse(k) as [string, string][];
+      } catch {
+        continue;
+      }
+      const tuple = Object.fromEntries(pairs);
+      if (canonicalColor(tuple[axis.name] ?? "") !== ref.canon) continue;
+      let ok = true;
+      if (curSel) {
+        for (const [a, v] of Object.entries(curSel)) {
+          if (a === axis.name) continue;
+          if (tuple[a] !== v) {
+            ok = false;
+            break;
+          }
+        }
+      }
+      if (ok) {
+        targetVid = vid;
+        targetSel = tuple;
+        break;
+      }
+    }
+    prefilledRef.current = false;
+    setItems((cur) => {
+      const next = cur.map((c, i) =>
+        i === idx
+          ? { ...c, pickedVariantId: targetVid, restoredSelection: targetSel }
+          : c
+      );
+      if (onPicksChange) {
+        const picks: Record<string, string | null> = {};
+        for (const c of next) picks[c.node.productId] = c.pickedVariantId;
+        onPicksChange(picks);
+      }
+      return next;
+    });
+  }
+
   function pick(idx: number, variantId: string | null) {
     prefilledRef.current = false;
     setItems((cur) => {
@@ -298,6 +471,7 @@ export function MagicBoxConfigurator({
     setErr(undefined);
     setAdded(false);
     setPrefilledFromCart(false);
+    if (colorCheckEnabled) maybeWarnOnPick(idx, variantId);
   }
 
   async function addAll() {
@@ -314,6 +488,26 @@ export function MagicBoxConfigurator({
       setErr("This Magic Box can't be added right now.");
       return;
     }
+    // Final safety net: if the box still mixes house colours, confirm once
+    // before committing (covers per-pick warnings that were dismissed).
+    if (colorCheckEnabled) {
+      const bd = colorBreakdown();
+      if (bd.size > 1) {
+        setColorWarn({
+          mode: "final",
+          breakdown: Array.from(bd.values()).map((v) => ({
+            raw: v.raw,
+            count: v.names.length,
+          })),
+        });
+        return;
+      }
+    }
+    await doAddAll();
+  }
+
+  async function doAddAll() {
+    setColorWarn(null);
     setAdding(true);
     setErr(undefined);
     try {
@@ -680,6 +874,131 @@ export function MagicBoxConfigurator({
                 sizeChartUrl={sizeGuideFor.sizeChartUrl}
                 productName={sizeGuideFor.node.name}
               />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* House-colour consistency warning (gated boxes only). Soft confirm —
+          never blocks. `pick` mode fires on a diverging selection; `final`
+          mode fires at Add-to-cart if the box still mixes colours. */}
+      {colorWarn && (
+        <div
+          className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm grid place-items-center px-4"
+          onClick={() => setColorWarn(null)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-xl max-w-md w-full"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start gap-3 p-5 border-b border-ink-100">
+              <span className="grid h-9 w-9 place-items-center rounded-full bg-amber-50 border border-amber-100 text-amber-600 shrink-0">
+                <AlertCircle className="h-4 w-4" />
+              </span>
+              <div>
+                <p className="font-display text-[16px] font-bold text-ink-900">
+                  {colorWarn.mode === "final"
+                    ? "This box has mixed colours"
+                    : "Different house colour?"}
+                </p>
+                <p className="text-[12px] text-ink-500">
+                  Uniform sets are usually all one house colour.
+                </p>
+              </div>
+            </div>
+            <div className="p-5 text-[13.5px] text-ink-700 leading-relaxed">
+              {colorWarn.mode === "pick" ? (
+                <>
+                  {colorWarn.refItems.length > 1 ? (
+                    <>
+                      <p>
+                        You&apos;ve chosen{" "}
+                        <b className="text-ink-900">{colorWarn.refRaw}</b> for
+                        these items:
+                      </p>
+                      <ul className="mt-1.5 ml-1 list-disc list-inside text-ink-600">
+                        {colorWarn.refItems.map((n) => (
+                          <li key={n}>{n}</li>
+                        ))}
+                      </ul>
+                    </>
+                  ) : (
+                    <p>
+                      You&apos;ve chosen{" "}
+                      <b className="text-ink-900">{colorWarn.refRaw}</b>
+                      {colorWarn.refItems[0] ? (
+                        <>
+                          {" "}
+                          for{" "}
+                          <b className="text-ink-900">{colorWarn.refItems[0]}</b>
+                        </>
+                      ) : null}
+                      .
+                    </p>
+                  )}
+                  <p className="mt-3">
+                    For{" "}
+                    <b className="text-ink-900">
+                      {items[colorWarn.changedIdx]?.node.name}
+                    </b>{" "}
+                    you&apos;ve now picked{" "}
+                    <b className="text-ink-900">{colorWarn.newRaw}</b>. Are you
+                    sure you want to continue with a different colour?
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p>This box mixes house colours:</p>
+                  <ul className="mt-1.5 ml-1 list-disc list-inside text-ink-600">
+                    {colorWarn.breakdown.map((b) => (
+                      <li key={b.raw}>
+                        <b className="text-ink-900">{b.raw}</b> — {b.count} item
+                        {b.count > 1 ? "s" : ""}
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="mt-3">Add the box to your cart anyway?</p>
+                </>
+              )}
+            </div>
+            <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 p-5 pt-0">
+              {colorWarn.mode === "pick" ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setColorWarn(null)}
+                    className="rounded-full border border-ink-200 px-4 py-2.5 text-[13px] font-semibold text-ink-700 hover:border-ink-400"
+                  >
+                    Keep {colorWarn.newRaw}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => applyReferenceColor(colorWarn.changedIdx)}
+                    className="rounded-full bg-brand text-white px-4 py-2.5 text-[13px] font-bold hover:bg-brand-600"
+                  >
+                    Use {colorWarn.refRaw} here
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setColorWarn(null)}
+                    className="rounded-full border border-ink-200 px-4 py-2.5 text-[13px] font-semibold text-ink-700 hover:border-ink-400"
+                  >
+                    Go back
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void doAddAll();
+                    }}
+                    className="rounded-full bg-brand text-white px-4 py-2.5 text-[13px] font-bold hover:bg-brand-600"
+                  >
+                    Add anyway
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>
