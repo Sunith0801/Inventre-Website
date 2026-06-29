@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { eq, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, or, sql } from "drizzle-orm";
 import { db } from "@/db/client";
-import { students, schools, parents } from "@/db/schema";
+import { students, schools, parents, concerns } from "@/db/schema";
 import {
   listParentOrdersFromErp,
   getParentOrderDetailFromErp,
@@ -63,6 +63,26 @@ export async function GET(req: Request) {
     .leftJoin(schools, eq(schools.id, students.schoolId))
     .where(eq(students.parentId, parentId));
 
+  // My Concerns — every concern raised by this parent OR for any of their kids.
+  const kidIds = kidRows.map((k) => k.id);
+  const concernScope = kidIds.length
+    ? or(eq(concerns.parentId, parentId), inArray(concerns.studentId, kidIds))
+    : eq(concerns.parentId, parentId);
+  const concernRows = await db
+    .select({
+      concernNumber: concerns.concernNumber,
+      category: concerns.category,
+      subType: concerns.subType,
+      status: concerns.status,
+      orderRef: concerns.orderRef,
+      studentId: concerns.studentId,
+      createdAt: concerns.createdAt,
+      updatedAt: concerns.updatedAt,
+    })
+    .from(concerns)
+    .where(and(concernScope, sql`${concerns.concernNumber} is not null`))
+    .orderBy(desc(concerns.createdAt));
+
   let orders: {
     orderNumber: string;
     status: string;
@@ -105,5 +125,15 @@ export async function GET(req: Request) {
       guardianMobile: parent?.phone ?? null,
     })),
     orders,
+    concerns: concernRows.map((c) => ({
+      concernNumber: c.concernNumber,
+      category: c.category,
+      subType: c.subType,
+      status: c.status,
+      orderRef: c.orderRef,
+      studentId: c.studentId,
+      createdAt: c.createdAt.toISOString(),
+      updatedAt: c.updatedAt.toISOString(),
+    })),
   });
 }

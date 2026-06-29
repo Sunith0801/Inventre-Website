@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import {
@@ -18,15 +18,18 @@ import {
   Package,
   CheckCircle2,
   ArrowLeft,
+  MessageSquare,
+  Clock,
 } from "lucide-react";
 import { Nav } from "@/components/Nav";
 import { Footer } from "@/components/Footer";
 
 /**
  * PUBLIC Parent Support Portal (inventre.in/portal) — no login.
- * Flow: search (Student ID / mobile) → student + orders → pick a concern →
- * dynamic form → CON- ticket. Size Exchange shows a popup pointing to the
- * website. Search display is open per product decision (no verification).
+ * Flow: search (Student ID / mobile) → student + orders + My Concerns → pick a
+ * concern → dynamic form → CON- ticket. Concern history, counts, filters and a
+ * status timeline all render inline (no navigation away) so the search context
+ * is never lost. Size Exchange shows a popup pointing to the website.
  */
 
 const GRADES = [
@@ -52,11 +55,36 @@ type Order = {
   carrier: string | null;
   tracking: string | null;
 };
+type Concern = {
+  concernNumber: string;
+  category: string;
+  subType: string | null;
+  status: string;
+  orderRef: string | null;
+  studentId: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
 type SearchResult = {
   found: boolean;
   parent?: { name: string | null; mobile: string | null };
   students?: Student[];
   orders?: Order[];
+  concerns?: Concern[];
+};
+type ConcernDetail = {
+  concern: {
+    concernNumber: string;
+    category: string;
+    subType: string | null;
+    status: string;
+    description: string | null;
+    orderRef: string | null;
+    createdAt: string;
+    updatedAt: string;
+  };
+  timeline: { label: string; at: string }[];
+  messages: { author: string; authorName: string | null; body: string; createdAt: string }[];
 };
 
 const CATEGORIES: { key: string; title: string; blurb: string; Icon: typeof LogIn }[] = [
@@ -71,6 +99,37 @@ const CATEGORIES: { key: string; title: string; blurb: string; Icon: typeof LogI
   { key: "size_exchange", title: "Size Exchange", blurb: "Request an item size exchange", Icon: Repeat },
 ];
 
+const CATEGORY_LABEL: Record<string, string> = {
+  login: "Website Login",
+  grade_change: "Grade Change",
+  student_details: "Student Details",
+  school_details: "School Details",
+  guardian: "Guardian Details",
+  order_delivery: "Order & Delivery",
+  payment: "Payment Issues",
+  customer_care: "Customer Care",
+};
+const STATUS_LABEL: Record<string, string> = {
+  submitted: "Submitted",
+  in_progress: "In Progress",
+  waiting_customer: "Waiting for you",
+  waiting_school: "Waiting on school",
+  resolved: "Resolved",
+};
+const STATUS_STYLE: Record<string, string> = {
+  submitted: "bg-amber-100 text-amber-700",
+  in_progress: "bg-blue-100 text-blue-700",
+  waiting_customer: "bg-violet-100 text-violet-700",
+  waiting_school: "bg-violet-100 text-violet-700",
+  resolved: "bg-emerald-100 text-emerald-700",
+};
+type Group = "open" | "pending" | "resolved";
+function statusGroup(s: string): Group {
+  if (s === "resolved") return "resolved";
+  if (s === "waiting_customer" || s === "waiting_school") return "pending";
+  return "open";
+}
+
 function fmtDate(iso: string) {
   try {
     return new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
@@ -78,9 +137,18 @@ function fmtDate(iso: string) {
     return iso;
   }
 }
+function fmtDateTime(iso: string) {
+  try {
+    return new Date(iso).toLocaleString("en-IN", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  } catch {
+    return iso;
+  }
+}
+
+type Step = "search" | "home" | "form" | "concern" | "done";
 
 export default function PortalPage() {
-  const [step, setStep] = useState<"search" | "home" | "form" | "done">("search");
+  const [step, setStep] = useState<Step>("search");
   const [q, setQ] = useState("");
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
@@ -89,8 +157,34 @@ export default function PortalPage() {
   const [category, setCategory] = useState<string | null>(null);
   const [sizePopup, setSizePopup] = useState(false);
   const [ticket, setTicket] = useState<string | null>(null);
+  const [detail, setDetail] = useState<ConcernDetail | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
 
   const student = data?.students?.find((s) => s.id === studentId) ?? data?.students?.[0] ?? null;
+
+  // Browser-history integration: each forward move pushes a history entry so the
+  // hardware Back button walks the funnel (concern → home → search) instead of
+  // leaving the page. Search results live in React state and survive popstate
+  // (we never unmount), so the context is preserved.
+  useEffect(() => {
+    window.history.replaceState({ s: "search" }, "");
+    const onPop = (e: PopStateEvent) => {
+      const s = (e.state && (e.state as { s?: Step }).s) || "search";
+      setStep(s);
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+
+  function pushStep(s: Step) {
+    setStep(s);
+    try {
+      window.history.pushState({ s }, "");
+    } catch {
+      /* no-op */
+    }
+  }
 
   async function runSearch(e?: React.FormEvent) {
     e?.preventDefault();
@@ -111,7 +205,7 @@ export default function PortalPage() {
       }
       setData(d);
       setStudentId(d.students?.[0]?.id ?? null);
-      setStep("home");
+      pushStep("home");
     } finally {
       setSearching(false);
     }
@@ -123,8 +217,44 @@ export default function PortalPage() {
       return;
     }
     setCategory(key);
-    setStep("form");
+    pushStep("form");
   }
+
+  async function openConcern(ref: string) {
+    setDetail(null);
+    setDetailError(null);
+    setDetailLoading(true);
+    pushStep("concern");
+    try {
+      const res = await fetch(`/api/portal/concerns?ref=${encodeURIComponent(ref)}`);
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setDetailError(d.error || "Could not load this concern.");
+        return;
+      }
+      setDetail(d as ConcernDetail);
+    } catch {
+      setDetailError("Could not load this concern.");
+    } finally {
+      setDetailLoading(false);
+    }
+  }
+
+  function resetToSearch() {
+    setData(null);
+    setQ("");
+    setStudentId(null);
+    setStep("search");
+    try {
+      window.history.replaceState({ s: "search" }, "");
+    } catch {
+      /* no-op */
+    }
+  }
+
+  // Guard against landing on a data-dependent step without data (e.g. a stale
+  // popstate after a hard refresh) — fall back to the search view.
+  const effectiveStep: Step = step !== "search" && !data ? "search" : step;
 
   return (
     <main className="min-h-screen bg-cream-50">
@@ -144,7 +274,7 @@ export default function PortalPage() {
         </div>
 
         {/* STEP: search */}
-        {step === "search" ? (
+        {effectiveStep === "search" ? (
           <div className="mt-8">
             <p className="text-[14px] text-ink-600">
               Enter your <strong>Student ID</strong> or <strong>mobile number</strong> to begin.
@@ -168,8 +298,8 @@ export default function PortalPage() {
           </div>
         ) : null}
 
-        {/* STEP: home — student + orders + categories */}
-        {step === "home" && student ? (
+        {/* STEP: home — student + orders + My Concerns + categories */}
+        {effectiveStep === "home" && student ? (
           <div className="mt-6 space-y-6">
             <StudentCard student={student} orders={data?.orders ?? []} />
             {(data?.students?.length ?? 0) > 1 ? (
@@ -187,6 +317,8 @@ export default function PortalPage() {
                 ))}
               </div>
             ) : null}
+
+            <MyConcerns concerns={data?.concerns ?? []} onOpen={openConcern} />
 
             <div>
               <h2 className="font-display text-[16px] font-bold text-ink-900">What can we help you with?</h2>
@@ -211,11 +343,7 @@ export default function PortalPage() {
             </div>
 
             <button
-              onClick={() => {
-                setStep("search");
-                setData(null);
-                setQ("");
-              }}
+              onClick={resetToSearch}
               className="text-[13px] font-medium text-ink-500 hover:text-ink-900"
             >
               ← Search for another student
@@ -224,22 +352,34 @@ export default function PortalPage() {
         ) : null}
 
         {/* STEP: form */}
-        {step === "form" && category && student ? (
+        {effectiveStep === "form" && category && student ? (
           <ConcernForm
             category={category}
             student={student}
+            orders={data?.orders ?? []}
             defaultPhone={data?.parent?.mobile ?? student.guardianMobile ?? ""}
             defaultName={student.guardianName ?? ""}
-            onBack={() => setStep("home")}
+            onBack={() => window.history.back()}
             onDone={(ref) => {
               setTicket(ref);
-              setStep("done");
+              pushStep("done");
             }}
+            onViewExisting={(ref) => openConcern(ref)}
+          />
+        ) : null}
+
+        {/* STEP: concern detail (inline timeline + thread) */}
+        {effectiveStep === "concern" ? (
+          <ConcernDetailView
+            detail={detail}
+            loading={detailLoading}
+            error={detailError}
+            onBack={() => window.history.back()}
           />
         ) : null}
 
         {/* STEP: done */}
-        {step === "done" ? (
+        {effectiveStep === "done" ? (
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
@@ -257,18 +397,18 @@ export default function PortalPage() {
             </p>
             <div className="mt-6 flex justify-center gap-3">
               <button
-                onClick={() => setStep("home")}
+                onClick={() => window.history.back()}
                 className="rounded-xl bg-ink-900 px-5 py-3 text-[14px] font-semibold text-white hover:bg-ink-800 transition"
               >
-                Raise another
+                Back to my concerns
               </button>
               {ticket ? (
-                <Link
-                  href={`/portal/history?ref=${encodeURIComponent(ticket)}`}
+                <button
+                  onClick={() => openConcern(ticket)}
                   className="rounded-xl bg-white px-5 py-3 text-[14px] font-semibold text-ink-800 ring-1 ring-cream-200 hover:ring-brand/40 transition"
                 >
                   Track it
-                </Link>
+                </button>
               ) : null}
             </div>
           </motion.div>
@@ -356,6 +496,187 @@ function StudentCard({ student, orders }: { student: Student; orders: Order[] })
   );
 }
 
+// ─── My Concerns — history, counts, filters ────────────────────────────
+
+function MyConcerns({ concerns, onOpen }: { concerns: Concern[]; onOpen: (ref: string) => void }) {
+  const [filter, setFilter] = useState<"all" | Group>("all");
+
+  const counts = {
+    total: concerns.length,
+    open: concerns.filter((c) => statusGroup(c.status) === "open").length,
+    pending: concerns.filter((c) => statusGroup(c.status) === "pending").length,
+    resolved: concerns.filter((c) => statusGroup(c.status) === "resolved").length,
+  };
+  const shown = filter === "all" ? concerns : concerns.filter((c) => statusGroup(c.status) === filter);
+
+  const FILTERS: { key: "all" | Group; label: string; n: number }[] = [
+    { key: "all", label: "All", n: counts.total },
+    { key: "open", label: "Open", n: counts.open },
+    { key: "pending", label: "Pending", n: counts.pending },
+    { key: "resolved", label: "Resolved", n: counts.resolved },
+  ];
+
+  return (
+    <div>
+      <div className="flex items-center justify-between">
+        <h2 className="font-display text-[16px] font-bold text-ink-900">My Concerns</h2>
+        <span className="text-[12px] text-ink-500">
+          Total {counts.total} · <span className="text-amber-600">Open {counts.open + counts.pending}</span> ·{" "}
+          <span className="text-emerald-600">Resolved {counts.resolved}</span>
+        </span>
+      </div>
+
+      {concerns.length === 0 ? (
+        <div className="mt-3 rounded-2xl bg-white p-5 text-center ring-1 ring-cream-200">
+          <MessageSquare className="mx-auto h-7 w-7 text-ink-300" />
+          <p className="mt-2 text-[13px] text-ink-500">You haven&apos;t raised any concerns yet.</p>
+        </div>
+      ) : (
+        <>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {FILTERS.map((f) => (
+              <button
+                key={f.key}
+                onClick={() => setFilter(f.key)}
+                className={`rounded-full px-3 py-1 text-[12px] font-semibold transition ${
+                  filter === f.key ? "bg-ink-900 text-white" : "bg-cream-100 text-ink-600 hover:bg-cream-200"
+                }`}
+              >
+                {f.label} ({f.n})
+              </button>
+            ))}
+          </div>
+
+          <ul className="mt-3 space-y-2">
+            {shown.map((c) => (
+              <li key={c.concernNumber}>
+                <button
+                  onClick={() => onOpen(c.concernNumber)}
+                  className="group flex w-full items-center gap-3 rounded-2xl bg-white p-4 text-left ring-1 ring-cream-200 hover:ring-brand/40 transition"
+                >
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-center gap-2">
+                      <span className="text-[14px] font-bold text-ink-900">
+                        {CATEGORY_LABEL[c.category] ?? c.category}
+                      </span>
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                          STATUS_STYLE[c.status] ?? "bg-cream-200 text-ink-600"
+                        }`}
+                      >
+                        {STATUS_LABEL[c.status] ?? c.status.replace(/_/g, " ")}
+                      </span>
+                    </span>
+                    <span className="mt-0.5 block text-[12px] text-ink-500">
+                      {c.concernNumber} · Raised {fmtDate(c.createdAt)}
+                      {c.orderRef ? ` · ${c.orderRef}` : ""}
+                    </span>
+                    <span className="block text-[11px] text-ink-400">Updated {fmtDateTime(c.updatedAt)}</span>
+                  </span>
+                  <ChevronRight className="h-4 w-4 shrink-0 text-ink-300 group-hover:text-brand transition" />
+                </button>
+              </li>
+            ))}
+            {shown.length === 0 ? (
+              <li className="rounded-2xl bg-white p-4 text-center text-[13px] text-ink-500 ring-1 ring-cream-200">
+                No {filter} concerns.
+              </li>
+            ) : null}
+          </ul>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ─── Concern detail — timeline + thread ────────────────────────────────
+
+function ConcernDetailView({
+  detail,
+  loading,
+  error,
+  onBack,
+}: {
+  detail: ConcernDetail | null;
+  loading: boolean;
+  error: string | null;
+  onBack: () => void;
+}) {
+  return (
+    <div className="mt-6">
+      <button onClick={onBack} className="flex items-center gap-1 text-[13px] font-medium text-ink-500 hover:text-ink-900">
+        <ArrowLeft className="h-4 w-4" /> Back to my concerns
+      </button>
+
+      {loading ? (
+        <div className="mt-5 h-40 rounded-3xl bg-cream-200 animate-pulse" />
+      ) : error ? (
+        <p className="mt-5 text-[13px] font-medium text-red-600">{error}</p>
+      ) : detail ? (
+        <div className="mt-4 rounded-3xl bg-white p-5 ring-1 ring-cream-200">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="font-display text-[18px] font-bold text-ink-900">
+                {CATEGORY_LABEL[detail.concern.category] ?? detail.concern.category}
+              </p>
+              <p className="text-[12px] text-ink-500">
+                {detail.concern.concernNumber} · Raised {fmtDate(detail.concern.createdAt)}
+                {detail.concern.orderRef ? ` · ${detail.concern.orderRef}` : ""}
+              </p>
+            </div>
+            <span
+              className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
+                STATUS_STYLE[detail.concern.status] ?? "bg-cream-200 text-ink-600"
+              }`}
+            >
+              {STATUS_LABEL[detail.concern.status] ?? detail.concern.status.replace(/_/g, " ")}
+            </span>
+          </div>
+
+          {/* Timeline */}
+          <div className="mt-5">
+            <p className="flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-wide text-ink-400">
+              <Clock className="h-3.5 w-3.5" /> Timeline
+            </p>
+            <ol className="mt-3 space-y-0">
+              {detail.timeline.map((t, i) => {
+                const last = i === detail.timeline.length - 1;
+                return (
+                  <li key={i} className="flex gap-3">
+                    <div className="flex flex-col items-center">
+                      <span className={`mt-1 h-2.5 w-2.5 rounded-full ${last ? "bg-brand" : "bg-cream-300"}`} />
+                      {!last ? <span className="w-px flex-1 bg-cream-200" /> : null}
+                    </div>
+                    <div className={`pb-4 ${last ? "" : ""}`}>
+                      <p className="text-[13px] font-semibold capitalize text-ink-900">{t.label.replace(/_/g, " ")}</p>
+                      <p className="text-[11px] text-ink-400">{fmtDateTime(t.at)}</p>
+                    </div>
+                  </li>
+                );
+              })}
+            </ol>
+          </div>
+
+          {/* Thread */}
+          {detail.messages.length > 0 ? (
+            <div className="mt-2 space-y-3 border-t border-cream-100 pt-4">
+              <p className="text-[12px] font-semibold uppercase tracking-wide text-ink-400">Messages</p>
+              {detail.messages.map((m, i) => (
+                <div key={i} className={m.author === "agent" ? "pl-6" : ""}>
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-400">
+                    {m.author === "agent" ? "Support" : m.authorName || "You"} · {fmtDateTime(m.createdAt)}
+                  </p>
+                  <p className="text-[13px] text-ink-700">{m.body}</p>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function Field({ label, value }: { label: string; value: string | null }) {
   return (
     <div>
@@ -370,36 +691,45 @@ function Field({ label, value }: { label: string; value: string | null }) {
 function ConcernForm({
   category,
   student,
+  orders,
   defaultName,
   defaultPhone,
   onBack,
   onDone,
+  onViewExisting,
 }: {
   category: string;
   student: Student;
+  orders: Order[];
   defaultName: string;
   defaultPhone: string;
   onBack: () => void;
   onDone: (ref: string) => void;
+  onViewExisting: (ref: string) => void;
 }) {
   const [name, setName] = useState(defaultName);
   const [phone, setPhone] = useState(defaultPhone);
   const [fields, setFields] = useState<Record<string, string>>({});
   const [subType, setSubType] = useState<string>("");
+  const [orderRef, setOrderRef] = useState<string>(orders[0]?.orderNumber ?? "");
   const [files, setFiles] = useState<File[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [dupRef, setDupRef] = useState<string | null>(null);
 
   const set = (k: string, v: string) => setFields((f) => ({ ...f, [k]: v }));
   const field =
     "mt-1 w-full rounded-xl border border-cream-300 bg-white px-3 py-2.5 text-[14px] focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20";
   const photoRequired = category === "grade_change" || category === "payment";
+  // Categories where linking to a specific order helps the support team.
+  const showOrderPicker = (category === "order_delivery" || category === "payment") && orders.length > 0;
 
   const meta = TITLES[category] ?? { title: "Raise a concern", blurb: "" };
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    setDupRef(null);
     if (!name.trim()) return setError("Please enter your name.");
     if (phone.replace(/\D/g, "").length < 10) return setError("Please enter a valid mobile number.");
     if (photoRequired && files.length === 0) return setError("A photo is required for this request.");
@@ -421,6 +751,8 @@ function ConcernForm({
       }
 
       const details: Record<string, string> = { ...fields };
+      // The order number a parent typed (order_delivery) is a fine fallback ref.
+      const ref = showOrderPicker ? orderRef : fields.order_no || "";
       const res = await fetch("/api/portal/concerns", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -430,12 +762,14 @@ function ConcernForm({
           name: name.trim(),
           phone: phone.trim(),
           studentId: student.id,
+          orderRef: ref || undefined,
           details,
           photos,
         }),
       });
       const d = await res.json().catch(() => ({}));
       if (!res.ok) {
+        if (res.status === 409 && d.concernNumber) setDupRef(d.concernNumber);
         setError(d.error || "Could not submit.");
         return;
       }
@@ -513,7 +847,6 @@ function ConcernForm({
                 { value: "wrong_item", label: "Wrong item delivered" },
               ]}
             />
-            <Text label="Order number (optional)" v={fields.order_no} on={(x) => set("order_no", x)} cls={field} />
             <Area label="Details" v={fields.note} on={(x) => set("note", x)} cls={field} />
           </>
         ) : null}
@@ -541,6 +874,21 @@ function ConcernForm({
           <Area label="How can we help?" v={fields.note} on={(x) => set("note", x)} cls={field} />
         ) : null}
 
+        {/* Related order — links the concern to a real sales order */}
+        {showOrderPicker ? (
+          <div>
+            <label className="block text-[13px] font-semibold text-ink-800">Related order</label>
+            <select value={orderRef} onChange={(e) => setOrderRef(e.target.value)} className={field}>
+              <option value="">Not about a specific order</option>
+              {orders.map((o) => (
+                <option key={o.orderNumber} value={o.orderNumber}>
+                  {o.orderNumber} — {o.status} ({fmtDate(o.orderedDate)})
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : null}
+
         {/* Contact + photos */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Text label="Your name" v={name} on={setName} cls={field} />
@@ -563,7 +911,20 @@ function ConcernForm({
           </div>
         ) : null}
 
-        {error ? <p className="text-[13px] font-medium text-red-600">{error}</p> : null}
+        {error ? (
+          <div className="text-[13px] font-medium text-red-600">
+            {error}
+            {dupRef ? (
+              <button
+                type="button"
+                onClick={() => onViewExisting(dupRef)}
+                className="ml-2 underline hover:text-red-700"
+              >
+                View {dupRef}
+              </button>
+            ) : null}
+          </div>
+        ) : null}
         <button
           type="submit"
           disabled={submitting}

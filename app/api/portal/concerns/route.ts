@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { concerns, concernMessages, orders, parents } from "@/db/schema";
 import { allocConcernNumber } from "@/lib/numbering";
@@ -102,6 +102,33 @@ export async function POST(req: Request) {
     orderId = o?.id ?? null;
   }
 
+  // Duplicate guard: block a second active concern for the same order + category
+  // (same parent or student). Only applies when an order is referenced — generic
+  // concerns (no order) are allowed to repeat. Returns the existing ticket.
+  if (body.orderRef && (parentId || body.studentId)) {
+    const dupConds = [
+      eq(concerns.category, body.category),
+      inArray(concerns.status, ["submitted", "in_progress", "waiting_customer", "waiting_school"]),
+      orderId ? eq(concerns.orderId, orderId) : eq(concerns.orderRef, body.orderRef.trim()),
+      parentId ? eq(concerns.parentId, parentId) : eq(concerns.studentId, body.studentId!),
+    ];
+    const [dup] = await db
+      .select({ concernNumber: concerns.concernNumber })
+      .from(concerns)
+      .where(and(...dupConds))
+      .limit(1);
+    if (dup) {
+      return NextResponse.json(
+        {
+          error: `You already have an open request (${dup.concernNumber}) for this order. We'll update you there.`,
+          duplicate: true,
+          concernNumber: dup.concernNumber,
+        },
+        { status: 409 },
+      );
+    }
+  }
+
   const concernNumber = await allocConcernNumber();
   const created = await db.transaction(async (tx) => {
     const [c] = await tx
@@ -147,9 +174,12 @@ export async function GET(req: Request) {
       id: concerns.id,
       concernNumber: concerns.concernNumber,
       category: concerns.category,
+      subType: concerns.subType,
       status: concerns.status,
       description: concerns.description,
+      orderRef: concerns.orderRef,
       createdAt: concerns.createdAt,
+      updatedAt: concerns.updatedAt,
     })
     .from(concerns)
     .where(eq(concerns.concernNumber, ref))
@@ -167,14 +197,26 @@ export async function GET(req: Request) {
     .where(eq(concernMessages.concernId, c.id))
     .orderBy(asc(concernMessages.createdAt));
 
+  // Timeline = creation + every recorded "Status → …" transition (system messages).
+  const timeline = [
+    { label: "Submitted", at: c.createdAt.toISOString() },
+    ...msgs
+      .filter((m) => m.author === "system" && /^Status →/.test(m.body))
+      .map((m) => ({ label: m.body.replace(/^Status →\s*/, ""), at: m.createdAt.toISOString() })),
+  ];
+
   return NextResponse.json({
     concern: {
       concernNumber: c.concernNumber,
       category: c.category,
+      subType: c.subType,
       status: c.status,
       description: c.description,
+      orderRef: c.orderRef,
       createdAt: c.createdAt.toISOString(),
+      updatedAt: c.updatedAt.toISOString(),
     },
+    timeline,
     messages: msgs
       .filter((m) => m.author !== "system")
       .map((m) => ({ ...m, createdAt: m.createdAt.toISOString() })),
