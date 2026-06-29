@@ -11,6 +11,7 @@ import {
   cartItems,
   orders,
   orderItems,
+  payments,
   schools,
 } from "@/db/schema";
 import { normalizeGrade } from "@/lib/grade-filter";
@@ -75,13 +76,54 @@ function requireActiveStudent(
  * One magic box per student, lifetime. Applies regardless of price
  * (₹0 complimentary or full-price) and across magic_box products —
  * a parent who placed an UKG box for a Nursery sibling can't go back
- * and add a Nursery box later. The quota is burned by a paid OR a
- * still-pending order (an in-flight checkout). It is FREED only when the
- * prior attempt's payment FAILED or the order was cancelled — in those
- * cases the box never reached the family, so the parent can retry.
+ * and add a Nursery box later. The quota is burned only by a magic-box
+ * order that is a REAL purchase or a LIVE payment:
+ *   • paid / refunded                        → blocks
+ *   • pending + fresh (active checkout)       → blocks (double-buy race guard)
+ *   • pending + money in play (Awaited /      → blocks (money debited/captured)
+ *     Auto-Reversed / Successful-not-latched)
+ * It is FREED when the prior attempt never took money:
+ *   • payment failed / cancelled              → frees
+ *   • pending + stale + "Initiated"           → abandoned checkout, frees
+ * (the last case is SAL-ORD-2026-34978/80/84 — 13-day-old Initiated boxes
+ *  that wrongly blocked the sibling from buying).
  *
  * Returns the error string if the add should be blocked, null otherwise.
  */
+// A pending magic-box order keeps the slot only while it's a LIVE payment.
+// 1h comfortably covers an active checkout and any real gateway settlement;
+// an abandoned "Initiated" attempt never resolves and is older than this.
+const FRESH_PENDING_MS = 60 * 60 * 1000;
+
+/** True when a pending payment has money actually in play — debited and
+ *  settling ("Awaited"/"Auto-Reversed"), or captured but not yet latched to
+ *  paid ("Successful"/"success:…"). Reads the latest known CCAvenue status
+ *  from the reconcile message ("…status=Awaited") or the raw gateway blob.
+ *  Anything else — notably "Initiated" — means no money was debited. */
+function pendingPaymentHasMoneyInPlay(
+  message: string | null | undefined,
+  raw: unknown,
+): boolean {
+  const msg = (message ?? "").toLowerCase();
+  if (/\bsuccess\b/.test(msg)) return true; // latch-bug shape: "success:<id> …"
+  let status = "";
+  const m = msg.match(/status=([a-z-]+)/i);
+  if (m) {
+    status = m[1];
+  } else if (raw && typeof raw === "object") {
+    const os = (raw as Record<string, unknown>).order_status;
+    if (typeof os === "string") status = os;
+  }
+  const s = status.trim().toLowerCase().replace(/[\s_-]+/g, "");
+  return (
+    s === "awaited" ||
+    s === "autoreversed" ||
+    s === "successful" ||
+    s === "success" ||
+    s === "shipped"
+  );
+}
+
 async function checkMagicBoxLimit(
   parentId: string,
   studentId: string | null,
@@ -131,23 +173,25 @@ async function checkMagicBoxLimit(
     }
   }
 
-  // Order history side: a past order for this student that contains a
-  // magic_box line and still occupies the one-box slot. The slot is
-  // occupied by any non-cancelled order UNLESS its payment FAILED:
-  //   • payment paid    → real purchase, blocks (already has a box)
-  //   • payment pending → in-flight checkout that may still complete,
-  //                       blocks (don't let a parallel add create two)
-  //   • payment failed  → the box was never bought; FREES the slot so the
-  //                       parent can retry (SAL-ORD-2026-33535 case)
-  //   • cancelled order → never reached the family; FREES the slot
-  // A genuine ₹0 complimentary box short-circuits to paid+confirmed in
-  // the zero-value create-order path, so real redemptions still block.
-  const priorMagicBoxes = await db
-    .select({ id: orderItems.id })
+  // Order history side. Pull this student's non-cancelled, non-failed
+  // magic_box orders with their latest payment, then decide per-order
+  // whether it still occupies the slot (see checkMagicBoxLimit doc above).
+  // A genuine ₹0 complimentary box short-circuits to paid+confirmed in the
+  // zero-value create-order path, so real redemptions still block.
+  const priorRows = await db
+    .select({
+      orderId: orders.id,
+      paymentStatus: orders.paymentStatus,
+      orderCreatedAt: orders.createdAt,
+      payCreatedAt: payments.createdAt,
+      payMessage: payments.gatewayResponseMessage,
+      payRaw: payments.raw,
+    })
     .from(orderItems)
     .innerJoin(orders, eq(orders.id, orderItems.orderId))
     .innerJoin(productVariants, eq(productVariants.id, orderItems.variantId))
     .innerJoin(products, eq(products.id, productVariants.productId))
+    .leftJoin(payments, eq(payments.orderId, orders.id))
     .where(
       and(
         eq(orders.parentId, parentId),
@@ -156,9 +200,27 @@ async function checkMagicBoxLimit(
         ne(orders.status, "cancelled"),
         ne(orders.paymentStatus, "failed"),
       ),
-    )
-    .limit(1);
-  if (priorMagicBoxes.length > 0) {
+    );
+
+  // Collapse to one row per order, keeping its most-recent payment.
+  const latestByOrder = new Map<string, (typeof priorRows)[number]>();
+  for (const r of priorRows) {
+    const prev = latestByOrder.get(r.orderId);
+    const t = r.payCreatedAt ? new Date(r.payCreatedAt).getTime() : 0;
+    const pt = prev?.payCreatedAt ? new Date(prev.payCreatedAt).getTime() : -1;
+    if (!prev || t > pt) latestByOrder.set(r.orderId, r);
+  }
+
+  const now = Date.now();
+  const blocks = Array.from(latestByOrder.values()).some((r) => {
+    // failed/cancelled are filtered out above → non-pending here is paid or
+    // refunded, both of which block.
+    if (r.paymentStatus !== "pending") return true;
+    const created = r.orderCreatedAt ? new Date(r.orderCreatedAt).getTime() : 0;
+    const fresh = created > 0 && now - created < FRESH_PENDING_MS;
+    return fresh || pendingPaymentHasMoneyInPlay(r.payMessage, r.payRaw);
+  });
+  if (blocks) {
     return "A Magic Box has already been placed for this student. Only 1 Magic Box per student is allowed.";
   }
 
