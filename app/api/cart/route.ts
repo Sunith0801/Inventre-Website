@@ -75,8 +75,10 @@ function requireActiveStudent(
  * One magic box per student, lifetime. Applies regardless of price
  * (₹0 complimentary or full-price) and across magic_box products —
  * a parent who placed an UKG box for a Nursery sibling can't go back
- * and add a Nursery box later. Cancelled orders DO NOT burn the
- * quota (the box never reached the family).
+ * and add a Nursery box later. The quota is burned by a paid OR a
+ * still-pending order (an in-flight checkout). It is FREED only when the
+ * prior attempt's payment FAILED or the order was cancelled — in those
+ * cases the box never reached the family, so the parent can retry.
  *
  * Returns the error string if the add should be blocked, null otherwise.
  */
@@ -129,8 +131,17 @@ async function checkMagicBoxLimit(
     }
   }
 
-  // Order history side: any non-cancelled past order for this student
-  // that contains a magic_box line. Paid or ₹0, doesn't matter.
+  // Order history side: a past order for this student that contains a
+  // magic_box line and still occupies the one-box slot. The slot is
+  // occupied by any non-cancelled order UNLESS its payment FAILED:
+  //   • payment paid    → real purchase, blocks (already has a box)
+  //   • payment pending → in-flight checkout that may still complete,
+  //                       blocks (don't let a parallel add create two)
+  //   • payment failed  → the box was never bought; FREES the slot so the
+  //                       parent can retry (SAL-ORD-2026-33535 case)
+  //   • cancelled order → never reached the family; FREES the slot
+  // A genuine ₹0 complimentary box short-circuits to paid+confirmed in
+  // the zero-value create-order path, so real redemptions still block.
   const priorMagicBoxes = await db
     .select({ id: orderItems.id })
     .from(orderItems)
@@ -143,6 +154,7 @@ async function checkMagicBoxLimit(
         eq(orders.studentId, studentId),
         eq(products.kind, "magic_box"),
         ne(orders.status, "cancelled"),
+        ne(orders.paymentStatus, "failed"),
       ),
     )
     .limit(1);
