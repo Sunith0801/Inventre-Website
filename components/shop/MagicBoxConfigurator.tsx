@@ -32,13 +32,12 @@ function selectionFromVariantId(
 }
 
 // ── House-colour consistency check ───────────────────────────────────
-// Scoped to specific Magic Boxes only. For these boxes we warn when the
-// parent picks different house colours across the configurable items —
-// a uniform set should be one house colour (Ruby/Sapphire/Emerald/Topaz).
-// Gated by box VARIANT id so it never affects any other product.
-const COLOR_CONSISTENCY_BOX_VARIANT_IDS = new Set<string>([
-  "10f893b9-4425-51f8-8c8e-4a8546892109", // SAS KS GRADE 1 MAGIC BOX BOYS
-]);
+// Applies to EVERY Magic Box (this configurator only ever renders for
+// magic_box products). We warn when the parent picks different house
+// colours across the configurable items — a uniform set should be one
+// house colour (Ruby/Sapphire/Emerald/Topaz). Items with no colour axis
+// or a single forced colour are auto-excluded, so boxes without a genuine
+// colour choice never trigger it.
 
 /** The colour axis within an item's attribute groups, if any. */
 function colorAxisOf(groups: { name: string; values: string[] }[]) {
@@ -152,7 +151,9 @@ export function MagicBoxConfigurator({
   // pick()); it flips true a tick after loading finishes, so only genuine
   // user picks warn. `refColorRef` holds the FIRST house colour the parent
   // chose (the reference every later pick is compared against).
-  const colorCheckEnabled = COLOR_CONSISTENCY_BOX_VARIANT_IDS.has(boxVariantId);
+  // Every Magic Box gets the check; the per-item exclusions (no colour
+  // axis / single forced colour) keep it silent where it doesn't apply.
+  const colorCheckEnabled = true;
   const settledRef = useRef(false);
   const refColorRef = useRef<{
     canon: string;
