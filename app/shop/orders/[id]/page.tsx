@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { useFocusRefetch } from "@/lib/use-focus-refetch";
+import { derivePlacement } from "@/lib/order-display";
 import { ArrowLeft, CheckCircle2, Package } from "lucide-react";
 import { Nav } from "@/components/Nav";
 import { Footer } from "@/components/Footer";
@@ -299,6 +300,14 @@ export default function OrderDetailPage() {
 
   const stageIdx = stages.indexOf(order.status as (typeof stages)[number]);
 
+  // An order created but never paid for shows up as status='placed' — which
+  // read as a real, progressing order and confused parents. Derive a clear
+  // customer-facing state so an abandoned/failed checkout reads as
+  // "Not placed" (no money charged) rather than "Placed".
+  const placement = derivePlacement(order);
+  const notPlaced = placement === "not_placed";
+  const paymentProcessing = placement === "processing";
+
   return (
     <main className="min-h-screen">
       <Nav />
@@ -361,8 +370,17 @@ export default function OrderDetailPage() {
               })}
             </p>
           </div>
-          <span className="rounded-full bg-cream-200 px-3 py-1 text-[11px] font-bold tracking-wider uppercase text-ink-800">
-            {order.status}
+          <span
+            className={
+              "rounded-full px-3 py-1 text-[11px] font-bold tracking-wider uppercase " +
+              (notPlaced
+                ? "bg-amber-100 text-amber-800"
+                : paymentProcessing
+                  ? "bg-blue-50 text-blue-700"
+                  : "bg-cream-200 text-ink-800")
+            }
+          >
+            {notPlaced ? "Not placed" : paymentProcessing ? "Processing" : order.status}
           </span>
         </div>
 
@@ -375,6 +393,29 @@ export default function OrderDetailPage() {
             For orders with no category groups (audit hasn't classified
             yet) we fall back to a single order-level stepper. */}
         {(() => {
+          // Abandoned / never-paid checkout: no fulfillment to track. Show a
+          // plain reassurance + re-order CTA instead of a progress stepper
+          // (which would imply the order is moving along).
+          if (notPlaced) {
+            return (
+              <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-5">
+                <p className="font-display text-[16px] font-bold text-amber-900">
+                  This order hasn&apos;t been placed
+                </p>
+                <p className="mt-1.5 text-[13.5px] leading-relaxed text-amber-800">
+                  You reached the payment page but the payment wasn&apos;t
+                  completed — <b>no money was charged</b>. You can place the
+                  order again whenever you&apos;re ready.
+                </p>
+                <a
+                  href="/shop"
+                  className="mt-3 inline-flex items-center justify-center rounded-full bg-ink-900 px-5 py-2.5 text-[13px] font-bold text-white transition-colors hover:bg-brand"
+                >
+                  Place the order again
+                </a>
+              </div>
+            );
+          }
           const groups = order.categoryGroups ?? [];
           const allShipments = order.shipmentHistory ?? [];
           if (groups.length > 0) {
@@ -582,23 +623,34 @@ export default function OrderDetailPage() {
                 <div className="pt-2 mt-2 border-t border-ink-100 text-[11px]">
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-ink-500">
-                      {order.payment.provider} ·{" "}
+                      Payment{" "}
                       <span
                         className={
                           order.payment.status === "paid"
                             ? "text-emerald-700 font-semibold"
-                            : order.payment.status === "failed"
-                              ? "text-red-600 font-semibold"
+                            : order.payment.status === "failed" || notPlaced
+                              ? "text-amber-700 font-semibold"
                               : "text-ink-700 font-semibold"
                         }
                       >
-                        {order.payment.status}
+                        {order.payment.status === "paid"
+                          ? "Paid"
+                          : order.payment.status === "failed"
+                            ? "Not completed"
+                            : notPlaced
+                              ? "Not completed"
+                              : paymentProcessing
+                                ? "Processing"
+                                : order.payment.status}
                       </span>
                     </span>
-                    {polling && order.payment.status === "pending" && (
+                    {/* Only show the live poll while a fresh payment might
+                        still settle — never on an abandoned "Not placed"
+                        order, where nothing is coming. */}
+                    {polling && paymentProcessing && (
                       <span className="inline-flex items-center gap-1.5 text-ink-500">
                         <span className="inline-block h-2 w-2 rounded-full bg-amber-400 animate-pulse" />
-                        Checking with CCAvenue…
+                        Checking for your payment…
                       </span>
                     )}
                   </div>

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowLeft, Package, ChevronRight, GraduationCap } from "lucide-react";
 import { useFocusRefetch } from "@/lib/use-focus-refetch";
+import { derivePlacement } from "@/lib/order-display";
 import { Nav } from "@/components/Nav";
 import { Footer } from "@/components/Footer";
 
@@ -200,11 +201,31 @@ export default function OrdersPage() {
                               <span className="font-display text-[14px] font-bold text-ink-900">
                                 {o.orderNumber}
                               </span>
-                              <span
-                                className={`text-[10px] font-bold tracking-wider uppercase rounded-full px-2 py-0.5 ${statusStyle[o.status] ?? statusStyle.placed}`}
-                              >
-                                {o.status}
-                              </span>
+                              {(() => {
+                                // Show "Not placed" / "Processing" for unpaid
+                                // checkouts so an abandoned order doesn't read
+                                // as a real "Placed" one (matches detail page).
+                                const placement = derivePlacement(o);
+                                const label =
+                                  placement === "not_placed"
+                                    ? "Not placed"
+                                    : placement === "processing"
+                                      ? "Processing"
+                                      : o.status;
+                                const style =
+                                  placement === "not_placed"
+                                    ? "bg-amber-100 text-amber-800"
+                                    : placement === "processing"
+                                      ? "bg-blue-50 text-blue-700"
+                                      : statusStyle[o.status] ?? statusStyle.placed;
+                                return (
+                                  <span
+                                    className={`text-[10px] font-bold tracking-wider uppercase rounded-full px-2 py-0.5 ${style}`}
+                                  >
+                                    {label}
+                                  </span>
+                                );
+                              })()}
                             </div>
                             <p className="mt-1 text-[12px] text-ink-500">
                               {o.itemCount} {o.itemCount === 1 ? "item" : "items"} ·{" "}
