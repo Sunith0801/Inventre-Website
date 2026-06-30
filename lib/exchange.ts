@@ -13,7 +13,7 @@ import { allocReturnNumber } from "@/lib/numbering";
 import { firstPickupSaturday, toDbDate } from "@/lib/date";
 import { emitExchangeEvent } from "@/lib/erp-bridge";
 import { notifyExchangeStatus } from "@/lib/notifications";
-import { isExchangeScopeRelaxed } from "@/lib/exchange-gate";
+import { isExchangeScopeRelaxed, isExchangeOwnershipRelaxed } from "@/lib/exchange-gate";
 import { isOrderDeliveredForReturns } from "@/lib/return-eligibility";
 import {
   canTransition,
@@ -161,15 +161,19 @@ export type CreateExchangeResult =
 export async function createExchange(
   input: CreateExchangeInput
 ): Promise<CreateExchangeResult> {
-  // 1. Scope: order must belong to this parent and be delivered.
-  //    (Ownership relaxed outside production — see isExchangeScopeRelaxed.)
+  // 1. Scope: order must be delivered AND visible to this parent's family.
+  //    Ownership relaxed (all envs) — see isExchangeOwnershipRelaxed; the
+  //    family-identity check is enforced by isOrderDeliveredForReturns
+  //    below (getParentOrderDetailFromErp returns null for non-family
+  //    orders), so dropping the strict parent_id match here is safe and
+  //    fixes split-account / guest orders.
   const [order] = await db
     .select()
     .from(orders)
     .where(
       and(
         eq(orders.id, input.orderId),
-        isExchangeScopeRelaxed() ? undefined : eq(orders.parentId, input.parentId)
+        isExchangeOwnershipRelaxed() ? undefined : eq(orders.parentId, input.parentId)
       )
     )
     .limit(1);

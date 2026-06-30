@@ -22,27 +22,33 @@ import { getParentOrderDetailFromErp } from "@/lib/erp-customer-orders";
  *      available for 15 days after delivery, then close.
  */
 
-/** Days after delivery that exchange / missing stays available. */
-export const RETURNS_WINDOW_DAYS = 15;
+/**
+ * Days after delivery that exchange / missing stays available.
+ *
+ * 0 (or any value ≤ 0) DISABLES the time window entirely — a delivered
+ * order stays eligible for exchange / missing indefinitely. Set to a
+ * positive number to re-enable the cutoff (e.g. 15 restores the old
+ * 15-day rule). Disabled 2026-06-30 per the business: ~79% of delivered
+ * orders were past 15 days and the buttons were hidden on them, so the
+ * window was removed so every delivered order shows the buttons.
+ */
+export const RETURNS_WINDOW_DAYS = 0;
 const WINDOW_MS = RETURNS_WINDOW_DAYS * 24 * 60 * 60 * 1000;
 
 /**
- * Is `now` still inside the RETURNS_WINDOW_DAYS-day window measured from
- * `deliveredAt`?
+ * Is `now` still inside the returns window measured from `deliveredAt`?
  *
- * When the delivery date is UNKNOWN (null) we do NOT block — many
- * genuinely-delivered orders carry no `delivered_at` timestamp at all
- * (audit marks the order delivered at the header / per-category level
- * without ever writing an outward_shipments `delivered_at`, and the local
- * column only lands on a webhook that's often missed). Blocking on a
- * missing date would silently hide the feature from thousands of
- * delivered orders, so unknown → treated as in-window. Once a real
- * delivery date is present the 15-day cutoff is enforced.
+ * When the window is disabled (RETURNS_WINDOW_DAYS ≤ 0) this is always
+ * true — delivery alone makes the order eligible. When a positive window
+ * is configured: an UNKNOWN delivery date (null) does NOT block (many
+ * delivered orders carry no `delivered_at`), and a known date is checked
+ * against the cutoff.
  */
 export function isWithinReturnsWindow(
   deliveredAt: Date | null,
   now: Date = new Date()
 ): boolean {
+  if (RETURNS_WINDOW_DAYS <= 0) return true; // window disabled → always eligible
   if (!deliveredAt) return true;
   return now.getTime() - deliveredAt.getTime() <= WINDOW_MS;
 }
@@ -59,8 +65,18 @@ export async function isOrderDeliveredForReturns(
   localDeliveredAt: Date | null = null
 ): Promise<boolean> {
   const detail = await getParentOrderDetailFromErp(parentId, orderNumber);
+  // OWNERSHIP / FAMILY AUTHORIZATION. getParentOrderDetailFromErp applies
+  // the SAME family-identity scope as My-Orders (phones, enrollment,
+  // customer_link, co-guardian parent ids), so a null result means this
+  // order is NOT visible to this parent's family. This is the security
+  // boundary that lets the callers drop the strict `orders.parent_id`
+  // match (which broke split-account / guest orders): we no longer trust
+  // the local `localStatus` on its own — it's only honoured once family
+  // access is proven here. Without this guard, relaxing parent_id would
+  // let a parent act on any delivered order id.
+  if (!detail) return false;
   const delivered =
-    localStatus === "delivered" || detail?.status === "delivered";
+    localStatus === "delivered" || detail.status === "delivered";
   if (!delivered) return false;
   // 15-day window. Prefer the local delivered_at, fall back to the mirror
   // shipment delivered_at. Unknown → in-window (see isWithinReturnsWindow).

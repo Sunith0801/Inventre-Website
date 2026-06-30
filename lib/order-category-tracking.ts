@@ -339,36 +339,56 @@ export function groupItemsByAuditCategory(
 
   for (const it of items) {
     const erpCat = (it.erpCategory ?? "").toLowerCase().trim();
-    let target = erpCat ? groups.get(erpCat) : undefined;
-    if (!target) {
-      // Orphan line (no `category` mirrored on erp.sales_order_items
-      // — usually a pre-migration row). If only one category is
-      // present on this order, every orphan must belong to it. With
-      // multiple present categories, try a substring match on the
-      // item name; otherwise fall through to "Other".
-      if (keys.length === 1) {
-        target = groups.get(keys[0]);
-      } else {
-        const lcName = it.name.toLowerCase();
-        const matchKey = keys.find((k) => k && lcName.includes(k));
-        target = matchKey ? groups.get(matchKey) : undefined;
+    let targets: CategoryGroup[] = [];
+    const direct = erpCat ? groups.get(erpCat) : undefined;
+    if (direct) {
+      targets = [direct];
+    } else if (keys.length === 1) {
+      // Only one category present → every line must belong to it.
+      const only = groups.get(keys[0]);
+      if (only) targets = [only];
+    } else {
+      // Multiple present categories. Try a substring match on the item
+      // name first ("…uniform shirt…" → uniform).
+      const lcName = it.name.toLowerCase();
+      const matchKey = keys.find((k) => k && lcName.includes(k));
+      if (matchKey) {
+        const g = groups.get(matchKey);
+        if (g) targets = [g];
+      } else if (erpCat && !groups.has(erpCat)) {
+        // Container / bundle PARENT line: its own `category` is a wrapper
+        // ("magic_box", "kit", …) that is NOT one of the order's delivery
+        // categories. Audit tags the Magic Box parent this way and never
+        // expands it into per-component lines, so this single line spans
+        // EVERY present category (a Magic Box ships as bookkit + uniform
+        // parcels). Fan it into all present groups instead of a synthetic
+        // "Other" — otherwise the entire order collapses into one
+        // "Other / pending" card even after every parcel is delivered
+        // (~2,938 magic-box orders, ~1,994 of them already delivered, were
+        // showing a pending stepper under a "Delivered" header badge).
+        targets = keys
+          .map((k) => groups.get(k))
+          .filter((g): g is CategoryGroup => !!g);
       }
     }
-    if (!target) target = otherGroup;
-    const isMoving =
-      target.status === "in transit" || target.status === "out for delivery";
-    target.totalQty += it.qty;
-    if (target.status === "delivered") target.deliveredQty += it.qty;
-    else if (isMoving) target.pickedQty += it.qty;
-    else if (target.status === "returned") target.returnedQty += it.qty;
-    target.items.push({
-      id: it.id,
-      name: it.name,
-      qty: it.qty,
-      deliveredQty: target.status === "delivered" ? it.qty : 0,
-      pickedQty: isMoving ? it.qty : 0,
-      returnedQty: target.status === "returned" ? it.qty : 0,
-    });
+    // Genuine orphan (no category, no name match, not a container) → Other.
+    if (targets.length === 0) targets = [otherGroup];
+    for (const target of targets) {
+      const isMoving =
+        target.status === "in transit" || target.status === "out for delivery";
+      target.totalQty += it.qty;
+      if (target.status === "delivered") target.deliveredQty += it.qty;
+      else if (isMoving) target.pickedQty += it.qty;
+      else if (target.status === "returned") target.returnedQty += it.qty;
+      target.items.push({
+        id: it.id,
+        name: it.name,
+        qty: it.qty,
+        deliveredQty: target.status === "delivered" ? it.qty : 0,
+        pickedQty: isMoving ? it.qty : 0,
+        returnedQty: target.status === "returned" ? it.qty : 0,
+      });
+    }
   }
 
   // Hide cards with zero items — the customer should only see

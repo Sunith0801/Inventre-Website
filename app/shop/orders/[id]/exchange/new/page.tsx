@@ -12,8 +12,9 @@ import {
   returns,
 } from "@/db/schema";
 import { getCurrentParent } from "@/lib/session";
-import { isExchangeTester, isExchangeScopeRelaxed } from "@/lib/exchange-gate";
+import { isExchangeTester, isExchangeScopeRelaxed, isExchangeOwnershipRelaxed } from "@/lib/exchange-gate";
 import { isOrderDeliveredForReturns } from "@/lib/return-eligibility";
+import { fallbackBundleComponents } from "@/lib/bundle-fallback";
 import { findOpenRequestForOrder } from "@/lib/exchange";
 import { Nav } from "@/components/Nav";
 import { Footer } from "@/components/Footer";
@@ -39,8 +40,10 @@ async function resolveLocalOrderId(
   idOrNumber: string,
   parentId: string
 ): Promise<string | null> {
-  // Dev: ownership scope relaxed — see isExchangeScopeRelaxed.
-  const ownerScope = isExchangeScopeRelaxed()
+  // Ownership relaxed (all envs) — see isExchangeOwnershipRelaxed. Family
+  // membership is enforced by isOrderDeliveredForReturns below (→ notFound
+  // for non-family orders), so resolving by id/number is safe.
+  const ownerScope = isExchangeOwnershipRelaxed()
     ? undefined
     : eq(orders.parentId, parentId);
   const isUuid = /^[0-9a-f-]{36}$/i.test(idOrNumber);
@@ -145,6 +148,23 @@ export default async function NewExchangePage({
     .where(eq(orderItems.orderId, orderId));
   if (items.length === 0) notFound();
 
+  // Fallback box composition for magic-box order items that never stored
+  // their per-component picks in bundle_selections (~66%). Lets the parent
+  // exchange an individual item inside the box instead of only the whole
+  // box. The exact size isn't recoverable from the bundle definition, so
+  // those components are flagged `currentUnknown` and the form asks the
+  // parent which size they currently have.
+  const emptyBundleItemIds = items
+    .filter(
+      (it) =>
+        !(Array.isArray(it.bundleSelections) && it.bundleSelections.length > 0)
+    )
+    .map((it) => it.id);
+  const fallbackByItem = await fallbackBundleComponents(emptyBundleItemIds);
+  const fallbackProductIds = new Set<string>();
+  for (const comps of fallbackByItem.values())
+    for (const c of comps) fallbackProductIds.add(c.productId);
+
   // Lookup any active exchanges so we can mark already-locked order_items
   // in the picker (matches the per-order-item gate in lib/exchange.ts).
   const activeRets = await db
@@ -203,7 +223,11 @@ export default async function NewExchangePage({
   }
 
   // Per-product variant list (each row's siblings = same-product variants).
-  const productIds = Array.from(new Set(productByVariant.values()));
+  // Include fallback component products so recovered-composition components
+  // get their full size/variant list for the swap picker.
+  const productIds = Array.from(
+    new Set([...productByVariant.values(), ...fallbackProductIds])
+  );
   const variantsByProduct = new Map<string, SiblingLite[]>();
   if (productIds.length > 0) {
     const variantRows = await db
@@ -287,6 +311,10 @@ export default async function NewExchangePage({
     attributes: { name: string; value: string }[];
     hasSiblings: boolean;
     siblings: SiblingLite[];
+    /** True when this component's exact ordered variant/size is unknown
+     *  (recovered from the bundle definition). The form asks the parent
+     *  which size they currently have before the swap. */
+    currentUnknown: boolean;
     locked: boolean;
     lockReturnNumber: string | null;
   };
@@ -297,6 +325,66 @@ export default async function NewExchangePage({
     const raw = Array.isArray(it.bundleSelections)
       ? (it.bundleSelections as Array<Record<string, unknown>>)
       : [];
+    const fb = fallbackByItem.get(it.id) ?? [];
+    if (raw.length === 0 && fb.length > 0) {
+      // Recovered-composition path: whole-box unit + one unit per defined
+      // component. Each component lists ALL variants of its product as swap
+      // targets (we don't know which the parent has → currentUnknown).
+      const vid = it.variantId ?? "";
+      const parentProductId = vid ? productByVariant.get(vid) ?? null : null;
+      const parentVariants = parentProductId
+        ? variantsByProduct.get(parentProductId) ?? []
+        : [];
+      const parentSiblings = vid
+        ? parentVariants.filter((v) => v.id !== vid)
+        : [];
+      units.push({
+        unitKey: `kitparent:${it.id}`,
+        orderItemId: it.id,
+        parentName: it.name,
+        parentImage: it.image ?? null,
+        parentHeadLabel: parentHead,
+        isKitComponent: false,
+        isKitParent: true,
+        name: it.name,
+        size: it.size,
+        qty: it.qty,
+        variantId: vid,
+        imageUrl: it.image ?? null,
+        kind: (vid ? kindByVariant.get(vid) : null) ?? "kit",
+        attributes: [],
+        hasSiblings: parentSiblings.length > 0,
+        siblings: parentSiblings,
+        currentUnknown: false,
+        locked: lockedByOrderItem.has(it.id),
+        lockReturnNumber: lockedByOrderItem.get(it.id) ?? null,
+      });
+      for (const c of fb) {
+        const compVariants = variantsByProduct.get(c.productId) ?? [];
+        units.push({
+          unitKey: `comp:${it.id}:${c.componentIndex}`,
+          orderItemId: it.id,
+          parentName: it.name,
+          parentImage: it.image ?? null,
+          parentHeadLabel: parentHead,
+          isKitComponent: true,
+          isKitParent: false,
+          name: c.name,
+          size: "",
+          qty: c.qty,
+          variantId: "",
+          imageUrl: null,
+          kind: effectiveKind(c.kind, c.name),
+          attributes: [],
+          hasSiblings: compVariants.length > 0,
+          siblings: compVariants,
+          currentUnknown: true,
+          locked: lockedByOrderItem.has(it.id),
+          lockReturnNumber: lockedByOrderItem.get(it.id) ?? null,
+        });
+      }
+      continue;
+    }
     if (raw.length > 0) {
       // Whole-kit unit first: the form's scope chooser offers "exchange
       // the whole box" vs "only some items inside". Kit-level reasons
@@ -324,6 +412,7 @@ export default async function NewExchangePage({
           attributes: [],
           hasSiblings: siblings.length > 0,
           siblings,
+          currentUnknown: false,
           locked: lockedByOrderItem.has(it.id),
           lockReturnNumber: lockedByOrderItem.get(it.id) ?? null,
         });
@@ -356,6 +445,7 @@ export default async function NewExchangePage({
           attributes: compAttrs,
           hasSiblings: siblings.length > 0,
           siblings,
+          currentUnknown: false,
           locked: lockedByOrderItem.has(it.id),
           lockReturnNumber: lockedByOrderItem.get(it.id) ?? null,
         });
@@ -388,6 +478,7 @@ export default async function NewExchangePage({
         attributes: itAxes,
         hasSiblings: siblings.length > 0,
         siblings,
+        currentUnknown: false,
         locked: lockedByOrderItem.has(it.id),
         lockReturnNumber: lockedByOrderItem.get(it.id) ?? null,
       });

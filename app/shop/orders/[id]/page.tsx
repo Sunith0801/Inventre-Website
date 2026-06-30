@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { useFocusRefetch } from "@/lib/use-focus-refetch";
-import { derivePlacement } from "@/lib/order-display";
+import { derivePlacement, describePaymentStatus } from "@/lib/order-display";
 import { ArrowLeft, CheckCircle2, Package } from "lucide-react";
 import { Nav } from "@/components/Nav";
 import { Footer } from "@/components/Footer";
@@ -113,6 +113,8 @@ type OrderDetail = {
     }[];
   }[];
   pollPending?: boolean;
+  paymentStatusRaw?: string | null;
+  canReorder?: boolean;
 };
 
 type CategoryStatus =
@@ -307,6 +309,12 @@ export default function OrderDetailPage() {
   const placement = derivePlacement(order);
   const notPlaced = placement === "not_placed";
   const paymentProcessing = placement === "processing";
+  // Actual CCAvenue status + its meaning (e.g. "Initiated" / "Aborted"), shown
+  // on an abandoned checkout. Null when we can't identify the gateway word.
+  const payInfo = describePaymentStatus(order.paymentStatusRaw);
+  // Re-ordering is impossible when a one-per-student Magic Box is already
+  // placed for this student — then we hide the "Place again" button.
+  const canReorder = order.canReorder !== false;
 
   return (
     <main className="min-h-screen">
@@ -399,20 +407,45 @@ export default function OrderDetailPage() {
           if (notPlaced) {
             return (
               <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-5">
-                <p className="font-display text-[16px] font-bold text-amber-900">
-                  This order hasn&apos;t been placed
-                </p>
-                <p className="mt-1.5 text-[13.5px] leading-relaxed text-amber-800">
-                  You reached the payment page but the payment wasn&apos;t
-                  completed — <b>no money was charged</b>. You can place the
-                  order again whenever you&apos;re ready.
-                </p>
-                <a
-                  href="/shop"
-                  className="mt-3 inline-flex items-center justify-center rounded-full bg-ink-900 px-5 py-2.5 text-[13px] font-bold text-white transition-colors hover:bg-brand"
-                >
-                  Place the order again
-                </a>
+                {/* Show the ACTUAL CCAvenue status word + its meaning when we
+                    could identify it; otherwise fall back to a generic line. */}
+                {payInfo ? (
+                  <>
+                    <p className="text-[11px] font-bold tracking-wider uppercase text-amber-700">
+                      Payment status
+                    </p>
+                    <p className="mt-0.5 font-display text-[16px] font-bold text-amber-900">
+                      {payInfo.statusWord}
+                    </p>
+                    <p className="mt-1.5 text-[13.5px] leading-relaxed text-amber-800">
+                      {payInfo.description}
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="font-display text-[16px] font-bold text-amber-900">
+                      This order hasn&apos;t been placed
+                    </p>
+                    <p className="mt-1.5 text-[13.5px] leading-relaxed text-amber-800">
+                      You reached the payment page but the payment wasn&apos;t
+                      completed — <b>no money was charged</b>.
+                    </p>
+                  </>
+                )}
+                {canReorder ? (
+                  <a
+                    href="/shop"
+                    className="mt-3 inline-flex items-center justify-center rounded-full bg-ink-900 px-5 py-2.5 text-[13px] font-bold text-white transition-colors hover:bg-brand"
+                  >
+                    Place the order again
+                  </a>
+                ) : (
+                  <p className="mt-3 inline-flex items-center gap-1.5 text-[13px] font-semibold text-emerald-700">
+                    <CheckCircle2 className="h-4 w-4" />
+                    You&apos;ve already placed this order
+                    {order.studentName ? ` for ${order.studentName}` : ""}.
+                  </p>
+                )}
               </div>
             );
           }
@@ -635,10 +668,10 @@ export default function OrderDetailPage() {
                       >
                         {order.payment.status === "paid"
                           ? "Paid"
-                          : order.payment.status === "failed"
-                            ? "Not completed"
-                            : notPlaced
-                              ? "Not completed"
+                          : notPlaced
+                            ? payInfo?.statusWord ?? "Not completed"
+                            : order.payment.status === "failed"
+                              ? payInfo?.statusWord ?? "Not completed"
                               : paymentProcessing
                                 ? "Processing"
                                 : order.payment.status}

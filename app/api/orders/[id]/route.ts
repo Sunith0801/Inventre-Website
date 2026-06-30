@@ -7,7 +7,12 @@ import {
   getParentOrderDetailFromErp,
   getParentOrderDetailLocal,
 } from "@/lib/erp-customer-orders";
-import { isExchangeTester, isExchangeScopeRelaxed } from "@/lib/exchange-gate";
+import { getOrderPlacementInfo } from "@/lib/order-eligibility";
+import {
+  isExchangeTester,
+  isExchangeScopeRelaxed,
+  isExchangeOwnershipRelaxed,
+} from "@/lib/exchange-gate";
 import { isWithinReturnsWindow } from "@/lib/return-eligibility";
 
 export async function GET(
@@ -26,6 +31,22 @@ export async function GET(
     (await getParentOrderDetailLocal(me.id, decoded));
   if (!order)
     return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  // Customer-facing placement extras for an abandoned / not-placed checkout:
+  //   • paymentStatusRaw — the actual CCAvenue word ("Initiated"/"Aborted"/…)
+  //     so the page can show the real status + its meaning.
+  //   • canReorder — false when re-ordering is impossible because a
+  //     one-per-student Magic Box is already placed for this student (so we
+  //     don't dangle a "Place again" button the cart would just reject).
+  // Read-only; failures must never break the order page → default to allow.
+  try {
+    const placement = await getOrderPlacementInfo(decoded);
+    (order as { paymentStatusRaw?: string | null }).paymentStatusRaw =
+      placement.paymentStatusRaw;
+    (order as { canReorder?: boolean }).canReorder = placement.canReorder;
+  } catch {
+    (order as { canReorder?: boolean }).canReorder = true;
+  }
 
   // Exchange flow surface (phone-gated). For non-allowlisted parents we
   // return the exact same shape as before — no new fields, zero behaviour
@@ -204,9 +225,12 @@ async function resolveLocalOrder(
   idOrNumber: string,
   parentId: string
 ): Promise<{ id: string; status: string; deliveredAt: Date | null } | null> {
-  // Dev: ownership scope relaxed so testers get the buttons on any
-  // delivered order (drizzle's and() drops the undefined operand).
-  const ownerScope = isExchangeScopeRelaxed()
+  // Ownership relaxed (all envs): the order was already family-authorized
+  // upstream — this route 404s unless getParentOrderDetailFromErp/Local
+  // returned it for `me`. So resolving the local row by id/number alone is
+  // safe and fixes split-account/guest orders. (drizzle's and() drops the
+  // undefined operand.) See isExchangeOwnershipRelaxed.
+  const ownerScope = isExchangeOwnershipRelaxed()
     ? undefined
     : eq(orders.parentId, parentId);
   const isUuid = /^[0-9a-f-]{36}$/i.test(idOrNumber);

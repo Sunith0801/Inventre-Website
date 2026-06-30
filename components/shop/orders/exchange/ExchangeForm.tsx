@@ -51,6 +51,10 @@ export type Unit = {
   attributes: { name: string; value: string }[];
   hasSiblings: boolean;
   siblings: SiblingLite[];
+  /** True when this magic-box component's exact ordered size/variant
+   *  wasn't stored (recovered from the bundle definition). The form asks
+   *  the parent which size they currently have before choosing a swap. */
+  currentUnknown?: boolean;
   // True when an earlier exchange for this order_item is still active
   // (status ∈ {requested, approved}). The picker disables it and shows
   // the existing RTN number so the customer doesn't try to re-submit.
@@ -93,6 +97,9 @@ type TabState = {
   wrongItemFault: "" | "fulfillment" | "customer";
   replacementMode: ReplacementMode | "";
   requestedVariantId: string;
+  /** The size the parent currently HAS — only collected for components
+   *  whose ordered variant wasn't stored (unit.currentUnknown). */
+  currentVariantId: string;
   replacementDescribe: string;
   notes: string;
 };
@@ -104,6 +111,7 @@ const emptyTab = (): TabState => ({
   wrongItemFault: "",
   replacementMode: "",
   requestedVariantId: "",
+  currentVariantId: "",
   replacementDescribe: "",
   notes: "",
 });
@@ -185,6 +193,7 @@ export function ExchangeForm({
   const wrongItemFault = cur.wrongItemFault;
   const replacementMode = cur.replacementMode;
   const requestedVariantId = cur.requestedVariantId;
+  const currentVariantId = cur.currentVariantId;
   const replacementDescribe = cur.replacementDescribe;
   const notes = cur.notes;
 
@@ -200,6 +209,7 @@ export function ExchangeForm({
       replacementMode: typeof v === "function" ? v(cur.replacementMode) : v,
     });
   const setRequestedVariantId = (v: string) => updateActive({ requestedVariantId: v });
+  const setCurrentVariantId = (v: string) => updateActive({ currentVariantId: v });
   const setReplacementDescribe = (v: string) => updateActive({ replacementDescribe: v });
   const setNotes = (v: string) => updateActive({ notes: v });
 
@@ -341,6 +351,9 @@ export function ExchangeForm({
     const subChoices = tab.reason ? (opts.subReasonsByReason[tab.reason] ?? []) : [];
     const dmgChoices = tab.reason ? (opts.damageLocationsByReason[tab.reason] ?? []) : [];
 
+    if (unit.currentUnknown && !tab.currentVariantId) {
+      return "Please tell us which size you currently have.";
+    }
     if (!tab.reason) return "Please select a reason.";
     if (tab.reason === "wrong_item" && !tab.wrongItemFault) {
       return "Please tell us whether we sent the wrong item or you ordered the wrong one.";
@@ -492,7 +505,9 @@ export function ExchangeForm({
         if (tabNotes) item.notes = tabNotes;
         if (unit.isKitComponent) {
           const path: Record<string, unknown> = {
-            variantId: unit.variantId,
+            // For recovered-composition components the ordered variant
+            // wasn't stored, so the parent picked their current size above.
+            variantId: unit.currentUnknown ? tab.currentVariantId : unit.variantId,
             componentName: unit.name,
             attributes: unit.attributes,
           };
@@ -870,6 +885,34 @@ export function ExchangeForm({
               </p>
             )}
           </div>
+
+          {/* Current size — only for box components whose ordered size
+              wasn't recorded. We ask so the swap is unambiguous. */}
+          {activeUnit.currentUnknown && (
+            <div>
+              <label className="block text-[12px] font-semibold uppercase tracking-wider text-ink-700">
+                Which size do you currently have?
+              </label>
+              <p className="mt-1 text-[11.5px] text-ink-500">
+                This item was part of a Magic Box, so we don&apos;t have its
+                exact size on file — please pick the one you received.
+              </p>
+              <select
+                value={currentVariantId}
+                onChange={(e) => setCurrentVariantId(e.target.value)}
+                className="mt-2 w-full rounded-lg border border-ink-200 bg-white px-3 py-2.5 text-[14px]"
+              >
+                <option value="">Select your current size…</option>
+                {(Array.isArray(activeUnit.siblings) ? activeUnit.siblings : []).map(
+                  (s) => (
+                    <option key={s.id} value={s.id}>
+                      {siblingDropdownLabel(s)}
+                    </option>
+                  )
+                )}
+              </select>
+            </div>
+          )}
 
           {/* Reason */}
           <div>

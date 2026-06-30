@@ -11,8 +11,9 @@ import {
   productAttributeValues,
 } from "@/db/schema";
 import { getCurrentParent } from "@/lib/session";
-import { isExchangeTester, isExchangeScopeRelaxed } from "@/lib/exchange-gate";
+import { isExchangeTester, isExchangeScopeRelaxed, isExchangeOwnershipRelaxed } from "@/lib/exchange-gate";
 import { isOrderDeliveredForReturns } from "@/lib/return-eligibility";
+import { fallbackBundleComponents } from "@/lib/bundle-fallback";
 import { findOpenRequestForOrder } from "@/lib/exchange";
 import { Nav } from "@/components/Nav";
 import { Footer } from "@/components/Footer";
@@ -35,8 +36,10 @@ async function resolveLocalOrderId(
   idOrNumber: string,
   parentId: string,
 ): Promise<string | null> {
-  // Dev: ownership scope relaxed — see isExchangeScopeRelaxed.
-  const ownerScope = isExchangeScopeRelaxed()
+  // Ownership relaxed (all envs) — see isExchangeOwnershipRelaxed. Family
+  // membership is enforced by isOrderDeliveredForReturns below (→ notFound
+  // for non-family orders), so resolving by id/number is safe.
+  const ownerScope = isExchangeOwnershipRelaxed()
     ? undefined
     : eq(orders.parentId, parentId);
   const isUuid = /^[0-9a-f-]{36}$/i.test(idOrNumber);
@@ -205,6 +208,21 @@ export default async function NewMissingClaimPage({
     return rawKind ?? "other";
   };
 
+  // Fallback box composition for magic-box order items that never captured
+  // their per-component picks into bundle_selections (~66% of them). Without
+  // this the parent could only report the WHOLE box missing — never an
+  // individual item inside it.
+  const emptyBundleItemIds = items
+    .filter(
+      (it) =>
+        !(
+          Array.isArray(it.bundleSelections) &&
+          it.bundleSelections.length > 0
+        )
+    )
+    .map((it) => it.id);
+  const fallbackByItem = await fallbackBundleComponents(emptyBundleItemIds);
+
   type Unit = {
     unitKey: string;
     orderItemId: string;
@@ -224,6 +242,40 @@ export default async function NewMissingClaimPage({
     const raw = Array.isArray(it.bundleSelections)
       ? (it.bundleSelections as Array<Record<string, unknown>>)
       : [];
+    const fb = fallbackByItem.get(it.id) ?? [];
+    if (raw.length === 0 && fb.length > 0) {
+      // Recovered-composition path: whole-box unit + one unit per defined
+      // component (size unknown — sourced from the bundle definition).
+      units.push({
+        unitKey: `kitparent:${it.id}`,
+        orderItemId: it.id,
+        parentName: it.name,
+        isKitComponent: false,
+        isKitParent: true,
+        name: it.name,
+        size: it.size,
+        qty: it.qty,
+        variantId: it.variantId ?? "",
+        kind: (it.variantId ? kindByVariant.get(it.variantId) : null) ?? "kit",
+        attributes: [],
+      });
+      fb.forEach((c) => {
+        units.push({
+          unitKey: `comp:${it.id}:${c.componentIndex}`,
+          orderItemId: it.id,
+          parentName: it.name,
+          isKitComponent: true,
+          isKitParent: false,
+          name: c.name,
+          size: "",
+          qty: c.qty,
+          variantId: "",
+          kind: effectiveKind(c.kind, c.name),
+          attributes: [],
+        });
+      });
+      continue;
+    }
     if (raw.length > 0) {
       // Whole-kit unit first: the form's scope chooser offers "the whole
       // box never arrived" vs "only some items inside are missing".
