@@ -77,6 +77,17 @@ async function attrsByVariantId(
 ): Promise<Map<string, { name: string; value: string }[]>> {
   const out = new Map<string, { name: string; value: string }[]>();
   if (variantIds.length === 0) return out;
+  // Legacy bundle_selections sometimes store a SKU / product name in
+  // `variantId` (e.g. "SAS KS Primary Bag") instead of a UUID. The
+  // variantId column is uuid-typed, so feeding those into the IN-list
+  // crashes the whole query with 22P02 (invalid input syntax for type
+  // uuid) — taking the entire order-detail API down with a 500. Drop the
+  // non-UUID ids: they have no product_variant_attributes rows anyway, so
+  // the line just falls back to its concatenated-SKU display.
+  const uuids = variantIds.filter((v) =>
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v),
+  );
+  if (uuids.length === 0) return out;
   const rows = await db
     .select({
       variantId: productVariantAttributes.variantId,
@@ -86,7 +97,7 @@ async function attrsByVariantId(
     .from(productVariantAttributes)
     .innerJoin(productAttributes, eq(productAttributes.id, productVariantAttributes.attributeId))
     .innerJoin(productAttributeValues, eq(productAttributeValues.id, productVariantAttributes.valueId))
-    .where(inArray(productVariantAttributes.variantId, variantIds));
+    .where(inArray(productVariantAttributes.variantId, uuids));
   for (const r of rows) {
     const list = out.get(r.variantId) ?? [];
     list.push({ name: r.name, value: r.value });
@@ -855,13 +866,24 @@ export async function getParentOrderDetailFromErp(
                oi.qty::float8 AS qty,
                (oi.unit_price / 100.0)::float8 AS rate,
                (oi.total      / 100.0)::float8 AS amount,
-               oi.image_snapshot AS image,
+               -- Image: prefer the R2 snapshot captured at checkout; fall
+               -- back to the ERP item image (resolved by SKU → erp.items,
+               -- then its variant parent). ~7k delivered line items have a
+               -- null/empty image_snapshot but a perfectly good
+               -- erp.items.image — without this fallback they rendered an
+               -- empty grey box on the order page even though the SAME
+               -- thumbnail shows on the My-Orders list (whose query already
+               -- has this fallback). Magic Box parents stay blank (no item
+               -- image exists) but list their contents below regardless.
+               COALESCE(NULLIF(oi.image_snapshot,''), NULLIF(li.image,''), NULLIF(lvt.image,'')) AS image,
                oi.bundle_selections AS bundle_selections,
                pv.sku AS sku,
                row_number() OVER (ORDER BY oi.id) AS rn
           FROM order_items oi
           JOIN orders lo ON lo.id = oi.order_id
           LEFT JOIN product_variants pv ON pv.id = oi.variant_id
+          LEFT JOIN erp.items li  ON li.erp_name  = pv.sku
+          LEFT JOIN erp.items lvt ON lvt.erp_name = li.variant_of
          WHERE lo.erp_so_name = ${orderNo}
       ),
       erp_items AS (
@@ -907,44 +929,60 @@ export async function getParentOrderDetailFromErp(
     carrier_events: unknown;
   }>(
     await db.execute(sql`
-      SELECT id::int        AS shipment_id,
-             partner, tracking_number, status,
-             dispatched_at::text AS dispatched_at,
-             delivered_at::text  AS delivered_at,
-             item_category, description, carrier_events
-        FROM erp.outward_shipments
-       WHERE order_erp_name = ${orderNo}
-         AND is_deleted = false
-         -- Hide legacy synthetic rows. These were written before the
-         -- carrier-side AWB came back from srocket/dtdc; once the real
-         -- shipment row arrives (with a partner-issued tracking number),
-         -- the synthetic acts as a stub that double-counts the parcel.
-         AND COALESCE(tracking_number, '') NOT LIKE 'syn:%'
+      (
+        -- Audit's mirror frequently holds DUPLICATE outward_shipments rows
+        -- for ONE physical parcel — the same AWB synced many times (e.g.
+        -- a single srocket AWB mirrored 12×; 5,110 orders carry >1 row,
+        -- 3,067 share an AWB). Each duplicate rendered as its own identical
+        -- "Shipment history" card with the same carrier timeline. Collapse
+        -- to one row per (category, AWB), keeping the most-progressed copy.
+        SELECT DISTINCT ON (item_category, COALESCE(tracking_number, ''))
+               id::int        AS shipment_id,
+               partner, tracking_number, status,
+               dispatched_at::text AS dispatched_at,
+               delivered_at::text  AS delivered_at,
+               item_category, description, carrier_events
+          FROM erp.outward_shipments
+         WHERE order_erp_name = ${orderNo}
+           AND is_deleted = false
+           -- Hide legacy synthetic rows. These were written before the
+           -- carrier-side AWB came back from srocket/dtdc; once the real
+           -- shipment row arrives (with a partner-issued tracking number),
+           -- the synthetic acts as a stub that double-counts the parcel.
+           AND COALESCE(tracking_number, '') NOT LIKE 'syn:%'
+         ORDER BY item_category, COALESCE(tracking_number, ''),
+                  (status = 'delivered') DESC,
+                  delivered_at DESC NULLS LAST,
+                  dispatched_at DESC NULLS LAST,
+                  id DESC
+      )
       UNION ALL
-      SELECT NULL::int      AS shipment_id,
-             partner, tracking_number,
-             CASE
-               WHEN status = 'dispatched' THEN 'shipped'
-               WHEN status = 'sealed'     THEN 'packed'
-               ELSE status
-             END AS status,
-             dispatched_at::text AS dispatched_at,
-             NULL::text          AS delivered_at,
-             NULL::text          AS item_category,
-             NULL::text          AS description,
-             NULL::jsonb         AS carrier_events
-        FROM erp.packing_units pu
-       WHERE pu.order_erp_name = ${orderNo}
-         AND pu.status IN ('sealed','dispatched')
-         -- Once an outward_shipments row exists for this order, it owns
-         -- the lifecycle (it's the only place that flips to "delivered").
-         -- Keeping packing_units in the union double-counts and pegs the
-         -- timeline at "shipped" forever, because packing_units never
-         -- progresses past "dispatched".
-         AND NOT EXISTS (
-           SELECT 1 FROM erp.outward_shipments os
-            WHERE os.order_erp_name = pu.order_erp_name
-         )
+      (
+        SELECT NULL::int      AS shipment_id,
+               partner, tracking_number,
+               CASE
+                 WHEN status = 'dispatched' THEN 'shipped'
+                 WHEN status = 'sealed'     THEN 'packed'
+                 ELSE status
+               END AS status,
+               dispatched_at::text AS dispatched_at,
+               NULL::text          AS delivered_at,
+               NULL::text          AS item_category,
+               NULL::text          AS description,
+               NULL::jsonb         AS carrier_events
+          FROM erp.packing_units pu
+         WHERE pu.order_erp_name = ${orderNo}
+           AND pu.status IN ('sealed','dispatched')
+           -- Once an outward_shipments row exists for this order, it owns
+           -- the lifecycle (it's the only place that flips to "delivered").
+           -- Keeping packing_units in the union double-counts and pegs the
+           -- timeline at "shipped" forever, because packing_units never
+           -- progresses past "dispatched".
+           AND NOT EXISTS (
+             SELECT 1 FROM erp.outward_shipments os
+              WHERE os.order_erp_name = pu.order_erp_name
+           )
+      )
       ORDER BY dispatched_at DESC NULLS LAST
     `)
   );
@@ -969,6 +1007,15 @@ export async function getParentOrderDetailFromErp(
                  created_at::text AS created_at
             FROM erp.outward_status_events
            WHERE shipment_id IN ${sql.raw(`(${shipmentIds.join(",")})`)}
+             -- Drop NO-OP transitions (from_status = to_status). Audit's
+             -- 'onedrive-consolidate' reconcile job re-stamps the terminal
+             -- state on every run, writing hundreds of identical
+             -- 'delivered → delivered' rows per shipment (397,986 of
+             -- 567,476 rows = 70% are no-ops; one shipment had 773). They
+             -- carry no information and flooded the customer timeline,
+             -- burying the real carrier scans. Keep genuine transitions
+             -- (incl. the initial one where from_status IS NULL).
+             AND from_status IS DISTINCT FROM to_status
            ORDER BY shipment_id, created_at
         `)
       )
@@ -1337,6 +1384,17 @@ export async function getParentOrderDetailFromErp(
       // descending-by-time on a parcel page, so this matches the
       // mental model people already have.
       events.sort((a, b) => (a.at > b.at ? -1 : a.at < b.at ? 1 : 0));
+      // Collapse exact-duplicate events (same kind/label/timestamp/source).
+      // Repeated auto-polls and carrier re-scans can emit identical rows;
+      // after the no-op filter above this is a final safety net so the
+      // timeline never shows the same beat twice in a row.
+      const seenEv = new Set<string>();
+      const dedupedEvents = events.filter((e) => {
+        const k = `${e.kind}|${e.label}|${e.at}|${e.source ?? ""}`;
+        if (seenEv.has(k)) return false;
+        seenEv.add(k);
+        return true;
+      });
       return {
         shipmentId: s.shipment_id,
         partner: s.partner ?? "—",
@@ -1348,7 +1406,7 @@ export async function getParentOrderDetailFromErp(
         dispatchedAt: s.dispatched_at,
         deliveredAt: s.delivered_at,
         carrierEventCount: carrier.length,
-        events,
+        events: dedupedEvents,
       };
     }),
     studentName: o.customer_name,

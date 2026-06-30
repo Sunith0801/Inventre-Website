@@ -3,7 +3,8 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { orders } from "@/db/schema";
 import { requireParent, isResponse } from "@/lib/parent-guard";
-import { isExchangeTester, isExchangeScopeRelaxed } from "@/lib/exchange-gate";
+import { isExchangeTester, isExchangeOwnershipRelaxed } from "@/lib/exchange-gate";
+import { getParentOrderDetailFromErp } from "@/lib/erp-customer-orders";
 import { uploadFile } from "@/lib/storage";
 
 export const runtime = "nodejs";
@@ -56,19 +57,30 @@ export async function POST(req: Request) {
   }
 
   // Scope: the upload key embeds the orderId, so we must confirm this
-  // parent actually owns the order before letting them stage files
-  // against its namespace.
+  // parent may act on the order before letting them stage files against
+  // its namespace. Ownership relaxed (all envs — see
+  // isExchangeOwnershipRelaxed) to support split-account / guest orders;
+  // family membership is then enforced explicitly via
+  // getParentOrderDetailFromErp (same family-identity scope as My-Orders),
+  // since this route — unlike the create paths — has no
+  // isOrderDeliveredForReturns gate of its own.
   const [order] = await db
-    .select({ id: orders.id })
+    .select({ id: orders.id, orderNumber: orders.orderNumber })
     .from(orders)
     .where(
       and(
         eq(orders.id, orderId),
-        isExchangeScopeRelaxed() ? undefined : eq(orders.parentId, me.id)
+        isExchangeOwnershipRelaxed() ? undefined : eq(orders.parentId, me.id)
       )
     )
     .limit(1);
   if (!order) {
+    return NextResponse.json({ error: "Order not found" }, { status: 404 });
+  }
+  // Family-identity authorization: null means the order isn't visible to
+  // this parent's family → refuse to stage uploads against it.
+  const accessible = await getParentOrderDetailFromErp(me.id, order.orderNumber);
+  if (!accessible) {
     return NextResponse.json({ error: "Order not found" }, { status: 404 });
   }
 

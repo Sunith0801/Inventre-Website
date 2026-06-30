@@ -61,6 +61,34 @@ export function isExchangeScopeRelaxed(): boolean {
   return process.env.NODE_ENV !== "production";
 }
 
+/**
+ * Ownership relaxation for the exchange / missing flows — SEPARATE from
+ * the dev-only `isExchangeScopeRelaxed` above.
+ *
+ * Returns true in ALL environments: we no longer gate exchange/missing on
+ * a strict `orders.parent_id == me.id` match. That match broke legitimate
+ * access for split-account / guest / co-guardian orders — a parent could
+ * SEE a delivered order in My-Orders (surfaced via the broader
+ * family-identity fan-out: shared phones, enrollment, customer_link) but
+ * the strict parent_id check hid the Request-exchange / Report-missing
+ * buttons because the local row's parent_id pointed at a different parent
+ * record.
+ *
+ * This is SAFE because the family-identity authorization still runs:
+ * `getParentOrderDetailFromErp` (used by the button gate directly and by
+ * `isOrderDeliveredForReturns` in every create/form path) returns null for
+ * any order outside the parent's family, so dropping the parent_id match
+ * only widens access to orders the parent can already see — never to
+ * another family's orders.
+ *
+ * NOTE: this does NOT touch the per-order lifetime lock (one exchange +
+ * one missing per order) — that stays governed by `isExchangeScopeRelaxed`
+ * (production-strict), so a parent still can't raise unlimited claims.
+ */
+export function isExchangeOwnershipRelaxed(): boolean {
+  return true;
+}
+
 /** Number of testers currently configured; used by admin telemetry. */
 export function exchangeTesterCount(): number {
   return getAllowlist().size;

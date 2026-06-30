@@ -24,14 +24,19 @@ export function ProductCard({ p }: { p: Product }) {
   const [liked, setLiked] = useState(false);
   const [added, setAdded] = useState(false);
 
+  // Bookkits carry a 1st/2nd-language choice that can only be made on the
+  // PDP. Adding straight from the grid would silently land the generic
+  // "Standard" variant with no language captured, so force the PDP.
+  const isBookkit = /bookkit/i.test(p.name);
+
   const handleAdd = (e: React.MouseEvent) => {
     // Always stop the click from bubbling to the card's anchor — otherwise
     // adding from the shop grid silently navigates to the PDP and the
     // selected size never lands in the cart.
     e.preventDefault();
     e.stopPropagation();
-    if (p.isMagicBox || (p.isKit && p.hasLangOptions)) {
-      // Magic boxes and kits with language options require the PDP.
+    if (p.isMagicBox || (p.isKit && p.hasLangOptions) || isBookkit) {
+      // Magic boxes, language kits, and bookkits require the PDP.
       window.location.href = `/shop/${p.slug ?? p.id}${studentQuery}`;
       return;
     }
@@ -103,7 +108,7 @@ export function ProductCard({ p }: { p: Product }) {
           <button
             type="button"
             onClick={handleAdd}
-            disabled={!p.isMagicBox && !(p.isKit && p.hasLangOptions) && !p.inStock}
+            disabled={!p.isMagicBox && !(p.isKit && p.hasLangOptions) && !isBookkit && !p.inStock}
             className="w-full inline-flex items-center justify-center gap-1.5 rounded-full bg-ink-900 text-white px-4 py-2.5 text-[13px] font-semibold hover:bg-brand transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <AnimatePresence mode="wait">
@@ -126,6 +131,16 @@ export function ProductCard({ p }: { p: Product }) {
                   className="inline-flex items-center gap-1.5"
                 >
                   <Plus className="h-3.5 w-3.5" /> Choose options
+                </motion.span>
+              ) : isBookkit ? (
+                <motion.span
+                  key="bookkit"
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -6 }}
+                  className="inline-flex items-center gap-1.5"
+                >
+                  <Plus className="h-3.5 w-3.5" /> View options
                 </motion.span>
               ) : added ? (
                 <motion.span

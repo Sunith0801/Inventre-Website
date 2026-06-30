@@ -7,7 +7,11 @@ import {
   getParentOrderDetailFromErp,
   getParentOrderDetailLocal,
 } from "@/lib/erp-customer-orders";
-import { isExchangeTester, isExchangeScopeRelaxed } from "@/lib/exchange-gate";
+import {
+  isExchangeTester,
+  isExchangeScopeRelaxed,
+  isExchangeOwnershipRelaxed,
+} from "@/lib/exchange-gate";
 import { isWithinReturnsWindow } from "@/lib/return-eligibility";
 
 export async function GET(
@@ -204,9 +208,12 @@ async function resolveLocalOrder(
   idOrNumber: string,
   parentId: string
 ): Promise<{ id: string; status: string; deliveredAt: Date | null } | null> {
-  // Dev: ownership scope relaxed so testers get the buttons on any
-  // delivered order (drizzle's and() drops the undefined operand).
-  const ownerScope = isExchangeScopeRelaxed()
+  // Ownership relaxed (all envs): the order was already family-authorized
+  // upstream — this route 404s unless getParentOrderDetailFromErp/Local
+  // returned it for `me`. So resolving the local row by id/number alone is
+  // safe and fixes split-account/guest orders. (drizzle's and() drops the
+  // undefined operand.) See isExchangeOwnershipRelaxed.
+  const ownerScope = isExchangeOwnershipRelaxed()
     ? undefined
     : eq(orders.parentId, parentId);
   const isUuid = /^[0-9a-f-]{36}$/i.test(idOrNumber);

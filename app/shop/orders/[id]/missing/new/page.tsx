@@ -11,7 +11,7 @@ import {
   productAttributeValues,
 } from "@/db/schema";
 import { getCurrentParent } from "@/lib/session";
-import { isExchangeTester, isExchangeScopeRelaxed } from "@/lib/exchange-gate";
+import { isExchangeTester, isExchangeScopeRelaxed, isExchangeOwnershipRelaxed } from "@/lib/exchange-gate";
 import { isOrderDeliveredForReturns } from "@/lib/return-eligibility";
 import { findOpenRequestForOrder } from "@/lib/exchange";
 import { Nav } from "@/components/Nav";
@@ -35,8 +35,10 @@ async function resolveLocalOrderId(
   idOrNumber: string,
   parentId: string,
 ): Promise<string | null> {
-  // Dev: ownership scope relaxed — see isExchangeScopeRelaxed.
-  const ownerScope = isExchangeScopeRelaxed()
+  // Ownership relaxed (all envs) — see isExchangeOwnershipRelaxed. Family
+  // membership is enforced by isOrderDeliveredForReturns below (→ notFound
+  // for non-family orders), so resolving by id/number is safe.
+  const ownerScope = isExchangeOwnershipRelaxed()
     ? undefined
     : eq(orders.parentId, parentId);
   const isUuid = /^[0-9a-f-]{36}$/i.test(idOrNumber);

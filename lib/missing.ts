@@ -6,7 +6,7 @@ import { allocClaimNumber } from "@/lib/numbering";
 import { firstPickupSaturday, toDbDate } from "@/lib/date";
 import { findOpenRequestForOrder } from "@/lib/exchange";
 import { isApprovedStatus } from "@/lib/exchange-shared";
-import { isExchangeScopeRelaxed } from "@/lib/exchange-gate";
+import { isExchangeScopeRelaxed, isExchangeOwnershipRelaxed } from "@/lib/exchange-gate";
 import { isOrderDeliveredForReturns } from "@/lib/return-eligibility";
 
 /**
@@ -56,13 +56,16 @@ export async function createMissingClaim(
   // 1. Scope: order must belong to this parent and be delivered —
   //    identical gate to exchange. A missing-item claim can only be
   //    raised once the order is marked delivered.
+  // Ownership relaxed (all envs) — see isExchangeOwnershipRelaxed; family
+  // membership is enforced by isOrderDeliveredForReturns below, so dropping
+  // the strict parent_id match is safe and fixes split-account orders.
   const [order] = await db
     .select()
     .from(orders)
     .where(
       and(
         eq(orders.id, input.orderId),
-        isExchangeScopeRelaxed() ? undefined : eq(orders.parentId, input.parentId)
+        isExchangeOwnershipRelaxed() ? undefined : eq(orders.parentId, input.parentId)
       )
     )
     .limit(1);
