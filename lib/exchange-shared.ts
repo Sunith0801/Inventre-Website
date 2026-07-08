@@ -131,6 +131,46 @@ export type ExchangePhoto = {
   caption?: string;
 };
 
+// ─── Request window + duplicate-guard messages ─────────────────────
+//
+// Client-safe so both the server (409 bodies, form-page guards) and the
+// client order page (disabled-button popups) share ONE source of truth
+// for the wording the customer sees. The server-only numeric gate lives
+// in lib/return-eligibility.ts, which imports REQUEST_WINDOW_DAYS from
+// here so the number can never drift between the two.
+
+/** Days after delivery a customer may raise an exchange / missing. */
+export const REQUEST_WINDOW_DAYS = 10;
+
+/** Popup shown when the 10-day window has closed (Condition 1). */
+export function expiredWindowMessage(kind: "exchange" | "missing"): string {
+  const label = kind === "exchange" ? "Exchange" : "Missing";
+  return `The ${label} request period has expired. You can only raise Exchange or Missing requests within ${REQUEST_WINDOW_DAYS} days from the delivery date.`;
+}
+
+/** Indefinite article for a request-kind label ("An Exchange" / "A Missing"). */
+function articleFor(kind: "exchange" | "missing"): string {
+  return kind === "exchange" ? "An Exchange" : "A Missing";
+}
+
+/**
+ * Popup shown when a request already exists for this Sales Order
+ * (Conditions 2 & 4). `existingKind` is the kind that already exists (the
+ * lock is per SALE ORDER, so an open Exchange blocks a new Missing too and
+ * the message names the existing one). `origin` is where that existing
+ * request came from — a `care_team` request was raised by Customer Care in
+ * the Audit portal and synced here, so we say so explicitly.
+ */
+export function alreadyRaisedMessage(
+  existingKind: "exchange" | "missing",
+  origin: "customer" | "care_team"
+): string {
+  const head = `${articleFor(existingKind)} request has already been raised for this Sales Order`;
+  return origin === "care_team"
+    ? `${head} by the Customer Care Team.`
+    : `${head}.`;
+}
+
 // ─── Status machine ────────────────────────────────────────────────
 
 export const EXCHANGE_STATUSES = [

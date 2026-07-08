@@ -17,51 +17,66 @@ import { isExchangeScopeRelaxed, isExchangeOwnershipRelaxed } from "@/lib/exchan
 import { isOrderDeliveredForReturns } from "@/lib/return-eligibility";
 import { getHeldBackOrderItemIds } from "@/lib/return-line-eligibility";
 import {
+  alreadyRaisedMessage,
   canTransition,
-  isApprovedStatus,
   isExchangeStatus,
   type ExchangeStatus,
 } from "@/lib/exchange-shared";
 
+/** Result of the per-sale-order duplicate scan. `source` is where the
+ *  blocking request came from — "care_team" means Customer Care raised it
+ *  in Audit (Condition 4 wording). */
+export interface OpenRequestInfo {
+  kind: "exchange" | "missing";
+  status: string;
+  source: "customer" | "care_team";
+}
+
 /**
- * Cross-flow per-sale-order block.
+ * Per-SALE-ORDER duplicate block.
  *
- * Business rule (2026-06-09): a parent gets ONE exchange request AND
- * ONE missing-item claim per sale order. The moment either is created
- * and not subsequently rejected, both buttons disappear on that order.
- * Rejected requests don't count — the customer is free to retry after a
- * "no" from customer-care.
+ * Business rule (2026-07-08): only ONE active request may exist per Sales
+ * Order — an open Exchange OR an open Missing claim blocks BOTH buttons on
+ * that order (Condition 2, "particular sale order" granularity). Rejected
+ * requests don't count — the customer is free to retry after a "no" from
+ * customer-care (the rejected exception). A request raised by Customer Care
+ * in Audit (`source = "care_team"`) blocks the storefront just the same
+ * (Condition 4).
  *
- * Returns the kind of blocker found (so callers can phrase the 409
- * accurately), or null when the order is clear to file on.
+ * Scoped to the ORDER, NOT the parent: the caller has already
+ * family-authorised the order, and a care-team request synced from Audit
+ * carries the order's own `parent_id`, which can differ from the logged-in
+ * family member on split / co-guardian accounts. Matching on order id alone
+ * guarantees the customer is blocked no matter who raised it.
+ *
+ * Returns the blocker (so callers can phrase the popup / 409 accurately),
+ * or null when the order is clear to file on.
  */
 export async function findOpenRequestForOrder(
   orderId: string,
-  parentId: string,
-): Promise<{ kind: "exchange" | "missing"; status: string } | null> {
+): Promise<OpenRequestInfo | null> {
   const exRows = await db
-    .select({ status: returns.status, kind: returns.kind })
+    .select({ status: returns.status, kind: returns.kind, source: returns.source })
     .from(returns)
-    .where(and(eq(returns.orderId, orderId), eq(returns.parentId, parentId)));
+    .where(eq(returns.orderId, orderId));
   for (const r of exRows) {
     if (r.kind !== "exchange") continue;
     if (r.status === "rejected") continue;
-    return { kind: "exchange", status: r.status };
+    return { kind: "exchange", status: r.status, source: normSource(r.source) };
   }
   const mcRows = await db
-    .select({ status: missingItemClaims.status })
+    .select({ status: missingItemClaims.status, source: missingItemClaims.source })
     .from(missingItemClaims)
-    .where(
-      and(
-        eq(missingItemClaims.orderId, orderId),
-        eq(missingItemClaims.parentId, parentId),
-      ),
-    );
+    .where(eq(missingItemClaims.orderId, orderId));
   for (const r of mcRows) {
     if (r.status === "rejected") continue;
-    return { kind: "missing", status: r.status };
+    return { kind: "missing", status: r.status, source: normSource(r.source) };
   }
   return null;
+}
+
+function normSource(s: string | null | undefined): "customer" | "care_team" {
+  return s === "care_team" ? "care_team" : "customer";
 }
 
 /**
@@ -248,17 +263,17 @@ export async function createExchange(
   // raise repeat requests on the same order.
   const open = isExchangeScopeRelaxed()
     ? null
-    : await findOpenRequestForOrder(input.orderId, input.parentId);
+    : await findOpenRequestForOrder(input.orderId);
   if (open) {
-    const label = open.kind === "exchange" ? "Exchange" : "Missing";
-    const msg = isApprovedStatus(open.status)
-      ? `An ${label} request has already been approved for this Sales Order. You cannot raise another request for this order.`
-      : `A${open.kind === "exchange" ? "n exchange" : " missing-item"} request is already in progress for this order — please wait for it to close before raising another.`;
     return {
       ok: false,
       status: 409,
-      error: msg,
-      details: { existingKind: open.kind, existingStatus: open.status },
+      error: alreadyRaisedMessage(open.kind, open.source),
+      details: {
+        existingKind: open.kind,
+        existingStatus: open.status,
+        existingSource: open.source,
+      },
     };
   }
 

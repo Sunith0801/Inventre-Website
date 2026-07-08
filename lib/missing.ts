@@ -5,7 +5,7 @@ import { missingItemClaims, missingItemClaimItems, orders, orderItems } from "@/
 import { allocClaimNumber } from "@/lib/numbering";
 import { firstPickupSaturday, toDbDate } from "@/lib/date";
 import { findOpenRequestForOrder } from "@/lib/exchange";
-import { isApprovedStatus } from "@/lib/exchange-shared";
+import { alreadyRaisedMessage } from "@/lib/exchange-shared";
 import { isExchangeScopeRelaxed, isExchangeOwnershipRelaxed } from "@/lib/exchange-gate";
 import { isOrderDeliveredForReturns } from "@/lib/return-eligibility";
 import { getHeldBackOrderItemIds } from "@/lib/return-line-eligibility";
@@ -130,19 +130,17 @@ export async function createMissingClaim(
   // raise repeat requests on the same order.
   const open = isExchangeScopeRelaxed()
     ? null
-    : await findOpenRequestForOrder(input.orderId, input.parentId);
+    : await findOpenRequestForOrder(input.orderId);
   if (open) {
-    const label = open.kind === "exchange" ? "Exchange" : "Missing";
-    const msg = isApprovedStatus(open.status)
-      ? `An ${label} request has already been approved for this Sales Order. You cannot raise another request for this order.`
-      : open.kind === "missing"
-        ? "A missing-item claim for this order is already in progress."
-        : "An exchange request is already in progress for this order — please wait for it to close before raising a missing claim.";
     return {
       ok: false,
       status: 409,
-      error: msg,
-      details: { existingKind: open.kind, existingStatus: open.status },
+      error: alreadyRaisedMessage(open.kind, open.source),
+      details: {
+        existingKind: open.kind,
+        existingStatus: open.status,
+        existingSource: open.source,
+      },
     };
   }
 

@@ -9,6 +9,7 @@ import { Nav } from "@/components/Nav";
 import { Footer } from "@/components/Footer";
 import { ExchangeStatusBanner } from "@/components/shop/orders/exchange/ExchangeStatusBanner";
 import { MissingStatusBanner } from "@/components/shop/orders/missing/MissingStatusBanner";
+import { BlockedRequestButton } from "@/components/shop/orders/BlockedRequestButton";
 import {
   ShipmentHistory,
   ShipmentCard,
@@ -191,6 +192,12 @@ export default function OrderDetailPage() {
     pickupDate: string | null;
     createdAt: string;
   } | null>(null);
+  // When a button is disabled, why — so we can show it greyed-out with a
+  // popup instead of hiding it (Conditions 1, 2 & 4). null → button is
+  // either enabled or not applicable (order not delivered).
+  type RequestBlock = { reason: "expired" | "duplicate"; message: string };
+  const [exchangeBlock, setExchangeBlock] = useState<RequestBlock | null>(null);
+  const [missingBlock, setMissingBlock] = useState<RequestBlock | null>(null);
 
   const refetchOrder = useCallback(
     () =>
@@ -200,6 +207,8 @@ export default function OrderDetailPage() {
           setOrder(d?.order ?? null);
           setCanExchange(Boolean(d?.canExchange));
           setCanMissing(Boolean(d?.canMissing));
+          setExchangeBlock(d?.exchangeBlock ?? null);
+          setMissingBlock(d?.missingBlock ?? null);
           setActiveExchange(d?.activeExchange ?? null);
           setActiveMissing(d?.activeMissing ?? null);
         }),
@@ -559,23 +568,37 @@ export default function OrderDetailPage() {
                 picker that covers standalone items AND every kit/Magic
                 Box component, mirroring the Magic Box workflow across
                 the whole order. */}
-            {(canExchange || canMissing) && (
+            {(canExchange || canMissing || exchangeBlock || missingBlock) && (
               <div className="flex flex-wrap gap-2">
-                {canExchange && (
+                {canExchange ? (
                   <a
                     href={`/shop/orders/${id}/exchange/new`}
                     className="inline-flex items-center gap-1.5 rounded-lg border border-ink-200 px-3 py-1.5 text-[12.5px] font-medium text-ink-700 hover:border-brand hover:text-brand"
                   >
                     Request exchange
                   </a>
+                ) : (
+                  exchangeBlock && (
+                    <BlockedRequestButton
+                      label="Request exchange"
+                      message={exchangeBlock.message}
+                    />
+                  )
                 )}
-                {canMissing && (
+                {canMissing ? (
                   <a
                     href={`/shop/orders/${id}/missing/new`}
                     className="inline-flex items-center gap-1.5 rounded-lg border border-ink-200 px-3 py-1.5 text-[12.5px] font-medium text-ink-700 hover:border-brand hover:text-brand"
                   >
                     Report missing
                   </a>
+                ) : (
+                  missingBlock && (
+                    <BlockedRequestButton
+                      label="Report missing"
+                      message={missingBlock.message}
+                    />
+                  )
                 )}
               </div>
             )}

@@ -13,7 +13,11 @@ import {
   isExchangeScopeRelaxed,
   isExchangeOwnershipRelaxed,
 } from "@/lib/exchange-gate";
-import { isWithinReturnsWindow } from "@/lib/return-eligibility";
+import { classifyReturnsEligibility } from "@/lib/return-eligibility";
+import {
+  alreadyRaisedMessage,
+  expiredWindowMessage,
+} from "@/lib/exchange-shared";
 
 // Schools whose exchange collection happens at the Inventre store, not the
 // school office. The order-page exchange banner uses this to swap "school"
@@ -83,6 +87,15 @@ export async function GET(
         photos: unknown;
       }
     | null = null;
+  // When a button is NOT enabled we tell the UI WHY, so it can show the
+  // button DISABLED with the right popup instead of hiding it (Conditions
+  // 1, 2 & 4). `reason` is "expired" (10-day window closed) or "duplicate"
+  // (a request already exists for this Sales Order); `message` is the exact
+  // copy to show. null → nothing to show (order not delivered, or the
+  // button is enabled).
+  type RequestBlock = { reason: "expired" | "duplicate"; message: string };
+  let exchangeBlock: RequestBlock | null = null;
+  let missingBlock: RequestBlock | null = null;
 
   if (isExchangeTester(me.phone)) {
     // Read both the local orders.status (inventre's own delivery-status
@@ -108,6 +121,13 @@ export async function GET(
       ) {
         (order as { status?: string }).status = local.status;
       }
+      // Latest request per SALE ORDER (NOT scoped to me.id): a request
+      // raised by Customer Care in Audit carries the order's own parent_id,
+      // which can differ from the logged-in family member on split /
+      // co-guardian accounts. Reading by order id means the customer SEES
+      // the existing request (banner) and is BLOCKED by it no matter who
+      // raised it (Condition 4). `source` distinguishes customer vs
+      // care-team for the popup wording.
       const [exRow] = await db
         .select({
           id: returns.id,
@@ -117,12 +137,13 @@ export async function GET(
           createdAt: returns.createdAt,
           photos: returns.photos,
           kind: returns.kind,
+          source: returns.source,
         })
         .from(returns)
-        .where(and(eq(returns.orderId, local.id), eq(returns.parentId, me.id)))
+        .where(and(eq(returns.orderId, local.id), eq(returns.kind, "exchange")))
         .orderBy(desc(returns.createdAt))
         .limit(1);
-      if (exRow && exRow.kind === "exchange") {
+      if (exRow) {
         activeExchange = {
           id: exRow.id,
           returnNumber: exRow.returnNumber,
@@ -141,14 +162,10 @@ export async function GET(
           pickupDate: missingItemClaims.pickupDate,
           createdAt: missingItemClaims.createdAt,
           photos: missingItemClaims.photos,
+          source: missingItemClaims.source,
         })
         .from(missingItemClaims)
-        .where(
-          and(
-            eq(missingItemClaims.orderId, local.id),
-            eq(missingItemClaims.parentId, me.id),
-          ),
-        )
+        .where(eq(missingItemClaims.orderId, local.id))
         .orderBy(desc(missingItemClaims.createdAt))
         .limit(1);
       if (mcRow) {
@@ -162,54 +179,64 @@ export async function GET(
         };
       }
 
-      // Cross-flow lifetime lock: a parent gets ONE exchange + ONE missing
-      // per sale order — but the slot is released if customer-care rejects
-      // the request. Once any non-rejected request exists in EITHER flow,
-      // both buttons disappear on this order.
-      const exBlocking =
-        activeExchange !== null && activeExchange.status !== "rejected";
-      const mcBlocking =
-        activeMissing !== null && activeMissing.status !== "rejected";
-      // Dev: the lifetime lock is disabled so testers can re-raise
-      // exchange / missing on orders they already used up.
-      const anyOpen = !isExchangeScopeRelaxed() && (exBlocking || mcBlocking);
-      // Delivery gate: the order is "delivered" for exchange/missing
-      // purposes if EITHER authoritative signal says so —
-      //   • the audit/ERP shipment-mirror–derived status (`order.status`,
-      //     computed by uiStatus() from outward_shipments + audit's
-      //     category map / display status — the SAME value the header
-      //     shows), OR
-      //   • the local `orders.status` column.
-      // We must OR them, not pick one: the mirror-derived status routinely
-      // runs AHEAD of the local column (the column only advances when an
-      // audit→inventre status webhook lands, which is frequently missed —
-      // ~1,305 fully-delivered orders were stuck at packed/shipped/placed
-      // with the buttons hidden because the old gate read local.status
-      // alone). Conversely the old code guarded against the mirror briefly
-      // lagging a just-delivered local order. OR-ing covers both lags so
-      // neither can ever hide the button on a genuinely delivered order,
-      // and guarantees the buttons agree with the displayed header status.
+      // Per-SALE-ORDER duplicate lock: ONE active request (Exchange OR
+      // Missing) per order blocks BOTH buttons — released only if it was
+      // rejected (the rejected exception). Dev disables the lock so testers
+      // can re-raise (isExchangeScopeRelaxed). The blocking request drives
+      // the "already raised…" popup, incl. the care-team wording.
+      const exBlocking = exRow != null && exRow.status !== "rejected";
+      const mcBlocking = mcRow != null && mcRow.status !== "rejected";
+      const openReq: { kind: "exchange" | "missing"; source: "customer" | "care_team" } | null =
+        isExchangeScopeRelaxed()
+          ? null
+          : exBlocking
+            ? { kind: "exchange", source: exRow.source === "care_team" ? "care_team" : "customer" }
+            : mcBlocking
+              ? { kind: "missing", source: mcRow.source === "care_team" ? "care_team" : "customer" }
+              : null;
+
+      // Delivery + window classification. Delivered when EITHER signal says
+      // so — the audit/ERP mirror-derived status (`order.status`, the value
+      // the header shows) OR the local `orders.status` column (the two lag
+      // each other in both directions, so OR-ing keeps the button in
+      // agreement with the header). "expired" = delivered but past the
+      // 10-day window; "not_delivered" = not eligible at all.
       const derivedDelivered =
         (order as { status?: string }).status === "delivered";
-      const localDelivered = local.status === "delivered";
-      // 15-day window from the delivery date — exchange/missing close 15
-      // days after delivery. Prefer the local delivered_at; fall back to
-      // the mirror's shipment delivered_at (the SAME date the header
-      // timeline shows). Unknown date → in-window (see
-      // isWithinReturnsWindow). Keeps the button in lockstep with the form
-      // pages + submit handlers, which apply the identical gate.
       const mirrorDeliveredAt = (order as { deliveredAt?: string | null })
         .deliveredAt;
       const deliveredAt =
         local.deliveredAt ?? (mirrorDeliveredAt ? new Date(mirrorDeliveredAt) : null);
-      const isDelivered =
-        (derivedDelivered || localDelivered) &&
-        isWithinReturnsWindow(deliveredAt);
-      canExchange = isDelivered && !anyOpen;
-      // Missing claims are gated on delivery, identical to exchange —
-      // the parent can only report a short ship once the order is marked
-      // delivered (no packed/shipped early-report allowance).
-      canMissing = isDelivered && !anyOpen;
+      const eligibility = classifyReturnsEligibility(
+        local.status,
+        derivedDelivered,
+        deliveredAt,
+      );
+
+      // Buttons enabled only when delivered, in-window, and no open request.
+      const enabled = eligibility === "eligible" && !openReq;
+      canExchange = enabled;
+      canMissing = enabled;
+
+      // Block reasons — only for a DELIVERED order (we never surface the
+      // buttons at all on an undelivered order). A duplicate takes
+      // precedence over an expired window (an active request is the more
+      // relevant thing to tell the customer). The expired copy is per-kind.
+      if (eligibility !== "not_delivered") {
+        const dupExchange = openReq
+          ? { reason: "duplicate" as const, message: alreadyRaisedMessage(openReq.kind, openReq.source) }
+          : null;
+        exchangeBlock =
+          dupExchange ??
+          (eligibility === "expired"
+            ? { reason: "expired", message: expiredWindowMessage("exchange") }
+            : null);
+        missingBlock =
+          dupExchange ??
+          (eligibility === "expired"
+            ? { reason: "expired", message: expiredWindowMessage("missing") }
+            : null);
+      }
     }
   }
 
@@ -217,6 +244,8 @@ export async function GET(
     order,
     canExchange,
     canMissing,
+    exchangeBlock,
+    missingBlock,
     activeExchange,
     activeMissing,
   });

@@ -12,8 +12,10 @@ import {
   returns,
 } from "@/db/schema";
 import { getCurrentParent } from "@/lib/session";
-import { isExchangeTester, isExchangeScopeRelaxed } from "@/lib/exchange-gate";
+import { isExchangeTester, isExchangeScopeRelaxed, isExchangeOwnershipRelaxed } from "@/lib/exchange-gate";
 import { isOrderDeliveredForReturns } from "@/lib/return-eligibility";
+import { getHeldBackOrderItemIds } from "@/lib/return-line-eligibility";
+import { fallbackBundleComponents, loadBookkitCategoryTree } from "@/lib/bundle-fallback";
 import { findOpenRequestForOrder } from "@/lib/exchange";
 import { Nav } from "@/components/Nav";
 import { Footer } from "@/components/Footer";
@@ -39,8 +41,10 @@ async function resolveLocalOrderId(
   idOrNumber: string,
   parentId: string
 ): Promise<string | null> {
-  // Dev: ownership scope relaxed — see isExchangeScopeRelaxed.
-  const ownerScope = isExchangeScopeRelaxed()
+  // Ownership relaxed (all envs) — see isExchangeOwnershipRelaxed. Family
+  // membership is enforced by isOrderDeliveredForReturns below (→ notFound
+  // for non-family orders), so resolving by id/number is safe.
+  const ownerScope = isExchangeOwnershipRelaxed()
     ? undefined
     : eq(orders.parentId, parentId);
   const isUuid = /^[0-9a-f-]{36}$/i.test(idOrNumber);
@@ -95,7 +99,7 @@ export default async function NewExchangePage({
   if (!orderId) notFound();
 
   const [order] = await db
-    .select({ id: orders.id, orderNumber: orders.orderNumber })
+    .select({ id: orders.id, orderNumber: orders.orderNumber, schoolId: orders.schoolId })
     .from(orders)
     .where(eq(orders.id, orderId))
     .limit(1);
@@ -107,7 +111,7 @@ export default async function NewExchangePage({
   // pending → "in progress". Dev relaxes the lock so testers can re-raise.)
   const blocker = isExchangeScopeRelaxed()
     ? null
-    : await findOpenRequestForOrder(orderId, me.id);
+    : await findOpenRequestForOrder(orderId);
   if (blocker) {
     return (
       <main className="min-h-screen">
@@ -124,6 +128,7 @@ export default async function NewExchangePage({
           flow="exchange"
           existingKind={blocker.kind}
           existingStatus={blocker.status}
+          existingSource={blocker.source}
           orderHref={`/shop/orders/${id}`}
         />
         <Footer />
@@ -144,6 +149,23 @@ export default async function NewExchangePage({
     .from(orderItems)
     .where(eq(orderItems.orderId, orderId));
   if (items.length === 0) notFound();
+
+  // Fallback box composition for magic-box order items that never stored
+  // their per-component picks in bundle_selections (~66%). Lets the parent
+  // exchange an individual item inside the box instead of only the whole
+  // box. The exact size isn't recoverable from the bundle definition, so
+  // those components are flagged `currentUnknown` and the form asks the
+  // parent which size they currently have.
+  const emptyBundleItemIds = items
+    .filter(
+      (it) =>
+        !(Array.isArray(it.bundleSelections) && it.bundleSelections.length > 0)
+    )
+    .map((it) => it.id);
+  const fallbackByItem = await fallbackBundleComponents(emptyBundleItemIds);
+  const fallbackProductIds = new Set<string>();
+  for (const comps of fallbackByItem.values())
+    for (const c of comps) fallbackProductIds.add(c.productId);
 
   // Lookup any active exchanges so we can mark already-locked order_items
   // in the picker (matches the per-order-item gate in lib/exchange.ts).
@@ -203,7 +225,11 @@ export default async function NewExchangePage({
   }
 
   // Per-product variant list (each row's siblings = same-product variants).
-  const productIds = Array.from(new Set(productByVariant.values()));
+  // Include fallback component products so recovered-composition components
+  // get their full size/variant list for the swap picker.
+  const productIds = Array.from(
+    new Set([...productByVariant.values(), ...fallbackProductIds])
+  );
   const variantsByProduct = new Map<string, SiblingLite[]>();
   if (productIds.length > 0) {
     const variantRows = await db
@@ -287,8 +313,29 @@ export default async function NewExchangePage({
     attributes: { name: string; value: string }[];
     hasSiblings: boolean;
     siblings: SiblingLite[];
+    /** True when this component's exact ordered variant/size is unknown
+     *  (recovered from the bundle definition). The form asks the parent
+     *  which size they currently have before the swap. */
+    currentUnknown: boolean;
+    /** Bookkit drill-down grouping: which category (sub_bundle) this leaf
+     *  book sits under. Absent on non-bookkit units. */
+    categoryKey?: string | null;
+    categoryName?: string | null;
     locked: boolean;
     lockReturnNumber: string | null;
+  };
+
+  // A nested kit (bookkit, "Book Set", or any products.kind='kit') has
+  // CATEGORIES (sub_bundles) of leaf books — a 3-level tree the flat
+  // bundle_selections/fallback paths collapse. For these we emit one
+  // whole-kit unit + one leaf unit per book, tagged with its category, so
+  // the form offers whole-kit / whole-category / individual-book. Applies to
+  // ALL kits (not just name~"bookkit"); loadBookkitCategoryTree returns []
+  // for flat / single-item kits, which then fall through to the flat path.
+  const isBookkitItem = (it: (typeof items)[number]): boolean => {
+    const vid = it.variantId;
+    const k = vid ? kindByVariant.get(vid) : null;
+    return k === "kit";
   };
 
   const units: Unit[] = [];
@@ -297,6 +344,132 @@ export default async function NewExchangePage({
     const raw = Array.isArray(it.bundleSelections)
       ? (it.bundleSelections as Array<Record<string, unknown>>)
       : [];
+    const fb = fallbackByItem.get(it.id) ?? [];
+
+    // ── Bookkit branch: whole-kit + per-category leaf books ──────────
+    if (isBookkitItem(it)) {
+      const cats = await loadBookkitCategoryTree(
+        it.variantId as string,
+        order.schoolId ?? null
+      );
+      if (cats.length > 0) {
+        const vid = it.variantId ?? "";
+        units.push({
+          unitKey: `kitparent:${it.id}`,
+          orderItemId: it.id,
+          parentName: it.name,
+          parentImage: it.image ?? null,
+          parentHeadLabel: parentHead,
+          isKitComponent: false,
+          isKitParent: true,
+          name: it.name,
+          size: it.size,
+          qty: it.qty,
+          variantId: vid,
+          imageUrl: it.image ?? null,
+          kind: (vid ? kindByVariant.get(vid) : null) ?? "kit",
+          attributes: [],
+          hasSiblings: false,
+          siblings: [],
+          currentUnknown: false,
+          categoryKey: null,
+          categoryName: null,
+          locked: lockedByOrderItem.has(it.id),
+          lockReturnNumber: lockedByOrderItem.get(it.id) ?? null,
+        });
+        for (const cat of cats) {
+          for (const leaf of cat.items) {
+            units.push({
+              unitKey: `comp:${it.id}:${leaf.componentIndex}`,
+              orderItemId: it.id,
+              parentName: it.name,
+              parentImage: it.image ?? null,
+              parentHeadLabel: parentHead,
+              isKitComponent: true,
+              isKitParent: false,
+              name: leaf.name,
+              size: "",
+              qty: leaf.qty,
+              variantId: "",
+              imageUrl: null,
+              // Leaf books flow through "book" reasons regardless of the
+              // catalog kind (matches effectiveKind); "just capture the
+              // book" — no size picker, so no siblings / currentUnknown.
+              kind: effectiveKind(leaf.kind, leaf.name),
+              attributes: [],
+              hasSiblings: false,
+              siblings: [],
+              currentUnknown: false,
+              categoryKey: cat.categoryKey,
+              categoryName: cat.categoryName,
+              locked: lockedByOrderItem.has(it.id),
+              lockReturnNumber: lockedByOrderItem.get(it.id) ?? null,
+            });
+          }
+        }
+        continue;
+      }
+      // No resolvable categories → fall through to the flat paths below.
+    }
+    if (raw.length === 0 && fb.length > 0) {
+      // Recovered-composition path: whole-box unit + one unit per defined
+      // component. Each component lists ALL variants of its product as swap
+      // targets (we don't know which the parent has → currentUnknown).
+      const vid = it.variantId ?? "";
+      const parentProductId = vid ? productByVariant.get(vid) ?? null : null;
+      const parentVariants = parentProductId
+        ? variantsByProduct.get(parentProductId) ?? []
+        : [];
+      const parentSiblings = vid
+        ? parentVariants.filter((v) => v.id !== vid)
+        : [];
+      units.push({
+        unitKey: `kitparent:${it.id}`,
+        orderItemId: it.id,
+        parentName: it.name,
+        parentImage: it.image ?? null,
+        parentHeadLabel: parentHead,
+        isKitComponent: false,
+        isKitParent: true,
+        name: it.name,
+        size: it.size,
+        qty: it.qty,
+        variantId: vid,
+        imageUrl: it.image ?? null,
+        kind: (vid ? kindByVariant.get(vid) : null) ?? "kit",
+        attributes: [],
+        hasSiblings: parentSiblings.length > 0,
+        siblings: parentSiblings,
+        currentUnknown: false,
+        locked: lockedByOrderItem.has(it.id),
+        lockReturnNumber: lockedByOrderItem.get(it.id) ?? null,
+      });
+      for (const c of fb) {
+        const compVariants = variantsByProduct.get(c.productId) ?? [];
+        units.push({
+          unitKey: `comp:${it.id}:${c.componentIndex}`,
+          orderItemId: it.id,
+          parentName: it.name,
+          parentImage: it.image ?? null,
+          parentHeadLabel: parentHead,
+          isKitComponent: true,
+          isKitParent: false,
+          name: c.name,
+          size: "",
+          qty: c.qty,
+          variantId: "",
+          imageUrl: null,
+          kind: effectiveKind(c.kind, c.name),
+          attributes: [],
+          hasSiblings: compVariants.length > 0,
+          siblings: compVariants,
+          currentUnknown: true,
+          locked: lockedByOrderItem.has(it.id),
+          lockReturnNumber: lockedByOrderItem.get(it.id) ?? null,
+        });
+      }
+      continue;
+    }
     if (raw.length > 0) {
       // Whole-kit unit first: the form's scope chooser offers "exchange
       // the whole box" vs "only some items inside". Kit-level reasons
@@ -324,21 +497,64 @@ export default async function NewExchangePage({
           attributes: [],
           hasSiblings: siblings.length > 0,
           siblings,
+          currentUnknown: false,
           locked: lockedByOrderItem.has(it.id),
           lockReturnNumber: lockedByOrderItem.get(it.id) ?? null,
         });
       }
-      raw.forEach((c, ci) => {
+      for (let ci = 0; ci < raw.length; ci++) {
+        const c = raw[ci];
         const vid = typeof c.variantId === "string" ? c.variantId : "";
+        const compName = typeof c.name === "string" ? c.name : "Component";
+        const compQty = typeof c.qty === "number" ? c.qty : 1;
+
+        // Hybrid: a component that is itself a nested kit (a bookkit sitting
+        // inside a magic box) expands into its category → book leaf units,
+        // so the parent can drill into individual books. Uniform components
+        // stay flat below (their ordered size matters).
+        const cKind = vid ? kindByVariant.get(vid) ?? null : null;
+        if (cKind === "kit" && /^[0-9a-f-]{36}$/i.test(vid)) {
+          const subCats = await loadBookkitCategoryTree(vid, order.schoolId ?? null);
+          if (subCats.length > 0) {
+            for (const cat of subCats) {
+              for (const leaf of cat.items) {
+                units.push({
+                  unitKey: `comp:${it.id}:${ci}:${leaf.componentIndex}`,
+                  orderItemId: it.id,
+                  parentName: it.name,
+                  parentImage: it.image ?? null,
+                  parentHeadLabel: parentHead,
+                  isKitComponent: true,
+                  isKitParent: false,
+                  name: leaf.name,
+                  size: "",
+                  qty: leaf.qty,
+                  variantId: "",
+                  imageUrl: null,
+                  kind: effectiveKind(leaf.kind, leaf.name),
+                  attributes: [],
+                  hasSiblings: false,
+                  siblings: [],
+                  currentUnknown: false,
+                  categoryKey: cat.categoryKey,
+                  categoryName: cat.categoryName,
+                  locked: lockedByOrderItem.has(it.id),
+                  lockReturnNumber: lockedByOrderItem.get(it.id) ?? null,
+                });
+              }
+            }
+            continue;
+          }
+        }
+
+        // Flat component (uniform pieces, single items) — unchanged.
         const productId = vid ? productByVariant.get(vid) ?? null : null;
         const allVariants = productId ? variantsByProduct.get(productId) ?? [] : [];
         const siblings = vid ? allVariants.filter((v) => v.id !== vid) : [];
-        const compName = typeof c.name === "string" ? c.name : "Component";
         const compAttrs = Array.isArray(c.attributes)
           ? (c.attributes as { name: string; value: string }[])
           : [];
         const compSize = typeof c.size === "string" ? c.size : "";
-        const compQty = typeof c.qty === "number" ? c.qty : 1;
         units.push({
           unitKey: `comp:${it.id}:${ci}`,
           orderItemId: it.id,
@@ -356,10 +572,11 @@ export default async function NewExchangePage({
           attributes: compAttrs,
           hasSiblings: siblings.length > 0,
           siblings,
+          currentUnknown: false,
           locked: lockedByOrderItem.has(it.id),
           lockReturnNumber: lockedByOrderItem.get(it.id) ?? null,
         });
-      });
+      }
     } else {
       const vid = it.variantId ?? "";
       const productId = vid ? productByVariant.get(vid) ?? null : null;
@@ -388,6 +605,7 @@ export default async function NewExchangePage({
         attributes: itAxes,
         hasSiblings: siblings.length > 0,
         siblings,
+        currentUnknown: false,
         locked: lockedByOrderItem.has(it.id),
         lockReturnNumber: lockedByOrderItem.get(it.id) ?? null,
       });
@@ -395,6 +613,14 @@ export default async function NewExchangePage({
   }
 
   if (units.length === 0) notFound();
+
+  // Drop held-back lines (out of stock / still out-for-delivery). The
+  // customer doesn't have them yet — we already know and will ship them
+  // later — so they can't be exchanged. Same per-item signal as the
+  // order-page badge; kit / Magic-Box / bundle parents are never flagged.
+  const heldBack = await getHeldBackOrderItemIds(orderId, order.orderNumber);
+  const eligibleUnits = units.filter((u) => !heldBack.has(u.orderItemId));
+  if (eligibleUnits.length === 0) notFound();
 
   return (
     <main className="min-h-screen">
@@ -416,7 +642,7 @@ export default async function NewExchangePage({
           <ExchangeForm
             orderId={orderId}
             orderNumber={order.orderNumber}
-            units={units}
+            units={eligibleUnits}
           />
         </div>
       </div>

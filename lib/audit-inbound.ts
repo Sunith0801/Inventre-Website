@@ -266,6 +266,9 @@ export async function createExchangeFromAudit(
         parentId: ord.parentId,
         returnNumber,
         kind: "exchange",
+        // Raised by Customer Care in Audit → drives the storefront
+        // "…by the Customer Care Team" duplicate popup (Condition 4).
+        source: "care_team",
         pickupDate,
         reason: p.reason ?? null,
         subReason: p.sub_reason ?? null,
@@ -370,6 +373,8 @@ export async function createMissingFromAudit(
         parentId: ord.parentId,
         claimNumber,
         status,
+        // Raised by Customer Care in Audit (Condition 4).
+        source: "care_team",
         notes: p.notes ?? null,
         pickupDate,
       })

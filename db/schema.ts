@@ -1242,6 +1242,11 @@ export const returns = pgTable(
     // `kind` distinguishes refund rows from exchange rows so admin code
     // and storefront queries can branch without scanning reason text.
     kind: text("kind").notNull().default("refund"),
+    // Who raised this request (migration 0069): "customer" (storefront) or
+    // "care_team" (raised in the Audit portal by Customer Care, synced in
+    // via createExchangeFromAudit). Drives the "…by the Customer Care Team"
+    // wording on the storefront duplicate-guard popup (Condition 4).
+    source: text("source").notNull().default("customer"),
     // `pickup_date` is set only on exchange rows; refund rows leave it
     // NULL. See lib/date.ts → firstPickupSaturday for the rule.
     pickupDate: date("pickup_date"),
@@ -1334,6 +1339,9 @@ export const missingItemClaims = pgTable(
       .references(() => parents.id),
     // requested | approved | rejected | received_at_school | delivered
     status: text("status").notNull().default("requested"),
+    // "customer" (storefront) or "care_team" (raised in Audit by Customer
+    // Care and synced via createMissingFromAudit). Migration 0069.
+    source: text("source").notNull().default("customer"),
     notes: text("notes"),
     rejectionReason: text("rejection_reason"),
     replacementArrivedAt: timestamp("replacement_arrived_at", { withTimezone: true }),

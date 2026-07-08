@@ -1,5 +1,6 @@
 import "server-only";
 import { getParentOrderDetailFromErp } from "@/lib/erp-customer-orders";
+import { REQUEST_WINDOW_DAYS } from "@/lib/exchange-shared";
 
 /**
  * Customer-raised exchange / missing-item eligibility — single source of
@@ -25,14 +26,15 @@ import { getParentOrderDetailFromErp } from "@/lib/erp-customer-orders";
 /**
  * Days after delivery that exchange / missing stays available.
  *
+ * Business rule (2026-07-08): 10 days from the delivery date. A delivered
+ * order stays eligible for exchange / missing for 10 days, then closes and
+ * the buttons are shown DISABLED with an "expired" popup (see the order
+ * page + `expiredWindowMessage`).
+ *
  * 0 (or any value ≤ 0) DISABLES the time window entirely — a delivered
- * order stays eligible for exchange / missing indefinitely. Set to a
- * positive number to re-enable the cutoff (e.g. 15 restores the old
- * 15-day rule). Disabled 2026-06-30 per the business: ~79% of delivered
- * orders were past 15 days and the buttons were hidden on them, so the
- * window was removed so every delivered order shows the buttons.
+ * order stays eligible indefinitely (the 2026-06-30 → 2026-07-08 state).
  */
-export const RETURNS_WINDOW_DAYS = 0;
+export const RETURNS_WINDOW_DAYS = REQUEST_WINDOW_DAYS;
 const WINDOW_MS = RETURNS_WINDOW_DAYS * 24 * 60 * 60 * 1000;
 
 /**
@@ -84,4 +86,26 @@ export async function isOrderDeliveredForReturns(
     ? new Date(detail.deliveredAt)
     : null;
   return isWithinReturnsWindow(localDeliveredAt ?? mirrorDeliveredAt);
+}
+
+/**
+ * Delivery-time eligibility, but returns WHY rather than a plain boolean —
+ * so the button gate can tell the customer the difference between "this
+ * order can't be exchanged at all (not delivered)" and "the 10-day window
+ * has closed" (Condition 1: show the button DISABLED with an expired
+ * popup). The `derivedDelivered` flag is the header/mirror-derived status
+ * the caller already computed (order.status === "delivered"); we OR it with
+ * the local column exactly as isOrderDeliveredForReturns does.
+ */
+export type ReturnsEligibility = "eligible" | "not_delivered" | "expired";
+
+export function classifyReturnsEligibility(
+  localStatus: string | null,
+  derivedDelivered: boolean,
+  deliveredAt: Date | null,
+  now: Date = new Date()
+): ReturnsEligibility {
+  const delivered = localStatus === "delivered" || derivedDelivered;
+  if (!delivered) return "not_delivered";
+  return isWithinReturnsWindow(deliveredAt, now) ? "eligible" : "expired";
 }
