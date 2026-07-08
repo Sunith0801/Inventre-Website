@@ -14,6 +14,7 @@ import {
 import { allocReturnNumber, allocClaimNumber } from "@/lib/numbering";
 import { firstPickupSaturday, toDbDate } from "@/lib/date";
 import { isExchangeStatus } from "@/lib/exchange-shared";
+import { getHeldBackOrderItemIds } from "@/lib/return-line-eligibility";
 
 /**
  * Inbound "create" path for exchanges / missing-item claims that ORIGINATE
@@ -226,10 +227,25 @@ export async function createExchangeFromAudit(
       notes: it.line_notes ?? null,
     });
   }
+  // Held-back lines (out of stock / not yet delivered per our own shipment
+  // mirror) can't be exchanged — drop them even when audit sent them, so a
+  // manual audit entry can't attach a line the customer hasn't received.
+  const heldBack = await getHeldBackOrderItemIds(ord.id, p.so_erp_name ?? "");
+  const heldSkipped: string[] = [];
+  for (let i = matched.length - 1; i >= 0; i--) {
+    if (heldBack.has(matched[i].orderItemId)) {
+      heldSkipped.push(matched[i].orderItemId);
+      matched.splice(i, 1);
+    }
+  }
   if (matched.length === 0)
     return {
       status: 422,
-      body: { error: "No order items matched the audit item codes", unmatched },
+      body: {
+        error: "No eligible order items matched the audit item codes",
+        unmatched,
+        heldBack: heldSkipped,
+      },
     };
 
   const status = isExchangeStatus(p.status) ? p.status : "requested";
@@ -275,7 +291,10 @@ export async function createExchangeFromAudit(
     return created;
   });
 
-  return { status: 200, body: { ok: true, id: ret.id, returnNumber, unmatched } };
+  return {
+    status: 200,
+    body: { ok: true, id: ret.id, returnNumber, unmatched, heldBack: heldSkipped },
+  };
 }
 
 export async function createMissingFromAudit(
@@ -312,10 +331,25 @@ export async function createMissingFromAudit(
       notes: it.line_notes ?? null,
     });
   }
+  // Held-back lines (out of stock / not yet delivered) aren't "missing" —
+  // we already know and will ship them later — so drop them even when a
+  // manual audit entry references them.
+  const heldBack = await getHeldBackOrderItemIds(ord.id, p.so_erp_name ?? "");
+  const heldSkipped: string[] = [];
+  for (let i = matched.length - 1; i >= 0; i--) {
+    if (heldBack.has(matched[i].orderItemId)) {
+      heldSkipped.push(matched[i].orderItemId);
+      matched.splice(i, 1);
+    }
+  }
   if (matched.length === 0)
     return {
       status: 422,
-      body: { error: "No order items matched the audit item codes", unmatched },
+      body: {
+        error: "No eligible order items matched the audit item codes",
+        unmatched,
+        heldBack: heldSkipped,
+      },
     };
 
   const VALID = ["requested", "approved", "rejected", "received_at_school", "delivered"];
@@ -351,5 +385,8 @@ export async function createMissingFromAudit(
     return created;
   });
 
-  return { status: 200, body: { ok: true, id: head.id, claimNumber, unmatched } };
+  return {
+    status: 200,
+    body: { ok: true, id: head.id, claimNumber, unmatched, heldBack: heldSkipped },
+  };
 }

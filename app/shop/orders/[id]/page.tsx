@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { useFocusRefetch } from "@/lib/use-focus-refetch";
-import { derivePlacement } from "@/lib/order-display";
+import { derivePlacement, describePaymentStatus } from "@/lib/order-display";
 import { ArrowLeft, CheckCircle2, Package } from "lucide-react";
 import { Nav } from "@/components/Nav";
 import { Footer } from "@/components/Footer";
@@ -53,6 +53,10 @@ type OrderDetail = {
     id: string;
     name: string;
     size: string;
+    /** Per-axis attributes (Colour · Size) for a plain line item, resolved
+     *  from product_variant_attributes — same enrichment Magic Box contents
+     *  get. Empty for legacy variants with no attribute rows. */
+    attributes?: { name: string; value: string }[];
     qty: number;
     unitPrice: number;
     total: number;
@@ -69,6 +73,12 @@ type OrderDetail = {
       | null;
   }[];
   payment: { provider: string; status: string; method: string | null } | null;
+  rto?: {
+    active: boolean;
+    delivered: boolean;
+    stage: string | null;
+    timeline: { at: string; label: string; location: string | null }[];
+  } | null;
   tracking?: {
     partner: string;
     trackingNumber: string | null;
@@ -110,9 +120,13 @@ type OrderDetail = {
       deliveredQty: number;
       pickedQty: number;
       returnedQty: number;
+      itemCode: string | null;
+      status: CategoryStatus;
     }[];
   }[];
   pollPending?: boolean;
+  paymentStatusRaw?: string | null;
+  canReorder?: boolean;
 };
 
 type CategoryStatus =
@@ -168,6 +182,7 @@ export default function OrderDetailPage() {
     status: string;
     pickupDate: string | null;
     createdAt: string;
+    atStore?: boolean;
   } | null>(null);
   const [activeMissing, setActiveMissing] = useState<{
     id: string;
@@ -307,6 +322,12 @@ export default function OrderDetailPage() {
   const placement = derivePlacement(order);
   const notPlaced = placement === "not_placed";
   const paymentProcessing = placement === "processing";
+  // Actual CCAvenue status + its meaning (e.g. "Initiated" / "Aborted"), shown
+  // on an abandoned checkout. Null when we can't identify the gateway word.
+  const payInfo = describePaymentStatus(order.paymentStatusRaw);
+  // Re-ordering is impossible when a one-per-student Magic Box is already
+  // placed for this student — then we hide the "Place again" button.
+  const canReorder = order.canReorder !== false;
 
   return (
     <main className="min-h-screen">
@@ -384,6 +405,62 @@ export default function OrderDetailPage() {
           </span>
         </div>
 
+        {/* RTO (Return to Origin) — prominent badge + sub-timeline, shown
+            whenever audit's carrier feed reports the parcel returning to
+            origin. Sits above the normal tracking so it's the first thing the
+            customer sees, instead of the truth being buried in the scan log. */}
+        {order.rto && (order.rto.active || order.rto.delivered) && (
+          <div className="mt-6 rounded-2xl border border-rose-200 bg-rose-50 p-4 sm:p-5">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded-full bg-rose-600 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider text-white">
+                RTO
+              </span>
+              <span className="text-[13.5px] font-bold text-rose-900">
+                {order.rto.delivered
+                  ? "Returned to origin"
+                  : "Return to origin in progress"}
+              </span>
+              {order.rto.stage && (
+                <span className="ml-auto rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-rose-700 ring-1 ring-rose-200">
+                  {order.rto.stage}
+                </span>
+              )}
+            </div>
+            <p className="mt-1.5 text-[12.5px] text-rose-700">
+              {order.rto.delivered
+                ? "This parcel could not be delivered and has been returned to the sender. Our team will reach out about a re-dispatch."
+                : "The carrier is returning this parcel to the sender. We're tracking it and will update you on the next step."}
+            </p>
+            {order.rto.timeline.length > 0 && (
+              <ol className="mt-3 space-y-2 border-t border-rose-200 pt-3">
+                {[...order.rto.timeline].reverse().map((ev, i) => (
+                  <li key={i} className="flex items-baseline gap-2.5 text-[12px]">
+                    <span
+                      className={
+                        "mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full " +
+                        (i === 0 ? "bg-rose-600" : "bg-rose-300")
+                      }
+                    />
+                    <span className="font-semibold text-rose-900">{ev.label}</span>
+                    {ev.location && (
+                      <span className="text-rose-600">· {ev.location}</span>
+                    )}
+                    <span className="ml-auto shrink-0 tabular-nums text-rose-500">
+                      {new Date(ev.at).toLocaleString("en-IN", {
+                        day: "2-digit",
+                        month: "short",
+                        hour: "numeric",
+                        minute: "2-digit",
+                        hour12: true,
+                      })}
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            )}
+          </div>
+        )}
+
         {/* Per-category tracking. Each parcel-stream (Bookkit, Uniform, …)
             gets a self-contained card with: status badge, 5-step stepper,
             per-item progress, and the matching carrier shipment(s) with
@@ -399,20 +476,45 @@ export default function OrderDetailPage() {
           if (notPlaced) {
             return (
               <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-5">
-                <p className="font-display text-[16px] font-bold text-amber-900">
-                  This order hasn&apos;t been placed
-                </p>
-                <p className="mt-1.5 text-[13.5px] leading-relaxed text-amber-800">
-                  You reached the payment page but the payment wasn&apos;t
-                  completed — <b>no money was charged</b>. You can place the
-                  order again whenever you&apos;re ready.
-                </p>
-                <a
-                  href="/shop"
-                  className="mt-3 inline-flex items-center justify-center rounded-full bg-ink-900 px-5 py-2.5 text-[13px] font-bold text-white transition-colors hover:bg-brand"
-                >
-                  Place the order again
-                </a>
+                {/* Show the ACTUAL CCAvenue status word + its meaning when we
+                    could identify it; otherwise fall back to a generic line. */}
+                {payInfo ? (
+                  <>
+                    <p className="text-[11px] font-bold tracking-wider uppercase text-amber-700">
+                      Payment status
+                    </p>
+                    <p className="mt-0.5 font-display text-[16px] font-bold text-amber-900">
+                      {payInfo.statusWord}
+                    </p>
+                    <p className="mt-1.5 text-[13.5px] leading-relaxed text-amber-800">
+                      {payInfo.description}
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="font-display text-[16px] font-bold text-amber-900">
+                      This order hasn&apos;t been placed
+                    </p>
+                    <p className="mt-1.5 text-[13.5px] leading-relaxed text-amber-800">
+                      You reached the payment page but the payment wasn&apos;t
+                      completed — <b>no money was charged</b>.
+                    </p>
+                  </>
+                )}
+                {canReorder ? (
+                  <a
+                    href="/shop"
+                    className="mt-3 inline-flex items-center justify-center rounded-full bg-ink-900 px-5 py-2.5 text-[13px] font-bold text-white transition-colors hover:bg-brand"
+                  >
+                    Place the order again
+                  </a>
+                ) : (
+                  <p className="mt-3 inline-flex items-center gap-1.5 text-[13px] font-semibold text-emerald-700">
+                    <CheckCircle2 className="h-4 w-4" />
+                    You&apos;ve already placed this order
+                    {order.studentName ? ` for ${order.studentName}` : ""}.
+                  </p>
+                )}
               </div>
             );
           }
@@ -500,16 +602,29 @@ export default function OrderDetailPage() {
                       {it.name}
                     </p>
                     <p className="text-[12px] text-ink-500">
-                      {it.bundleSelections && it.bundleSelections.length > 0
-                        ? `Magic Box · ${it.bundleSelections.length} items`
-                        : it.size
-                          ? `Size ${it.size}`
-                          : ""}
-                      {(it.bundleSelections && it.bundleSelections.length > 0) ||
-                      it.size
-                        ? " · "
-                        : ""}
-                      ×{it.qty}
+                      {(() => {
+                        // Magic Box → item count. Plain line → prefer the
+                        // resolved per-axis attributes (Colour · Size); fall
+                        // back to the bare size when a variant has no attribute
+                        // rows (legacy items).
+                        const isBox =
+                          it.bundleSelections && it.bundleSelections.length > 0;
+                        const attrLabel =
+                          it.attributes && it.attributes.length > 0
+                            ? it.attributes.map((a) => a.value).join(" · ")
+                            : it.size
+                              ? `Size ${it.size}`
+                              : "";
+                        const lead = isBox
+                          ? `Magic Box · ${it.bundleSelections!.length} items`
+                          : attrLabel;
+                        return (
+                          <>
+                            {lead}
+                            {lead ? " · " : ""}×{it.qty}
+                          </>
+                        );
+                      })()}
                     </p>
                   </div>
                   <p className="font-semibold tabular-nums text-ink-900">
@@ -635,10 +750,10 @@ export default function OrderDetailPage() {
                       >
                         {order.payment.status === "paid"
                           ? "Paid"
-                          : order.payment.status === "failed"
-                            ? "Not completed"
-                            : notPlaced
-                              ? "Not completed"
+                          : notPlaced
+                            ? payInfo?.statusWord ?? "Not completed"
+                            : order.payment.status === "failed"
+                              ? payInfo?.statusWord ?? "Not completed"
                               : paymentProcessing
                                 ? "Processing"
                                 : order.payment.status}
@@ -718,9 +833,13 @@ function shipmentsForCategory(
 function StageBar({
   reachedIdx,
   accent = "brand",
+  lastLabel,
 }: {
   reachedIdx: number;
   accent?: "brand" | "emerald" | "rose";
+  /** Override the final node's label. Used to show "RTO" instead of
+   *  "delivered" for a returned (Return-to-Origin) category. */
+  lastLabel?: string;
 }) {
   const fill =
     accent === "emerald"
@@ -750,6 +869,7 @@ function StageBar({
         const reached = i <= reachedIdx;
         const last = i === stages.length - 1;
         const segFilled = i < reachedIdx;
+        const label = last && lastLabel ? lastLabel : s;
         return (
           <li key={s} className="relative flex flex-col items-center text-center">
             {!last && (
@@ -781,7 +901,7 @@ function StageBar({
                 (reached ? "text-ink-900" : "text-ink-400")
               }
             >
-              {s}
+              {label}
             </span>
           </li>
         );
@@ -843,27 +963,36 @@ function CategoryTrackingCard({
               CATEGORY_STATUS_CLASS[group.status]
             }
           >
-            {group.status}
+            {group.status === "returned" ? "RTO" : group.status}
           </span>
           <span className="text-[11.5px] font-semibold tabular-nums text-ink-500">
             {counterText}
           </span>
         </div>
       </div>
-      <StageBar reachedIdx={idx} accent={accent} />
+      <StageBar
+        reachedIdx={idx}
+        accent={accent}
+        lastLabel={group.status === "returned" ? "RTO" : undefined}
+      />
 
       {group.items.length > 0 && (
         <ul className="mt-4 space-y-1.5 border-t border-ink-100 pt-3">
           {group.items.map((it) => {
-            const itCounter =
-              group.status === "delivered"
-                ? it.deliveredQty
-                : group.status === "returned"
-                  ? it.returnedQty
-                  : group.status === "in transit" ||
-                      group.status === "out for delivery"
-                    ? Math.max(it.pickedQty, it.deliveredQty)
-                    : 0;
+            // Per-item badge: each line shows its OWN status (set by the
+            // detail loader from that line's shipment row), falling back to
+            // the category status for orders without per-line tracking.
+            const itStatus = it.status ?? group.status;
+            const itLabel =
+              itStatus === "delivered"
+                ? "delivered"
+                : itStatus === "out for delivery"
+                  ? "out for delivery"
+                  : itStatus === "in transit"
+                    ? "in transit"
+                    : itStatus === "returned"
+                      ? "returned"
+                      : "";
             return (
               <li
                 key={it.id}
@@ -871,9 +1000,9 @@ function CategoryTrackingCard({
               >
                 <span className="truncate pr-3">{it.name}</span>
                 <span className="shrink-0 tabular-nums text-ink-500">
-                  {group.status === "pending"
-                    ? `× ${it.qty}`
-                    : `${itCounter} / ${it.qty} ${lineLabel}`}
+                  {itStatus === "pending"
+                    ? `${it.qty} / ${it.qty} pending`
+                    : `${it.qty} / ${it.qty} ${itLabel}`}
                 </span>
               </li>
             );

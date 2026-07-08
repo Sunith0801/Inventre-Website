@@ -13,8 +13,9 @@ import { allocReturnNumber } from "@/lib/numbering";
 import { firstPickupSaturday, toDbDate } from "@/lib/date";
 import { emitExchangeEvent } from "@/lib/erp-bridge";
 import { notifyExchangeStatus } from "@/lib/notifications";
-import { isExchangeScopeRelaxed } from "@/lib/exchange-gate";
+import { isExchangeScopeRelaxed, isExchangeOwnershipRelaxed } from "@/lib/exchange-gate";
 import { isOrderDeliveredForReturns } from "@/lib/return-eligibility";
+import { getHeldBackOrderItemIds } from "@/lib/return-line-eligibility";
 import {
   canTransition,
   isApprovedStatus,
@@ -161,15 +162,19 @@ export type CreateExchangeResult =
 export async function createExchange(
   input: CreateExchangeInput
 ): Promise<CreateExchangeResult> {
-  // 1. Scope: order must belong to this parent and be delivered.
-  //    (Ownership relaxed outside production — see isExchangeScopeRelaxed.)
+  // 1. Scope: order must be delivered AND visible to this parent's family.
+  //    Ownership relaxed (all envs) — see isExchangeOwnershipRelaxed; the
+  //    family-identity check is enforced by isOrderDeliveredForReturns
+  //    below (getParentOrderDetailFromErp returns null for non-family
+  //    orders), so dropping the strict parent_id match here is safe and
+  //    fixes split-account / guest orders.
   const [order] = await db
     .select()
     .from(orders)
     .where(
       and(
         eq(orders.id, input.orderId),
-        isExchangeScopeRelaxed() ? undefined : eq(orders.parentId, input.parentId)
+        isExchangeOwnershipRelaxed() ? undefined : eq(orders.parentId, input.parentId)
       )
     )
     .limit(1);
@@ -219,6 +224,23 @@ export async function createExchange(
     };
   }
 
+  // 2b. Held-back lines (out of stock / still out-for-delivery — not yet
+  //     received) can't be exchanged: the customer doesn't have them yet,
+  //     we already know, and they ship in a later parcel. Mirrors the
+  //     per-item badge on /shop/orders/[id]. Kit / Magic-Box / bundle
+  //     parents ship blank-code and are never flagged here.
+  const heldBack = await getHeldBackOrderItemIds(input.orderId, order.orderNumber);
+  const notArrived = ids.filter((id) => heldBack.has(id));
+  if (notArrived.length > 0) {
+    return {
+      ok: false,
+      status: 400,
+      error:
+        "Some items haven't been delivered yet (they're out of stock or on the way) and can't be exchanged — they'll arrive in a later shipment.",
+      details: { notArrivedOrderItemIds: notArrived },
+    };
+  }
+
   // 3. Cross-flow per-sale-order block. ONE exchange + ONE missing per
   //    order, lifetime — until either is rejected. After rejection the
   //    customer can retry.
@@ -264,6 +286,15 @@ export async function createExchange(
         status: "requested",
         itemIds: ids,
         photos: input.photos,
+        // ⚠️ These parent-level fields are a PRIMARY-ONLY snapshot (the first
+        // selected line). A multi-component request (e.g. a Magic Box with 9
+        // parts exchanged at once) has DIFFERENT reason / component / variant
+        // per line. NEVER read these for per-line display or fulfilment —
+        // every line's real subject lives on its own `return_items` row
+        // (`requestedComponentPath`, `reason`, `requestedVariantId`, …).
+        // Reusing the parent path is exactly what made the customer exchange
+        // page label all 9 components as "Bloomers" (fixed 2026-06-30). Kept
+        // only as a convenience/back-compat header value.
         requestedVariantId: primary.requestedVariantId,
         requestedComponentPath: primary.requestedComponentPath,
         damageLocation: primary.damageLocation,

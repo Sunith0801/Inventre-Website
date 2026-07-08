@@ -17,7 +17,15 @@ const PhotoSchema = z.object({
 });
 
 const ComponentPathSchema = z.object({
-  variantId: z.string().uuid(),
+  // NOT constrained to a UUID: this is opaque descriptive metadata for
+  // customer care (it identifies WHICH component in a Magic Box / kit the
+  // request is about), never dereferenced as a variant FK. Legacy and
+  // backfilled `order_items.bundle_selections` store the component's SKU
+  // string here — and recovered-composition boxes may store an empty
+  // string — so `.uuid()` would wrongly reject ~5.5k live components and
+  // surface as "Invalid request" on submit. The real swap target is the
+  // strict-UUID `requestedVariantId` at the item level.
+  variantId: z.string().max(200),
   componentName: z.string().max(200).optional(),
   attributes: z.array(z.object({
     name: z.string().max(40),
@@ -49,7 +57,11 @@ const Body = z.object({
   // customer-raised flow is exchange-only.
   kind: z.literal("exchange"),
   // Photos are at the request level — they belong to the whole RTN bundle.
-  photos: z.array(PhotoSchema).min(1).max(5),
+  // The form intentionally allows unlimited photos per section (see
+  // ExchangeForm "No count cap"); a low `.max(5)` here rejected any
+  // 6+-photo submission as "Invalid request". Keep a generous upper bound
+  // purely as a payload-abuse guard.
+  photos: z.array(PhotoSchema).min(1).max(50),
   // Optional combined free-form notes (the form composes these from each
   // per-item tab so customer-care sees one block on the head row).
   notes: z.string().max(2000).optional(),

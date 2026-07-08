@@ -1,13 +1,14 @@
 import "server-only";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/db/client";
-import { missingItemClaims, missingItemClaimItems, orders } from "@/db/schema";
+import { missingItemClaims, missingItemClaimItems, orders, orderItems } from "@/db/schema";
 import { allocClaimNumber } from "@/lib/numbering";
 import { firstPickupSaturday, toDbDate } from "@/lib/date";
 import { findOpenRequestForOrder } from "@/lib/exchange";
 import { isApprovedStatus } from "@/lib/exchange-shared";
-import { isExchangeScopeRelaxed } from "@/lib/exchange-gate";
+import { isExchangeScopeRelaxed, isExchangeOwnershipRelaxed } from "@/lib/exchange-gate";
 import { isOrderDeliveredForReturns } from "@/lib/return-eligibility";
+import { getHeldBackOrderItemIds } from "@/lib/return-line-eligibility";
 
 /**
  * Customer-raised "missing-item" claim service.
@@ -56,13 +57,16 @@ export async function createMissingClaim(
   // 1. Scope: order must belong to this parent and be delivered —
   //    identical gate to exchange. A missing-item claim can only be
   //    raised once the order is marked delivered.
+  // Ownership relaxed (all envs) — see isExchangeOwnershipRelaxed; family
+  // membership is enforced by isOrderDeliveredForReturns below, so dropping
+  // the strict parent_id match is safe and fixes split-account orders.
   const [order] = await db
     .select()
     .from(orders)
     .where(
       and(
         eq(orders.id, input.orderId),
-        isExchangeScopeRelaxed() ? undefined : eq(orders.parentId, input.parentId)
+        isExchangeOwnershipRelaxed() ? undefined : eq(orders.parentId, input.parentId)
       )
     )
     .limit(1);
@@ -81,6 +85,42 @@ export async function createMissingClaim(
       status: 400,
       error:
         "Missing-item claims are only available for delivered orders, within 15 days of delivery.",
+    };
+  }
+
+  // 1b. Every claimed line must belong to this order (parity with the
+  //     exchange flow), and held-back lines (out of stock / still
+  //     out-for-delivery — not yet received) can't be reported missing:
+  //     we already know they didn't arrive and will ship them later, so
+  //     it isn't "missing", it's pending. Mirrors the per-item badge on
+  //     /shop/orders/[id]. Kit / Magic-Box / bundle parents ship blank-code
+  //     and are never flagged held-back.
+  const claimedIds = Array.from(new Set(input.items.map((i) => i.orderItemId)));
+  if (claimedIds.length > 0) {
+    const onOrder = await db
+      .select({ id: orderItems.id })
+      .from(orderItems)
+      .where(and(eq(orderItems.orderId, input.orderId), inArray(orderItems.id, claimedIds)));
+    const onOrderSet = new Set(onOrder.map((r) => r.id));
+    const notOnOrder = claimedIds.filter((id) => !onOrderSet.has(id));
+    if (notOnOrder.length > 0) {
+      return {
+        ok: false,
+        status: 400,
+        error: "One or more items don't belong to this order",
+        details: { missingOrderItemIds: notOnOrder },
+      };
+    }
+  }
+  const heldBack = await getHeldBackOrderItemIds(input.orderId, order.orderNumber);
+  const notArrived = claimedIds.filter((id) => heldBack.has(id));
+  if (notArrived.length > 0) {
+    return {
+      ok: false,
+      status: 400,
+      error:
+        "Some of these items haven't been delivered yet (they're out of stock or on the way) — they'll arrive in a later shipment, so there's nothing to report as missing.",
+      details: { notArrivedOrderItemIds: notArrived },
     };
   }
 

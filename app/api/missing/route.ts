@@ -22,7 +22,12 @@ const PhotoSchema = z.object({
 });
 
 const ComponentPathSchema = z.object({
-  variantId: z.string().uuid(),
+  // Opaque descriptive metadata identifying WHICH Magic-Box / kit component
+  // this claim is about — never dereferenced as a variant FK. Legacy /
+  // backfilled bundle_selections store the component SKU (or an empty
+  // string) here, so `.uuid()` would reject valid submissions as "Invalid
+  // request". Mirrors the same relaxation in /api/returns.
+  variantId: z.string().max(200),
   componentName: z.string().max(200).optional(),
   attributes: z
     .array(z.object({ name: z.string().max(40), value: z.string().max(80) }))
