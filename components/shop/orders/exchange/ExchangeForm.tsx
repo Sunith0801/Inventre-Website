@@ -51,11 +51,36 @@ export type Unit = {
   attributes: { name: string; value: string }[];
   hasSiblings: boolean;
   siblings: SiblingLite[];
+  /** True when this magic-box component's exact ordered size/variant
+   *  wasn't stored (recovered from the bundle definition). The form asks
+   *  the parent which size they currently have before choosing a swap. */
+  currentUnknown?: boolean;
+  /** Bookkit drill-down: the category (sub_bundle) this leaf book sits under.
+   *  Present only on bookkit component units — drives the category accordion
+   *  inside the kit card. Absent on magic-box / plain units. */
+  categoryKey?: string | null;
+  categoryName?: string | null;
+  // For a bookkit nested inside a magic box: its key + name, so the form nests
+  // the bookkit's categories under a bookkit header (not flat with uniforms).
+  bookkitKey?: string | null;
+  bookkitName?: string | null;
   // True when an earlier exchange for this order_item is still active
   // (status ∈ {requested, approved}). The picker disables it and shows
   // the existing RTN number so the customer doesn't try to re-submit.
   locked?: boolean;
   lockReturnNumber?: string | null;
+  // Kit-parent only: some (but not all) components inside the box are already
+  // in a request. The box stays open for the rest, but the "whole box" scope
+  // option is disabled (you can't send back the whole box while part is out).
+  someComponentsLocked?: boolean;
+  // Bookkit book whose parcel hasn't arrived yet — greyed with a "not delivered
+  // yet" note; becomes selectable automatically once the parcel is delivered.
+  notDelivered?: boolean;
+  // Kit-parent only: some components aren't delivered yet → "whole box" disabled.
+  someComponentsUndelivered?: boolean;
+  // True when this item is past its own 10-day exchange window (item-wise).
+  // Rendered greyed / not-selectable with the "request period expired" note.
+  expired?: boolean;
 };
 
 type StagedPhoto = {
@@ -93,7 +118,20 @@ type TabState = {
   wrongItemFault: "" | "fulfillment" | "customer";
   replacementMode: ReplacementMode | "";
   requestedVariantId: string;
+  /** Colour/size the customer wants instead (2026-07-09). Reason-driven:
+   *  a "wrong colour" reason surfaces the Colour picker, a "wrong size" reason
+   *  the Size picker; both may be set. Empty = keep the ordered value. The
+   *  matching sibling variant is resolved into `requestedVariantId`. */
+  requestedColor: string;
+  requestedSize: string;
+  /** The size the parent currently HAS — only collected for components
+   *  whose ordered variant wasn't stored (unit.currentUnknown). */
+  currentVariantId: string;
   replacementDescribe: string;
+  /** How many of this line to exchange, when it was ordered qty > 1 (e.g.
+   *  "Crown 50 Pages … × 2" but only one is damaged). 0 = unset → the full
+   *  ordered qty. */
+  qty: number;
   notes: string;
 };
 
@@ -104,9 +142,20 @@ const emptyTab = (): TabState => ({
   wrongItemFault: "",
   replacementMode: "",
   requestedVariantId: "",
+  requestedColor: "",
+  requestedSize: "",
+  currentVariantId: "",
   replacementDescribe: "",
+  qty: 0,
   notes: "",
 });
+
+/** Effective exchange quantity for a line: the tab's chosen qty (clamped to
+ *  1..ordered), or the full ordered qty when unset (0). */
+function effectiveQty(unit: Unit, tab: TabState): number {
+  if (tab.qty && tab.qty > 0) return Math.min(unit.qty, Math.max(1, Math.floor(tab.qty)));
+  return unit.qty;
+}
 
 function categoryLabel(kind: string): string {
   switch (kind) {
@@ -185,7 +234,10 @@ export function ExchangeForm({
   const wrongItemFault = cur.wrongItemFault;
   const replacementMode = cur.replacementMode;
   const requestedVariantId = cur.requestedVariantId;
-  const replacementDescribe = cur.replacementDescribe;
+  const requestedColor = cur.requestedColor;
+  const requestedSize = cur.requestedSize;
+  const currentVariantId = cur.currentVariantId;
+  const qty = cur.qty;
   const notes = cur.notes;
 
   const setReason = (v: ExchangeReason | "") => updateActive({ reason: v });
@@ -200,7 +252,10 @@ export function ExchangeForm({
       replacementMode: typeof v === "function" ? v(cur.replacementMode) : v,
     });
   const setRequestedVariantId = (v: string) => updateActive({ requestedVariantId: v });
-  const setReplacementDescribe = (v: string) => updateActive({ replacementDescribe: v });
+  const setRequestedColor = (v: string) => updateActive({ requestedColor: v });
+  const setRequestedSize = (v: string) => updateActive({ requestedSize: v });
+  const setCurrentVariantId = (v: string) => updateActive({ currentVariantId: v });
+  const setQty = (v: number) => updateActive({ qty: v });
   const setNotes = (v: string) => updateActive({ notes: v });
 
   const [staging, setStaging] = useState<string>("");
@@ -229,18 +284,46 @@ export function ExchangeForm({
     );
   }, [units]);
 
-  const [kitScope, setKitScope] = useState<Record<string, "" | "full" | "items">>({});
+  // ── Bookkit category grouping (3-level: kit → category → books) ──────
+  // For bookkit kit-groups whose components carry a `categoryName`, the
+  // "some items inside" list is itself grouped into expandable categories,
+  // each with a "whole category" checkbox that ticks/unticks every book in
+  // it. Non-bookkit kits (magic boxes) have no categoryName → they render
+  // the existing flat component list unchanged.
+  const categoriesFor = (compIdxs: number[]) => {
+    const groups = new Map<string, { name: string; idxs: number[] }>();
+    for (const ci of compIdxs) {
+      const u = units[ci];
+      const key = u?.categoryKey ?? null;
+      if (!key) continue;
+      const g = groups.get(key) ?? { name: u!.categoryName ?? "Items", idxs: [] };
+      g.idxs.push(ci);
+      groups.set(key, g);
+    }
+    return groups;
+  };
 
-  const setKitScopeFor = (orderItemId: string, scope: "full" | "items") => {
-    const g = kitGroups.get(orderItemId);
-    if (!g) return;
+  const [openCategories, setOpenCategories] = useState<Record<string, boolean>>({});
+  const toggleCategoryOpen = (catKey: string) =>
+    setOpenCategories((p) => ({ ...p, [catKey]: !p[catKey] }));
+
+  // A unit can't be selected/deselected when it's locked (already in a
+  // request), expired (past its window), or not yet delivered.
+  const isUnitDisabled = (i: number): boolean => {
+    const u = units[i];
+    return !!u && (!!u.locked || !!u.expired || !!u.notDelivered);
+  };
+
+  const setCategorySelected = (idxs: number[], selected: boolean) => {
     setSelectionConfirmed(false);
-    setKitScope((prev) => ({ ...prev, [orderItemId]: scope }));
     setSelectedIdxs((prev) => {
-      const drop = new Set([g.parentIdx, ...g.compIdxs]);
-      const next = prev.filter((i) => !drop.has(i));
-      if (scope === "full") next.push(g.parentIdx);
-      return next;
+      const set = new Set(prev);
+      for (const i of idxs) {
+        if (isUnitDisabled(i)) continue; // never toggle a disabled unit
+        if (selected) set.add(i);
+        else set.delete(i);
+      }
+      return Array.from(set);
     });
   };
 
@@ -276,11 +359,86 @@ export function ExchangeForm({
     : [];
   const needsDamageLocation = damageLocationChoices.length > 0;
 
+  // ── Colour / Size replacement axes (2026-07-09) ──────────────────────
+  // Derive the product's Colour axis + Size options from the active unit and
+  // its siblings so a "wrong colour / wrong size" exchange can pick the exact
+  // replacement colour and/or size (instead of one opaque variant dropdown).
+  const COLOR_RE = /colou?r/i;
+  const variantAxes = useMemo(() => {
+    if (!activeUnit) return { colorAxis: null as string | null, colors: [] as string[], sizes: [] as string[], origColor: "", origSize: "" };
+    const sibs = Array.isArray(activeUnit.siblings) ? activeUnit.siblings : [];
+    const own = Array.isArray(activeUnit.attributes) ? activeUnit.attributes : [];
+    const colorAxis =
+      own.find((a) => COLOR_RE.test(a.name))?.name ??
+      sibs.flatMap((s) => s.axes).find((a) => COLOR_RE.test(a.attributeName))?.attributeName ??
+      null;
+    const origColor = colorAxis ? (own.find((a) => a.name === colorAxis)?.value ?? "") : "";
+    const colorSet = new Set<string>();
+    if (origColor) colorSet.add(origColor);
+    if (colorAxis) for (const s of sibs) {
+      const v = s.axes.find((a) => a.attributeName === colorAxis)?.value;
+      if (v) colorSet.add(v);
+    }
+    const sizeSet = new Set<string>();
+    if (activeUnit.size) sizeSet.add(activeUnit.size);
+    for (const s of sibs) if (s.size) sizeSet.add(s.size);
+    return {
+      colorAxis,
+      colors: Array.from(colorSet),
+      sizes: Array.from(sizeSet),
+      origColor,
+      origSize: activeUnit.size ?? "",
+    };
+  }, [activeUnit]);
+
+  // Resolve the sibling (or the ordered variant itself) that matches the chosen
+  // colour + size, so the request carries a real requestedVariantId.
+  const resolveVariantByAxes = (color: string, size: string): string => {
+    if (!activeUnit) return "";
+    const axis = variantAxes.colorAxis;
+    const cands: { id: string; color: string; size: string }[] = [
+      { id: activeUnit.variantId, color: variantAxes.origColor, size: activeUnit.size ?? "" },
+      ...(Array.isArray(activeUnit.siblings) ? activeUnit.siblings : []).map((s) => ({
+        id: s.id,
+        color: axis ? (s.axes.find((a) => a.attributeName === axis)?.value ?? "") : "",
+        size: s.size ?? "",
+      })),
+    ];
+    const wantColor = color || variantAxes.origColor;
+    const wantSize = size || (activeUnit.size ?? "");
+    const hit = cands.find(
+      (c) => (!axis || c.color === wantColor) && (!variantAxes.sizes.length || c.size === wantSize),
+    );
+    return hit?.id ?? "";
+  };
+
+  // Picking a colour/size updates the chosen variant id so the request carries
+  // a concrete replacement while also recording the explicit colour/size.
+  const chooseColor = (v: string) =>
+    updateActive({ requestedColor: v, requestedVariantId: resolveVariantByAxes(v, requestedSize) });
+  const chooseSize = (v: string) =>
+    updateActive({ requestedSize: v, requestedVariantId: resolveVariantByAxes(requestedColor, v) });
+
+  // Which axis pickers to show, driven by the reason + what the product has.
+  // Wrong-colour reasons surface the Colour picker; wrong-size reasons the Size
+  // picker; a plain "wrong item" / damaged sibling swap shows whatever exists.
+  const wantsColorPick = subReason === "wrong_color" || reason === "wrong_item";
+  const wantsSizePick = reason === "wrong_size_delivered" || subReason === "size_chart_mismatch";
+  const showColorPicker = !!variantAxes.colorAxis && variantAxes.colors.length > 1 && (wantsColorPick || wantsSizePick);
+  const showSizePicker = variantAxes.sizes.length > 1 && (wantsSizePick || wantsColorPick);
+
   // Sibling picker shows up when the chosen reason calls for it AND
   // the active unit actually has siblings on its own product.
   const siblingAvailable =
     reasonOpts.showSiblingPicker &&
     (Array.isArray(activeUnit?.siblings) ? activeUnit!.siblings.length : 0) > 0;
+
+  // "Same item, fresh piece" is offered for damaged goods (not wrong-item /
+  // wrong-size / other). When neither that nor a sibling size picker applies,
+  // there's nothing to choose — hide the whole replacement block.
+  const sameFreshOffered =
+    reason !== "wrong_item" && reason !== "other" && reason !== "wrong_size_delivered";
+  const anyReplacementOption = sameFreshOffered || siblingAvailable;
 
   // Wipe stale replacement mode whenever reason changes.
   useEffect(() => {
@@ -341,23 +499,38 @@ export function ExchangeForm({
     const subChoices = tab.reason ? (opts.subReasonsByReason[tab.reason] ?? []) : [];
     const dmgChoices = tab.reason ? (opts.damageLocationsByReason[tab.reason] ?? []) : [];
 
+    if (unit.currentUnknown && !tab.currentVariantId) {
+      return "Please tell us which size you currently have.";
+    }
     if (!tab.reason) return "Please select a reason.";
     if (tab.reason === "wrong_item" && !tab.wrongItemFault) {
       return "Please tell us whether we sent the wrong item or you ordered the wrong one.";
     }
-    if (tab.reason === "wrong_item" && tab.wrongItemFault === "customer") {
-      return "Exchange isn't the right path here. Please contact customer care.";
-    }
-    if (subChoices.length > 0 && !tab.subReason) return "Please pick a sub-reason.";
+    // Sub-reason is only asked on the "we sent the wrong item" branch — don't
+    // demand it on the "I ordered the wrong thing" branch where it's hidden.
+    const subReasonShown =
+      subChoices.length > 0 &&
+      (tab.reason !== "wrong_item" || tab.wrongItemFault === "fulfillment");
+    if (subReasonShown && !tab.subReason) return "Please pick a sub-reason.";
     if (dmgChoices.length > 0 && !tab.damageLocation) {
       return "Please indicate where on the item the issue is.";
     }
-    if (!tab.replacementMode) return "Please pick what you'd like instead.";
+    // Only demand a replacement choice when one is actually offered. Damaged
+    // items always get "same, fresh piece"; sized products get the sibling
+    // picker. A product with no alternate variants (e.g. a book) offers
+    // nothing to pick — the correct-item swap is implied, so don't block.
+    const sameFreshOffered =
+      tab.reason !== "wrong_item" &&
+      tab.reason !== "other" &&
+      tab.reason !== "wrong_size_delivered";
+    const siblingOffered =
+      opts.showSiblingPicker &&
+      (Array.isArray(unit.siblings) ? unit.siblings.length : 0) > 0;
+    if ((sameFreshOffered || siblingOffered) && !tab.replacementMode) {
+      return "Please pick what you'd like instead.";
+    }
     if (tab.replacementMode === "sibling" && !tab.requestedVariantId) {
       return "Please pick the size / variant you'd like instead.";
-    }
-    if (tab.replacementMode === "different_describe" && !tab.replacementDescribe.trim()) {
-      return "Please describe what you'd like instead.";
     }
     if (tab.reason === "other" && !tab.notes.trim()) {
       return "Please describe the issue in the notes.";
@@ -465,22 +638,14 @@ export function ExchangeForm({
         if (!unit) continue;
         const tab = tabStates[key] ?? emptyTab();
 
-        const describeLabel =
-          tab.reason === "wrong_item" ? "What I actually ordered" : "What I'd like instead";
         const tabNoteLines: string[] = [];
         if (tab.notes.trim()) tabNoteLines.push(tab.notes.trim());
-        if (
-          tab.replacementMode === "different_describe" &&
-          tab.replacementDescribe.trim()
-        ) {
-          tabNoteLines.push(`${describeLabel}: ${tab.replacementDescribe.trim()}`);
-        }
         const tabNotes = tabNoteLines.join("\n");
         if (tabNotes) composedNotesParts.push(`${unit.name}: ${tabNotes}`);
 
         const item: Record<string, unknown> = {
           orderItemId: unit.orderItemId,
-          qty: unit.qty,
+          qty: effectiveQty(unit, tab),
           reason: tab.reason,
         };
         if (tab.subReason) item.subReason = tab.subReason;
@@ -489,12 +654,35 @@ export function ExchangeForm({
         if (tab.replacementMode === "sibling" && tab.requestedVariantId) {
           item.requestedVariantId = tab.requestedVariantId;
         }
+        // Explicit colour/size change (2026-07-09) — recorded for customer care
+        // so the exchange stores original + requested colour/size, not just an
+        // opaque variant id.
+        if (tab.replacementMode === "sibling" && (tab.requestedColor || tab.requestedSize)) {
+          const origColor =
+            (Array.isArray(unit.attributes) ? unit.attributes : []).find((a) =>
+              /colou?r/i.test(a.name),
+            )?.value ?? "";
+          item.variantChange = {
+            originalColor: origColor || null,
+            originalSize: unit.size || null,
+            requestedColor: tab.requestedColor || null,
+            requestedSize: tab.requestedSize || null,
+          };
+        }
         if (tabNotes) item.notes = tabNotes;
         if (unit.isKitComponent) {
+          // Surface the bookkit category (e.g. "SMS Grade 9 Hindi") to
+          // customer-care by prepending it to the component's attributes —
+          // no schema change, and audit already renders these.
+          const attrs = unit.categoryName
+            ? [{ name: "Category", value: unit.categoryName }, ...unit.attributes]
+            : unit.attributes;
           const path: Record<string, unknown> = {
-            variantId: unit.variantId,
+            // For recovered-composition components the ordered variant
+            // wasn't stored, so the parent picked their current size above.
+            variantId: unit.currentUnknown ? tab.currentVariantId : unit.variantId,
             componentName: unit.name,
-            attributes: unit.attributes,
+            attributes: attrs,
           };
           item.requestedComponentPath = path;
         }
@@ -562,6 +750,8 @@ export function ExchangeForm({
         replacementMode: tab.replacementMode,
         selectedSibling,
         replacementDescribe: tab.replacementDescribe,
+        qty: unit ? effectiveQty(unit, tab) : 1,
+        orderedQty: unit?.qty ?? 1,
         notes: tab.notes,
       };
     });
@@ -584,8 +774,11 @@ export function ExchangeForm({
   const unitRow = (u: Unit, idx: number) => {
     const active = selectedIdxs.includes(idx);
     const locked = !!u.locked;
+    const expired = !!u.expired;
+    const notDelivered = !!u.notDelivered;
+    const disabled = locked || expired || notDelivered;
     const toggle = () => {
-      if (locked) return;
+      if (disabled) return;
       setSelectionConfirmed(false);
       setSelectedIdxs((prev) =>
         prev.includes(idx) ? prev.filter((i) => i !== idx) : [...prev, idx]
@@ -596,10 +789,10 @@ export function ExchangeForm({
         <button
           type="button"
           onClick={toggle}
-          disabled={locked}
+          disabled={disabled}
           className={
             "w-full text-left rounded-lg border px-3 py-2 text-[13px] flex items-center gap-2 " +
-            (locked
+            (disabled
               ? "border-ink-200 bg-cream-50/60 text-ink-400 cursor-not-allowed"
               : active
               ? "border-brand bg-brand/5 text-ink-900"
@@ -609,14 +802,14 @@ export function ExchangeForm({
           <span
             className={
               "h-3.5 w-3.5 rounded-sm border-2 shrink-0 flex items-center justify-center " +
-              (locked
+              (disabled
                 ? "border-ink-200 bg-ink-100"
                 : active
                 ? "border-brand bg-brand"
                 : "border-ink-300")
             }
           >
-            {active && !locked && (
+            {active && !disabled && (
               <svg
                 viewBox="0 0 12 12"
                 className="h-2.5 w-2.5 text-white"
@@ -641,12 +834,22 @@ export function ExchangeForm({
                   {u.lockReturnNumber ? ` (${u.lockReturnNumber})` : ""}
                 </span>
               )}
+              {expired && !locked && (
+                <span className="text-amber-700">
+                  {" "}· Request period expired (10 days from delivery)
+                </span>
+              )}
+              {notDelivered && !locked && !expired && (
+                <span className="text-amber-700">
+                  {" "}· Pending delivery — Exchange request is not available yet
+                </span>
+              )}
             </span>
           </span>
           <span
             className={
               "shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] uppercase tracking-wider " +
-              (locked
+              (disabled
                 ? "border-ink-200 bg-cream-50 text-ink-400"
                 : active
                 ? "border-brand/40 bg-white text-brand"
@@ -667,8 +870,15 @@ export function ExchangeForm({
     if (!g) return null;
     const parent = units[g.parentIdx];
     if (!parent) return null;
-    const scope = kitScope[orderItemId] ?? "";
-    const locked = !!parent.locked;
+    // Whole-box exchange has been retired — a Magic Box can only ever be
+    // exchanged item-by-item, so the scope is always "items" and the
+    // chooser is gone. Kept as a constant so the existing selection/border
+    // machinery below keeps working unchanged.
+    const scope = "items" as const;
+    // "locked" here means DISABLED for any reason — an active request on this
+    // box (parent.locked) OR its 10-day window has expired (parent.expired).
+    // Both collapse the card to a greyed, non-pickable state with a note.
+    const locked = !!parent.locked || !!parent.expired;
     const compCount = g.compIdxs.length;
     return (
       <li key={`kit:${orderItemId}`}>
@@ -689,10 +899,20 @@ export function ExchangeForm({
               </p>
               <p className="text-[11.5px] text-ink-500">
                 {compCount} items inside
-                {locked && (
+                {parent.locked && (
                   <span className="text-amber-700">
                     {" "}· Already in progress
                     {parent.lockReturnNumber ? ` (${parent.lockReturnNumber})` : ""}
+                  </span>
+                )}
+                {parent.someComponentsLocked && !parent.locked && (
+                  <span className="text-amber-700">
+                    {" "}· Some items already in a request — pick from the rest
+                  </span>
+                )}
+                {parent.expired && !parent.locked && (
+                  <span className="text-amber-700">
+                    {" "}· Request period expired (10 days from delivery)
                   </span>
                 )}
               </p>
@@ -704,30 +924,122 @@ export function ExchangeForm({
           {!locked && (
             <div className="p-3 space-y-2">
               <p className="text-[11.5px] font-semibold uppercase tracking-wider text-ink-500">
-                What needs exchanging?
+                Which items need exchanging?
               </p>
-              <ReplacementOption
-                checked={scope === "full"}
-                onSelect={() => setKitScopeFor(orderItemId, "full")}
-                title="The whole box"
-                hint="Everything goes back and you receive a complete replacement."
-              />
-              <ReplacementOption
-                checked={scope === "items"}
-                onSelect={() => setKitScopeFor(orderItemId, "items")}
-                title="Only some items inside"
-                hint="Pick the specific items that have a problem — the rest stays with you."
-              />
-              {scope === "full" && (
-                <div className="rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2 text-[12px] text-emerald-900">
-                  Whole box selected — all {compCount} items will be exchanged together.
-                </div>
-              )}
-              {scope === "items" && (
-                <ul className="space-y-1.5 pt-1">
-                  {g.compIdxs.map((ci) => unitRow(units[ci], ci))}
-                </ul>
-              )}
+              <p className="-mt-1 text-[11.5px] text-ink-500">
+                Pick the specific items inside this box that have a problem — the
+                rest stays with you.
+              </p>
+              {(() => {
+                const cats = categoriesFor(g.compIdxs);
+                // Non-bookkit kits (no categories) → flat list, unchanged.
+                if (cats.size === 0) {
+                  return (
+                    <ul className="space-y-1.5 pt-1">
+                      {g.compIdxs.map((ci) => unitRow(units[ci], ci))}
+                    </ul>
+                  );
+                }
+                // Category accordion. Any components WITHOUT a category
+                // (e.g. the uniform pieces in a hybrid magic box whose bookkit
+                // drills down) render as flat rows above the accordions.
+                const ungrouped = g.compIdxs.filter((ci) => !units[ci]?.categoryKey);
+
+                // One category accordion (kit → category → book).
+                const catLi = (catKey: string, cat: { name: string; idxs: number[] }) => {
+                  // "Whole category" acts only on SELECTABLE books — a locked /
+                  // expired / not-yet-delivered book stays untouched so the
+                  // category checkbox can't sneak an ineligible item into the
+                  // request. The count still shows the full category size.
+                  const selectable = cat.idxs.filter((i) => !isUnitDisabled(i));
+                  const allSelected =
+                    selectable.length > 0 && selectable.every((i) => selectedIdxs.includes(i));
+                  const someSelected = selectable.some((i) => selectedIdxs.includes(i));
+                  const open = openCategories[catKey] ?? someSelected;
+                  const selCount = selectable.filter((i) => selectedIdxs.includes(i)).length;
+                  return (
+                    <li key={catKey} className="rounded-lg border border-ink-200 overflow-hidden">
+                      <div className="flex items-center gap-2 px-2.5 py-2 bg-cream-50/50">
+                        <button
+                          type="button"
+                          disabled={selectable.length === 0}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setCategorySelected(selectable, !allSelected);
+                          }}
+                          className={
+                            "h-3.5 w-3.5 rounded-sm border-2 shrink-0 flex items-center justify-center " +
+                            (allSelected
+                              ? "border-brand bg-brand"
+                              : someSelected
+                              ? "border-brand bg-brand/30"
+                              : "border-ink-300")
+                          }
+                          aria-label="Select whole category"
+                        >
+                          {allSelected && (
+                            <svg viewBox="0 0 12 12" className="h-2.5 w-2.5 text-white" fill="none" stroke="currentColor" strokeWidth="2.5">
+                              <path d="M2 6l2.5 2.5L10 3" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
+                          )}
+                        </button>
+                        <button type="button" onClick={() => toggleCategoryOpen(catKey)} className="flex-1 min-w-0 text-left">
+                          <span className="block truncate text-[13px] font-medium text-ink-900">
+                            {cat.name}
+                          </span>
+                          <span className="block text-[11px] text-ink-500">
+                            {cat.idxs.length} item{cat.idxs.length === 1 ? "" : "s"}
+                            {selCount > 0 ? ` · ${selCount} selected` : ""} · tap to {open ? "collapse" : "expand"}
+                          </span>
+                        </button>
+                      </div>
+                      {open && (
+                        <ul className="space-y-1.5 p-2 border-t border-ink-100">
+                          {cat.idxs.map((ci) => unitRow(units[ci], ci))}
+                        </ul>
+                      )}
+                    </li>
+                  );
+                };
+
+                // Split categories: those belonging to a bookkit NESTED in a
+                // magic box get grouped under a bookkit header; a standalone
+                // bookkit's categories (no bookkitName) render directly.
+                const byBookkit = new Map<string, [string, { name: string; idxs: number[] }][]>();
+                const loose: [string, { name: string; idxs: number[] }][] = [];
+                for (const [catKey, cat] of cats) {
+                  const bkName = units[cat.idxs[0]]?.bookkitName ?? null;
+                  if (bkName) {
+                    if (!byBookkit.has(bkName)) byBookkit.set(bkName, []);
+                    byBookkit.get(bkName)!.push([catKey, cat]);
+                  } else {
+                    loose.push([catKey, cat]);
+                  }
+                }
+
+                return (
+                  <ul className="space-y-2 pt-1">
+                    {ungrouped.map((ci) => unitRow(units[ci], ci))}
+                    {loose.map(([catKey, cat]) => catLi(catKey, cat))}
+                    {[...byBookkit].map(([bkName, entries]) => {
+                      const bookCount = entries.reduce((n, [, c]) => n + c.idxs.length, 0);
+                      return (
+                        <li key={`bk:${bkName}`} className="rounded-xl border border-ink-200 overflow-hidden">
+                          <div className="px-2.5 py-2 bg-cream-100/70 border-b border-ink-100">
+                            <p className="text-[12.5px] font-semibold text-ink-900 truncate">{bkName}</p>
+                            <p className="text-[10.5px] text-ink-500">
+                              Bookkit · {bookCount} book{bookCount === 1 ? "" : "s"} in {entries.length} categor{entries.length === 1 ? "y" : "ies"} · tap a category to expand
+                            </p>
+                          </div>
+                          <ul className="space-y-2 p-2">
+                            {entries.map(([catKey, cat]) => catLi(catKey, cat))}
+                          </ul>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                );
+              })()}
             </div>
           )}
         </div>
@@ -779,6 +1091,12 @@ export function ExchangeForm({
                   }
                   return;
                 }
+                // Whole-box exchange is retired: a kit parent is never
+                // selectable on its own. If its components couldn't be
+                // resolved (empty bundle_selections and no fallback tree) it
+                // falls out of kitGroups — drop it rather than letting it
+                // render as a "Whole box" row.
+                if (u.isKitParent) return;
                 rows.push(unitRow(u, idx));
               });
               return rows;
@@ -871,6 +1189,93 @@ export function ExchangeForm({
             )}
           </div>
 
+          {/* Quantity — only when this line was ordered more than once (e.g.
+              "Crown 50 Pages … × 2"). Lets the customer exchange just the
+              damaged one(s) instead of the whole quantity. */}
+          {activeUnit.qty > 1 && (
+            <div>
+              <label className="block text-[12px] font-semibold uppercase tracking-wider text-ink-700">
+                How many need exchanging?
+              </label>
+              <p className="mt-1 text-[11.5px] text-ink-500">
+                You ordered {activeUnit.qty} of this. Enter how many have the
+                problem — the rest stay with you.
+              </p>
+              <div className="mt-2 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setQty(Math.max(1, effectiveQty(activeUnit, cur) - 1))
+                  }
+                  className="h-9 w-9 rounded-lg border border-ink-200 text-[18px] text-ink-700 hover:border-ink-400 disabled:opacity-40"
+                  disabled={effectiveQty(activeUnit, cur) <= 1}
+                  aria-label="Decrease quantity"
+                >
+                  −
+                </button>
+                <input
+                  type="number"
+                  min={1}
+                  max={activeUnit.qty}
+                  value={effectiveQty(activeUnit, cur)}
+                  onChange={(e) =>
+                    setQty(
+                      Math.max(
+                        1,
+                        Math.min(activeUnit.qty, Number(e.target.value) || 1)
+                      )
+                    )
+                  }
+                  className="w-16 rounded-lg border border-ink-200 bg-white px-3 py-2 text-[14px] text-center"
+                />
+                <button
+                  type="button"
+                  onClick={() =>
+                    setQty(
+                      Math.min(activeUnit.qty, effectiveQty(activeUnit, cur) + 1)
+                    )
+                  }
+                  className="h-9 w-9 rounded-lg border border-ink-200 text-[18px] text-ink-700 hover:border-ink-400 disabled:opacity-40"
+                  disabled={effectiveQty(activeUnit, cur) >= activeUnit.qty}
+                  aria-label="Increase quantity"
+                >
+                  +
+                </button>
+                <span className="text-[12.5px] text-ink-500">
+                  of {activeUnit.qty}
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* Current size — only for box components whose ordered size
+              wasn't recorded. We ask so the swap is unambiguous. */}
+          {activeUnit.currentUnknown && (
+            <div>
+              <label className="block text-[12px] font-semibold uppercase tracking-wider text-ink-700">
+                Which size do you currently have?
+              </label>
+              <p className="mt-1 text-[11.5px] text-ink-500">
+                This item was part of a Magic Box, so we don&apos;t have its
+                exact size on file — please pick the one you received.
+              </p>
+              <select
+                value={currentVariantId}
+                onChange={(e) => setCurrentVariantId(e.target.value)}
+                className="mt-2 w-full rounded-lg border border-ink-200 bg-white px-3 py-2.5 text-[14px]"
+              >
+                <option value="">Select your current size…</option>
+                {(Array.isArray(activeUnit.siblings) ? activeUnit.siblings : []).map(
+                  (s) => (
+                    <option key={s.id} value={s.id}>
+                      {siblingDropdownLabel(s)}
+                    </option>
+                  )
+                )}
+              </select>
+            </div>
+          )}
+
           {/* Reason */}
           <div>
             <label className="block text-[12px] font-semibold uppercase tracking-wider text-ink-700">
@@ -921,21 +1326,6 @@ export function ExchangeForm({
                   hint="I picked the wrong item at checkout — your fulfilment was correct."
                 />
               </div>
-              {wrongItemFault === "customer" && (
-                <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-[12.5px] text-amber-900">
-                  <p className="font-semibold">Exchange can&apos;t help with this.</p>
-                  <p className="mt-1">
-                    Exchange covers items we shipped incorrectly. For a checkout mistake,
-                    please contact customer care.
-                  </p>
-                  <a
-                    href="/support"
-                    className="mt-2 inline-block text-amber-900 underline font-semibold"
-                  >
-                    Contact customer care →
-                  </a>
-                </div>
-              )}
             </div>
           )}
 
@@ -979,7 +1369,7 @@ export function ExchangeForm({
           )}
 
           {/* Replacement picker */}
-          {reason && (reason !== "wrong_item" || wrongItemFault === "fulfillment") && (
+          {reason && (reason !== "wrong_item" || wrongItemFault !== "") && anyReplacementOption && (
             <div>
               <label className="block text-[12px] font-semibold uppercase tracking-wider text-ink-700">
                 What would you like instead?
@@ -1020,83 +1410,94 @@ export function ExchangeForm({
                     hint="Pick exactly what you want from the available sizes / variants below."
                   >
                     {replacementMode === "sibling" && activeUnit && (
-                      <select
-                        value={requestedVariantId}
-                        onChange={(e) => setRequestedVariantId(e.target.value)}
-                        onClick={(e) => e.stopPropagation()}
-                        className="mt-2 w-full rounded-lg border border-ink-200 bg-white px-3 py-2 text-[13.5px]"
-                      >
-                        <option value="">Select…</option>
-                        {(Array.isArray(activeUnit.siblings) ? activeUnit.siblings : []).map((s) => (
-                          <option key={s.id} value={s.id} disabled={!s.isActive}>
-                            {siblingDropdownLabel(s)}
-                            {!s.isActive ? " (not available)" : ""}
-                          </option>
-                        ))}
-                      </select>
-                    )}
-                  </ReplacementOption>
-                )}
-                {reason !== "damaged" && (
-                  <ReplacementOption
-                    checked={replacementMode === "different_describe"}
-                    onSelect={() =>
-                      setReplacementMode((m) =>
-                        m === "different_describe" ? "" : "different_describe"
-                      )
-                    }
-                    title="Something different — let me describe it"
-                    hint={
-                      reason === "wrong_item"
-                        ? "Tell us what you actually ordered."
-                        : "Tell us what would make this right."
-                    }
-                  >
-                    {replacementMode === "different_describe" && (
-                      <input
-                        type="text"
-                        value={replacementDescribe}
-                        onChange={(e) => setReplacementDescribe(e.target.value)}
-                        onClick={(e) => e.stopPropagation()}
-                        maxLength={200}
-                        placeholder={
-                          reason === "wrong_item"
-                            ? "e.g. SMS Boys Pants size M, not Belt"
-                            : "e.g. Replace with size M instead"
-                        }
-                        className="mt-2 w-full rounded-lg border border-ink-200 bg-white px-3 py-2 text-[13.5px]"
-                      />
+                      <div className="mt-2 space-y-2" onClick={(e) => e.stopPropagation()}>
+                        {/* Colour / Size axis pickers (reason-driven). Falls
+                            back to the full variant dropdown when the product's
+                            axes can't be split cleanly. */}
+                        {(showColorPicker || showSizePicker) ? (
+                          <div className="flex flex-wrap gap-2">
+                            {showColorPicker && (
+                              <label className="flex-1 min-w-[140px]">
+                                <span className="block text-[11px] font-semibold text-ink-600">
+                                  Required colour
+                                  {variantAxes.origColor ? ` (ordered: ${variantAxes.origColor})` : ""}
+                                </span>
+                                <select
+                                  value={requestedColor}
+                                  onChange={(e) => chooseColor(e.target.value)}
+                                  className="mt-1 w-full rounded-lg border border-ink-200 bg-white px-3 py-2 text-[13.5px]"
+                                >
+                                  <option value="">Keep {variantAxes.origColor || "same"}</option>
+                                  {variantAxes.colors.map((c) => (
+                                    <option key={c} value={c}>{c}</option>
+                                  ))}
+                                </select>
+                              </label>
+                            )}
+                            {showSizePicker && (
+                              <label className="flex-1 min-w-[140px]">
+                                <span className="block text-[11px] font-semibold text-ink-600">
+                                  Required size
+                                  {variantAxes.origSize ? ` (ordered: ${variantAxes.origSize})` : ""}
+                                </span>
+                                <select
+                                  value={requestedSize}
+                                  onChange={(e) => chooseSize(e.target.value)}
+                                  className="mt-1 w-full rounded-lg border border-ink-200 bg-white px-3 py-2 text-[13.5px]"
+                                >
+                                  <option value="">Keep {variantAxes.origSize || "same"}</option>
+                                  {variantAxes.sizes.map((sz) => (
+                                    <option key={sz} value={sz}>{sz}</option>
+                                  ))}
+                                </select>
+                              </label>
+                            )}
+                          </div>
+                        ) : (
+                          <select
+                            value={requestedVariantId}
+                            onChange={(e) => setRequestedVariantId(e.target.value)}
+                            className="w-full rounded-lg border border-ink-200 bg-white px-3 py-2 text-[13.5px]"
+                          >
+                            <option value="">Select…</option>
+                            {(Array.isArray(activeUnit.siblings) ? activeUnit.siblings : []).map((s) => (
+                              <option key={s.id} value={s.id} disabled={!s.isActive}>
+                                {siblingDropdownLabel(s)}
+                                {!s.isActive ? " (not available)" : ""}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                        {(showColorPicker || showSizePicker) && requestedVariantId === "" && (requestedColor || requestedSize) && (
+                          <p className="text-[11px] text-rose-600">
+                            That colour/size combination isn&apos;t available — pick another.
+                          </p>
+                        )}
+                      </div>
                     )}
                   </ReplacementOption>
                 )}
               </div>
-              {!siblingAvailable && reasonOpts.showSiblingPicker && (
-                <p className="mt-2 text-[11.5px] text-ink-500">
-                  No other sizes / variants are listed for this product. If you want one,
-                  choose &quot;describe&quot; above and we&apos;ll follow up.
-                </p>
-              )}
             </div>
           )}
 
-          {/* Notes */}
-          <div>
-            <label className="block text-[12px] font-semibold uppercase tracking-wider text-ink-700">
-              {reason === "other" ? "Describe the issue" : "Additional notes (optional)"}
-            </label>
-            <textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              rows={3}
-              maxLength={2000}
-              placeholder={
-                reason === "other"
-                  ? "Tell us what went wrong so we can help."
-                  : "e.g. The stitching at the collar has come undone."
-              }
-              className="mt-2 w-full rounded-lg border border-ink-200 bg-white px-3 py-2.5 text-[14px] leading-relaxed resize-none"
-            />
-          </div>
+          {/* Notes — only the mandatory describe box for the "Other" reason.
+              The optional free-text notes box was removed by request. */}
+          {reason === "other" && (
+            <div>
+              <label className="block text-[12px] font-semibold uppercase tracking-wider text-ink-700">
+                Describe the issue
+              </label>
+              <textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                rows={3}
+                maxLength={2000}
+                placeholder="Tell us what went wrong so we can help."
+                className="mt-2 w-full rounded-lg border border-ink-200 bg-white px-3 py-2.5 text-[14px] leading-relaxed resize-none"
+              />
+            </div>
+          )}
         </>
       )}
 
@@ -1210,6 +1611,8 @@ type SummaryRow = {
   replacementMode: ReplacementMode | "";
   selectedSibling: SiblingLite | null;
   replacementDescribe: string;
+  qty: number;
+  orderedQty: number;
   notes: string;
 };
 
@@ -1265,7 +1668,14 @@ function ConfirmStep({
             </p>
           </div>
 
-          <p className="font-medium text-ink-900 text-[14px]">{s.unitLabel}</p>
+          <p className="font-medium text-ink-900 text-[14px]">
+            {s.unitLabel}
+            {s.orderedQty > 1 && (
+              <span className="ml-1 text-[12px] font-semibold text-brand">
+                × {s.qty} of {s.orderedQty}
+              </span>
+            )}
+          </p>
           {s.unit?.isKitComponent && (
             <p className="text-[11.5px] text-ink-500">Inside {s.unit.parentName}</p>
           )}
@@ -1362,19 +1772,25 @@ function ReplacementOption({
   title,
   hint,
   children,
+  disabled,
 }: {
   checked: boolean;
   onSelect: () => void;
   title: string;
   hint: string;
   children?: React.ReactNode;
+  disabled?: boolean;
 }) {
   return (
     <div
-      onClick={onSelect}
+      onClick={disabled ? undefined : onSelect}
+      aria-disabled={disabled}
       className={
-        "rounded-lg border px-3 py-2.5 cursor-pointer " +
-        (checked
+        "rounded-lg border px-3 py-2.5 " +
+        (disabled
+          ? "border-ink-200 bg-cream-50/60 opacity-60 cursor-not-allowed "
+          : "cursor-pointer ") +
+        (checked && !disabled
           ? "border-brand bg-brand/5"
           : "border-ink-200 hover:border-ink-400 bg-white")
       }
@@ -1383,7 +1799,7 @@ function ReplacementOption({
         <span
           className={
             "mt-0.5 h-3.5 w-3.5 rounded-full border-2 shrink-0 " +
-            (checked ? "border-brand bg-brand" : "border-ink-300")
+            (checked && !disabled ? "border-brand bg-brand" : "border-ink-300")
           }
         />
         <div className="flex-1 min-w-0">

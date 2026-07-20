@@ -68,6 +68,18 @@ export type ErpEventType =
 
 const ENDPOINT_NAME = "erp-bridge";
 
+// Component-path `variantId` fields (stored in returns/claim jsonb) are NOT
+// guaranteed to be UUIDs — legacy / magic-box entries can hold a SKU or even a
+// plain product name (e.g. "SAS KS Primary Bag"). Feeding a non-UUID straight
+// into `eq(productVariants.id, …)` makes Postgres reject the uuid cast (22P02)
+// and throws out of the whole payload build, silently dropping the emit (see
+// the same guard applied to bundleSelections below). Gate every jsonb-derived
+// id lookup through this before it reaches a uuid column.
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const isUuid = (v: unknown): v is string =>
+  typeof v === "string" && UUID_RE.test(v);
+
 // All ERP env reads go through lib/erp-config. Never read process.env.ERP_*
 // directly here so the staging↔prod switch stays a one-variable change.
 
@@ -401,6 +413,10 @@ export async function buildErpOrderPayload(
           : payment.status === "paid"
             ? payment.amount
             : 0,
+        // CCAvenue bank/tracking reference (their ~12-digit transaction id).
+        // Audit stores this verbatim as sales_orders.custom_payment_tracking_id
+        // (raw_synth.py:82 reads `gateway_tracking_id`, ingest.py:327 writes it).
+        gateway_tracking_id: payment.gatewayTrackingId ?? null,
       }
     : null;
 
@@ -887,19 +903,74 @@ export async function buildExchangePayload(
     }
   }
 
+  // Per-COMPONENT variant lookup. For a composed line (Magic Box / kit)
+  // every return_items row stores the BOX PARENT's variant in
+  // `variant_id` (lib/exchange.ts writes `oi.variantId` for all of
+  // them), so the `productVariants` join above yields the parent for
+  // each component — and `variant.size` is the parent's size ("Standard"
+  // on a Magic Box), identical across all nine components.
+  //
+  // The component's real variant is named by
+  // `requested_component_path.variantId`. Resolve those here so the
+  // per-line `delivered_size` below is the size the customer actually
+  // received (8UK / 44 / 2XL …) instead of the box's placeholder.
+  // Audit needs this to check the requested size against the delivered
+  // one before approving. Guarded by `isUuid` because legacy
+  // bundle_selections store an SKU string in `variantId` (~5.5k live
+  // rows) — those simply fall back to the old behaviour.
+  const componentPathOf = (ri: unknown) =>
+    (ri as { requestedComponentPath?: { variantId?: string } | null })
+      .requestedComponentPath ?? null;
+  const componentVariantIds = Array.from(
+    new Set(
+      lineRows
+        .map(({ ri }) => componentPathOf(ri)?.variantId ?? null)
+        .filter((v): v is string => isUuid(v)),
+    ),
+  );
+  const componentVariantLookup = new Map<string, Record<string, unknown>>();
+  if (componentVariantIds.length > 0) {
+    const cvRows = await db
+      .select({ variant: productVariants, product: products })
+      .from(productVariants)
+      .innerJoin(products, eq(products.id, productVariants.productId))
+      .where(inArray(productVariants.id, componentVariantIds));
+    for (const { variant: v, product: p } of cvRows) {
+      componentVariantLookup.set(v.id, {
+        variant_id: v.id,
+        item_code: resolveItemCode(v, p),
+        item_name: p.name,
+        size: v.size,
+        sku: v.sku,
+        image_url: v.imageUrl ?? null,
+      });
+    }
+  }
+  const componentInfoFor = (ri: unknown): Record<string, unknown> | null => {
+    const vid = componentPathOf(ri)?.variantId;
+    return isUuid(vid) ? componentVariantLookup.get(vid) ?? null : null;
+  };
+
   // items[] stays in the legacy shape so audit-dev's ingest schema
   // accepts it unchanged. Per-item enrichment lives in a sibling
   // `per_item_details` array (parallel index) for audit-side consumers
   // that have been updated to read it. Old audit ignores it.
-  const items = lineRows.map(({ ri, oi, variant, product }) => ({
-    order_item_id: oi.id,
-    item_code: resolveItemCode(variant, product),
-    item_name: oi.nameSnapshot,
-    delivered_size: variant.size ?? null,
-    qty: ri.qty,
-    condition: ri.condition ?? null,
-    line_reason: ri.reason ?? null,
-  }));
+  //
+  // `item_code` deliberately stays the parent's for composed lines —
+  // audit matches replacement dispatches on it and `lib/audit-item-match.ts`
+  // pairs components by NAME. Only the size is corrected here.
+  const items = lineRows.map(({ ri, oi, variant, product }) => {
+    const comp = componentInfoFor(ri);
+    return {
+      order_item_id: oi.id,
+      item_code: resolveItemCode(variant, product),
+      item_name: oi.nameSnapshot,
+      delivered_size: (comp?.size as string | null | undefined) ?? variant.size ?? null,
+      qty: ri.qty,
+      condition: ri.condition ?? null,
+      line_reason: ri.reason ?? null,
+    };
+  });
   const perItemDetails = lineRows.map(({ ri, oi }) => {
     const r = ri as {
       subReason?: string | null;
@@ -909,6 +980,16 @@ export async function buildExchangePayload(
       requestedComponentPath?: Record<string, unknown> | null;
       notes?: string | null;
     };
+    // Mirror the head-row enrichment (see `enrichedComponentPath` below)
+    // onto EVERY per-item path. Previously only the head was enriched, so
+    // on a multi-component request audit could render a size for the one
+    // component that happened to be first and blanks for the rest —
+    // exactly what RTN-2026-00366 showed (Shoes 8UK, four apparel lines
+    // empty). Audit's detail view reads `delivered_size || pcp.size`.
+    const comp = componentInfoFor(ri);
+    const rcpOut = r.requestedComponentPath
+      ? { ...r.requestedComponentPath, ...(comp ?? {}) }
+      : null;
     return {
       order_item_id: oi.id,
       sub_reason: r.subReason ?? null,
@@ -917,7 +998,7 @@ export async function buildExchangePayload(
       requested_variant: r.requestedVariantId
         ? perItemVariantLookup.get(r.requestedVariantId) ?? null
         : null,
-      requested_component_path: r.requestedComponentPath ?? null,
+      requested_component_path: rcpOut,
       notes: r.notes ?? null,
     };
   });
@@ -970,7 +1051,7 @@ export async function buildExchangePayload(
       component_name: rcp.componentName ?? null,
       attributes: rcp.attributes ?? [],
     };
-    if (rcp.variantId) {
+    if (isUuid(rcp.variantId)) {
       const [cp] = await db
         .select({ variant: productVariants, product: products })
         .from(productVariants)
@@ -1170,7 +1251,7 @@ export async function buildMissingClaimPayload(
           component_name: mcp.componentName ?? null,
           attributes: mcp.attributes ?? [],
         };
-        if (mcp.variantId) {
+        if (isUuid(mcp.variantId)) {
           const [cp] = await db
             .select({ variant: productVariants, product: products })
             .from(productVariants)
@@ -1189,10 +1270,19 @@ export async function buildMissingClaimPayload(
         }
       }
 
+      // `delivered_size` mirrors the exchange payload's line-level field.
+      // Prefer the drilled-into component's size (a Magic Box parent's own
+      // variant size is a placeholder like "Standard" and is useless to the
+      // audit team); fall back to the ordered line's variant size for
+      // standalone items. Audit needs a matching column on
+      // missing_item_claim_items to persist this — older audit builds
+      // simply ignore the extra key.
+      const componentSize = (enrichedPath?.size as string | null | undefined) ?? null;
       return {
         order_item_id: li.orderItemId,
         item_code: baseLineItemCode,
         item_name: oi?.oi.nameSnapshot ?? null,
+        delivered_size: componentSize ?? oi?.variant?.size ?? null,
         qty_short: li.qtyShort,
         missing_component_path: enrichedPath,
         notes: li.notes,

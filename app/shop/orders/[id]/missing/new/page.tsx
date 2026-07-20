@@ -9,15 +9,28 @@ import {
   productVariantAttributes,
   productAttributes,
   productAttributeValues,
+  schools,
 } from "@/db/schema";
 import { getCurrentParent } from "@/lib/session";
-import { isExchangeTester, isExchangeScopeRelaxed } from "@/lib/exchange-gate";
-import { isOrderDeliveredForReturns } from "@/lib/return-eligibility";
-import { findOpenRequestForOrder } from "@/lib/exchange";
+import { isExchangeTester, isExchangeScopeRelaxed, isExchangeOwnershipRelaxed } from "@/lib/exchange-gate";
+import { getParentOrderDetailFromErp } from "@/lib/erp-customer-orders";
+import {
+  getHeldBackOrderItemIds,
+  getLockedComponentSignatures,
+  lockStateForUnit,
+  classifyReturnItems,
+  getBookkitParcelDelivered,
+  getPendingComponentVariantIds,
+} from "@/lib/return-line-eligibility";
+import {
+  fallbackBundleComponents,
+  loadBookkitCategoryTree,
+  kindCategoryFor,
+  resolveSubBundleCategories,
+} from "@/lib/bundle-fallback";
 import { Nav } from "@/components/Nav";
 import { Footer } from "@/components/Footer";
 import { MissingForm } from "@/components/shop/orders/missing/MissingForm";
-import { RequestBlockedNotice } from "@/components/shop/orders/RequestBlockedNotice";
 
 /**
  * Customer-facing form for raising a missing-item claim.
@@ -34,9 +47,11 @@ export const dynamic = "force-dynamic";
 async function resolveLocalOrderId(
   idOrNumber: string,
   parentId: string,
-): Promise<string | null> {
-  // Dev: ownership scope relaxed — see isExchangeScopeRelaxed.
-  const ownerScope = isExchangeScopeRelaxed()
+): Promise<{ id: string; orderDelivered: boolean; deliveredAt: Date | null } | null> {
+  // Ownership relaxed (all envs) — see isExchangeOwnershipRelaxed. Family
+  // membership is the security boundary, enforced below via
+  // getParentOrderDetailFromErp (null → not this parent's family).
+  const ownerScope = isExchangeOwnershipRelaxed()
     ? undefined
     : eq(orders.parentId, parentId);
   const isUuid = /^[0-9a-f-]{36}$/i.test(idOrNumber);
@@ -52,19 +67,16 @@ async function resolveLocalOrderId(
         .where(and(eq(orders.orderNumber, idOrNumber), ownerScope))
         .limit(1);
   if (!row) return null;
-  // Delivered gate matches the Report-missing button + submit handler:
-  // delivered (local status OR mirror-derived) AND within the 15-day
-  // window from delivery. (Was previously `status !== "placed"` here —
-  // looser than both the button and createMissingClaim, which require
-  // delivered — so the form could load on an undelivered order only to
-  // have the submit 400.)
-  const delivered = await isOrderDeliveredForReturns(
-    parentId,
-    row.orderNumber,
-    row.status,
-    row.deliveredAt ?? null
-  );
-  return delivered ? row.id : null;
+  // Family authorization only — the delivered/window gate is now PER ITEM
+  // (item-wise): a partially-delivered order must open the form for its
+  // delivered items. Non-family → null → 404.
+  const detail = await getParentOrderDetailFromErp(parentId, row.orderNumber);
+  if (!detail) return null;
+  const orderDelivered =
+    row.status === "delivered" || detail.status === "delivered";
+  const deliveredAt =
+    row.deliveredAt ?? (detail.deliveredAt ? new Date(detail.deliveredAt) : null);
+  return { id: row.id, orderDelivered, deliveredAt };
 }
 
 export default async function NewMissingClaimPage({
@@ -78,45 +90,38 @@ export default async function NewMissingClaimPage({
 
   const { id } = await params;
   const decoded = decodeURIComponent(id);
-  const orderId = await resolveLocalOrderId(decoded, me.id);
-  if (!orderId) notFound();
+  const resolved = await resolveLocalOrderId(decoded, me.id);
+  if (!resolved) notFound();
+  const orderId = resolved.id;
 
   const [order] = await db
-    .select({ id: orders.id, orderNumber: orders.orderNumber })
+    .select({ id: orders.id, orderNumber: orders.orderNumber, schoolId: orders.schoolId })
     .from(orders)
     .where(eq(orders.id, orderId))
     .limit(1);
   if (!order) notFound();
 
-  // Cross-flow lifetime lock: if a non-rejected missing OR exchange
-  // request already exists for this order, the parent can't start a new
-  // one — show the popup instead of the form. (Approved → permanent;
-  // pending → "in progress". Dev relaxes the lock so testers can re-raise.)
-  const blocker = isExchangeScopeRelaxed()
-    ? null
-    : await findOpenRequestForOrder(orderId, me.id);
-  if (blocker) {
-    return (
-      <main className="min-h-screen">
-        <Nav />
-        <div className="mx-auto max-w-2xl px-5 lg:px-8 pt-8 pb-16">
-          <a
-            href={`/shop/orders/${id}`}
-            className="text-[13px] font-medium text-ink-500 hover:text-ink-900"
-          >
-            ← Back to order
-          </a>
-        </div>
-        <RequestBlockedNotice
-          flow="missing"
-          existingKind={blocker.kind}
-          existingStatus={blocker.status}
-          orderHref={`/shop/orders/${id}`}
-        />
-        <Footer />
-      </main>
-    );
-  }
+  // Item-wise eligibility (2026-07-08). Per-ITEM 10-day window (expired) +
+  // cross-flow per-item lock (item already in a non-rejected exchange OR
+  // missing request, freed only on rejection). Both applied as a post-pass
+  // over the built units below. Dev relaxes expiry so testers on the prod
+  // snapshot can still file.
+  const itemElig = await classifyReturnItems(
+    orderId,
+    order.orderNumber,
+    resolved.orderDelivered,
+    resolved.deliveredAt,
+  );
+  if (![...itemElig.values()].some((e) => e.delivered)) notFound();
+  const expiredByOrderItem = new Set<string>(
+    isExchangeScopeRelaxed()
+      ? []
+      : [...itemElig].filter(([, e]) => e.expired).map(([oid]) => oid),
+  );
+  // Component-level lock (2026-07-09) — see exchange/new/page.tsx. Resolves the
+  // lock PER COMPONENT so a Magic Box reopens for its still-eligible items; the
+  // authoritative per-unit fields are set in the post-pass below.
+  const lockByItem = await getLockedComponentSignatures(orderId);
 
   const items = await db
     .select({
@@ -205,6 +210,35 @@ export default async function NewMissingClaimPage({
     return rawKind ?? "other";
   };
 
+  // See exchange/new/page.tsx — school name scopes the sub-bundle match.
+  const [schoolRow] = order.schoolId
+    ? await db
+        .select({ name: schools.name })
+        .from(schools)
+        .where(eq(schools.id, order.schoolId))
+        .limit(1)
+    : [null as { name: string } | null];
+  const schoolName = schoolRow?.name ?? null;
+
+  const BOOKS_GROUP = { key: "books", name: "Books" };
+  const isUniformCat = (c: { name: string } | null | undefined) =>
+    c?.name === "Uniforms";
+
+  // Fallback box composition for magic-box order items that never captured
+  // their per-component picks into bundle_selections (~66% of them). Without
+  // this the parent could only report the WHOLE box missing — never an
+  // individual item inside it.
+  const emptyBundleItemIds = items
+    .filter(
+      (it) =>
+        !(
+          Array.isArray(it.bundleSelections) &&
+          it.bundleSelections.length > 0
+        )
+    )
+    .map((it) => it.id);
+  const fallbackByItem = await fallbackBundleComponents(emptyBundleItemIds);
+
   type Unit = {
     unitKey: string;
     orderItemId: string;
@@ -217,6 +251,33 @@ export default async function NewMissingClaimPage({
     variantId: string;
     kind: string;
     attributes: { name: string; value: string }[];
+    /** Bookkit drill-down grouping — see exchange page. Absent otherwise. */
+    categoryKey?: string | null;
+    categoryName?: string | null;
+    /** Nested-bookkit key+name (magic box only) — nests categories under a
+     *  bookkit header. Absent on standalone bookkit + uniforms. */
+    bookkitKey?: string | null;
+    bookkitName?: string | null;
+    // Item-wise state (set in a post-pass): locked = already in a
+    // non-rejected request; expired = past this item's 10-day window.
+    locked?: boolean;
+    lockReturnNumber?: string | null;
+    /** Kit-parent only: some (not all) components already requested → box stays
+     *  open but the "whole box" option is disabled. */
+    someComponentsLocked?: boolean;
+    /** Bookkit book whose parcel hasn't arrived — greyed "not delivered yet". */
+    notDelivered?: boolean;
+    /** Kit-parent only: some components not delivered → "whole box" disabled. */
+    someComponentsUndelivered?: boolean;
+    expired?: boolean;
+  };
+
+  // Any nested kit (bookkit / "Book Set" / kind='kit') → category drill-down.
+  // loadBookkitCategoryTree returns [] for flat/single-item kits → flat path.
+  const isBookkitItem = (it: (typeof items)[number]): boolean => {
+    const vid = it.variantId;
+    const k = vid ? kindByVariant.get(vid) : null;
+    return k === "kit";
   };
 
   const units: Unit[] = [];
@@ -224,6 +285,97 @@ export default async function NewMissingClaimPage({
     const raw = Array.isArray(it.bundleSelections)
       ? (it.bundleSelections as Array<Record<string, unknown>>)
       : [];
+    const fb = fallbackByItem.get(it.id) ?? [];
+
+    // ── Bookkit branch: whole-kit + per-category leaf books (3-level) ──
+    if (isBookkitItem(it)) {
+      const cats = await loadBookkitCategoryTree(
+        it.variantId as string,
+        order.schoolId ?? null,
+      );
+      if (cats.length > 0) {
+        const vid = it.variantId ?? "";
+        units.push({
+          unitKey: `kitparent:${it.id}`,
+          orderItemId: it.id,
+          parentName: it.name,
+          isKitComponent: false,
+          isKitParent: true,
+          name: it.name,
+          size: it.size,
+          qty: it.qty,
+          variantId: vid,
+          kind: (vid ? kindByVariant.get(vid) : null) ?? "kit",
+          attributes: [],
+        });
+        for (const cat of cats) {
+          for (const leaf of cat.items) {
+            units.push({
+              unitKey: `comp:${it.id}:${leaf.componentIndex}`,
+              orderItemId: it.id,
+              parentName: it.name,
+              isKitComponent: true,
+              isKitParent: false,
+              name: leaf.name,
+              size: "",
+              qty: leaf.qty,
+              variantId: "",
+              kind: effectiveKind(leaf.kind, leaf.name),
+              attributes: [],
+              categoryKey: cat.categoryKey,
+              categoryName: cat.categoryName,
+            });
+          }
+        }
+        continue;
+      }
+    }
+    if (raw.length === 0 && fb.length > 0) {
+      // Recovered-composition path: whole-box unit + one unit per defined
+      // component (size unknown — sourced from the bundle definition).
+      units.push({
+        unitKey: `kitparent:${it.id}`,
+        orderItemId: it.id,
+        parentName: it.name,
+        isKitComponent: false,
+        isKitParent: true,
+        name: it.name,
+        size: it.size,
+        qty: it.qty,
+        variantId: it.variantId ?? "",
+        kind: (it.variantId ? kindByVariant.get(it.variantId) : null) ?? "kit",
+        attributes: [],
+      });
+      const fbSubCats = await resolveSubBundleCategories(
+        fb.map((c) => c.productId).filter(Boolean),
+        it.name,
+        schoolName,
+      );
+      for (const c of fb) {
+        const fbKind = effectiveKind(c.kind, c.name);
+        // Real sub-bundle category first, then the coarse kind bucket.
+        const fbCat = fbSubCats.get(c.productId) ?? kindCategoryFor(fbKind, c.name);
+        const fbBooks = fbCat && !isUniformCat(fbCat) ? BOOKS_GROUP : null;
+        units.push({
+          unitKey: `comp:${it.id}:${c.componentIndex}`,
+          orderItemId: it.id,
+          parentName: it.name,
+          isKitComponent: true,
+          isKitParent: false,
+          name: c.name,
+          size: "",
+          qty: c.qty,
+          variantId: "",
+          kind: fbKind,
+          attributes: [],
+          categoryKey: fbCat?.key,
+          categoryName: fbCat?.name,
+          bookkitKey: fbBooks?.key,
+          bookkitName: fbBooks?.name,
+        });
+      }
+      continue;
+    }
     if (raw.length > 0) {
       // Whole-kit unit first: the form's scope chooser offers "the whole
       // box never arrived" vs "only some items inside are missing".
@@ -243,14 +395,65 @@ export default async function NewMissingClaimPage({
           attributes: [],
         });
       }
-      raw.forEach((c, ci) => {
+      const rawProductIds: string[] = [];
+      for (const c of raw) {
+        const v = typeof c.variantId === "string" ? c.variantId : "";
+        const pid = v ? productByVariant.get(v) : null;
+        if (pid) rawProductIds.push(pid);
+      }
+      const rawSubCats = await resolveSubBundleCategories(
+        rawProductIds,
+        it.name,
+        schoolName,
+      );
+
+      for (let ci = 0; ci < raw.length; ci++) {
+        const c = raw[ci];
         const vid = typeof c.variantId === "string" ? c.variantId : "";
         const compName = typeof c.name === "string" ? c.name : "Component";
+        const compQty = typeof c.qty === "number" ? c.qty : 1;
+
+        // Hybrid: a bookkit component inside a magic box expands into its
+        // category → book leaf units; uniform components stay flat.
+        const cKind = vid ? kindByVariant.get(vid) ?? null : null;
+        if (cKind === "kit" && /^[0-9a-f-]{36}$/i.test(vid)) {
+          const subCats = await loadBookkitCategoryTree(vid, order.schoolId ?? null);
+          if (subCats.length > 0) {
+            for (const cat of subCats) {
+              for (const leaf of cat.items) {
+                units.push({
+                  unitKey: `comp:${it.id}:${ci}:${leaf.componentIndex}`,
+                  orderItemId: it.id,
+                  parentName: it.name,
+                  isKitComponent: true,
+                  isKitParent: false,
+                  name: leaf.name,
+                  size: "",
+                  qty: leaf.qty,
+                  variantId: "",
+                  kind: effectiveKind(leaf.kind, leaf.name),
+                  attributes: [],
+                  categoryKey: cat.categoryKey,
+                  categoryName: cat.categoryName,
+                  bookkitKey: `${ci}`,
+                  bookkitName: compName,
+                });
+              }
+            }
+            continue;
+          }
+        }
+
         const compAttrs = Array.isArray(c.attributes)
           ? (c.attributes as { name: string; value: string }[])
           : [];
         const compSize = typeof c.size === "string" ? c.size : "";
-        const compQty = typeof c.qty === "number" ? c.qty : 1;
+        const compKind = effectiveKind(vid ? kindByVariant.get(vid) ?? null : null, compName);
+        const compPid = vid ? productByVariant.get(vid) ?? null : null;
+        const compCat =
+          (compPid ? rawSubCats.get(compPid) : null) ??
+          kindCategoryFor(compKind, compName);
+        const compBooks = compCat && !isUniformCat(compCat) ? BOOKS_GROUP : null;
         units.push({
           unitKey: `comp:${it.id}:${ci}`,
           orderItemId: it.id,
@@ -261,10 +464,14 @@ export default async function NewMissingClaimPage({
           size: compSize,
           qty: compQty,
           variantId: vid,
-          kind: effectiveKind(vid ? kindByVariant.get(vid) ?? null : null, compName),
+          kind: compKind,
           attributes: compAttrs,
+          categoryKey: compCat?.key,
+          categoryName: compCat?.name,
+          bookkitKey: compBooks?.key,
+          bookkitName: compBooks?.name,
         });
-      });
+      }
     } else {
       const vid = it.variantId ?? "";
       units.push({
@@ -284,6 +491,87 @@ export default async function NewMissingClaimPage({
   }
 
   if (units.length === 0) notFound();
+
+  // Item-wise post-pass: tag each unit with its lock (already in a request)
+  // and expired (past its 10-day window) state so the form greys them. Lock is
+  // COMPONENT-level: a Magic Box collapses only when the whole box is out; when
+  // only some components are claimed the box stays open for the rest.
+  for (const u of units) {
+    const st = lockStateForUnit(lockByItem.get(u.orderItemId), u);
+    u.locked = st.locked;
+    u.lockReturnNumber = st.ref;
+    if (u.isKitParent) u.someComponentsLocked = st.someComponentsLocked;
+    u.expired = expiredByOrderItem.has(u.orderItemId);
+  }
+
+  // Drop held-back lines (out of stock / still out-for-delivery). We already
+  // know they didn't arrive and will ship them later, so they must not be
+  // reportable as missing. Same per-item signal as the order-page badge.
+  const heldBack = await getHeldBackOrderItemIds(orderId, order.orderNumber);
+
+  // Magic-box BOOKKIT parcel gate (2026-07-09, revised) — mirror of exchange/new.
+  // The books ship in a separate bookkit parcel; until it's delivered they
+  // aren't "missing", they're still on the way. Keep them VISIBLE but DISABLED
+  // with a "not delivered yet" note (selectable once the parcel lands). null =
+  // no bookkit parcel info → don't gate.
+  const bookkitDelivered = await getBookkitParcelDelivered(order.orderNumber);
+  const undeliveredBookkit = bookkitDelivered === false;
+  const isBookUnit = (u: (typeof units)[number]) =>
+    u.isKitComponent && (u.categoryKey != null || u.kind === "book");
+  if (undeliveredBookkit) {
+    for (const u of units) if (isBookUnit(u)) u.notDelivered = true;
+    for (const u of units) {
+      if (u.isKitParent) {
+        u.someComponentsUndelivered = units.some(
+          (c) => c.orderItemId === u.orderItemId && c.isKitComponent && c.notDelivered,
+        );
+      }
+    }
+  }
+
+  // Magic-box UNIFORM/ACCESSORY per-component gate (2026-07-13) — mirror of
+  // exchange/new. A uniform component with no delivered shipment (item_code ==
+  // variant sku) is still on the way, so it can't be "missing" — grey it.
+  const pendingCompVars = await getPendingComponentVariantIds(
+    orderId,
+    order.orderNumber
+  );
+  if (pendingCompVars.size > 0) {
+    for (const u of units) {
+      if (u.isKitComponent && u.variantId && pendingCompVars.has(u.variantId.toLowerCase())) {
+        u.notDelivered = true;
+      }
+    }
+  }
+
+  // Only DELIVERED, not-held-back items can be reported missing. A pending /
+  // not-yet-shipped line hasn't arrived, so it can't be "missing" (it's still
+  // on the way) — it must never appear in the picker, even on a partially-
+  // delivered order. `delivered` is the authoritative per-item signal from
+  // classifyReturnItems; heldBack additionally covers a line marked delivered
+  // at the order level but still lacking its own delivered shipment row.
+  // Shown-but-disabled rather than filtered out (2026-07-20), matching the
+  // exchange flow: the customer can see the pending lines and why they aren't
+  // reportable yet, instead of them vanishing (or the page 404-ing).
+  for (const u of units) {
+    if (!itemElig.get(u.orderItemId)?.delivered || heldBack.has(u.orderItemId)) {
+      u.notDelivered = true;
+    }
+  }
+  const eligibleUnits = units;
+
+  // Whole-box "never arrived" is retired — a Magic Box is only ever reportable
+  // item-by-item. A kit parent whose components didn't survive has nothing
+  // under it: drop it, or it renders as a lone selectable row (and, as the only
+  // unit, auto-selects via singleUnit). Pending components still count as
+  // present so the parent renders and lists them as awaiting delivery.
+  const hasComponents = new Set(
+    eligibleUnits.filter((u) => u.isKitComponent).map((u) => u.orderItemId)
+  );
+  const selectableUnits = eligibleUnits.filter(
+    (u) => !u.isKitParent || hasComponents.has(u.orderItemId)
+  );
+  if (selectableUnits.length === 0) notFound();
 
   return (
     <main className="min-h-screen">
@@ -306,7 +594,7 @@ export default async function NewMissingClaimPage({
           <MissingForm
             orderId={orderId}
             orderNumber={order.orderNumber}
-            units={units}
+            units={selectableUnits}
           />
         </div>
       </div>

@@ -10,15 +10,28 @@ import {
   productAttributes,
   productAttributeValues,
   returns,
+  schools,
 } from "@/db/schema";
 import { getCurrentParent } from "@/lib/session";
-import { isExchangeTester, isExchangeScopeRelaxed } from "@/lib/exchange-gate";
-import { isOrderDeliveredForReturns } from "@/lib/return-eligibility";
-import { findOpenRequestForOrder } from "@/lib/exchange";
+import { isExchangeTester, isExchangeScopeRelaxed, isExchangeOwnershipRelaxed } from "@/lib/exchange-gate";
+import { getParentOrderDetailFromErp } from "@/lib/erp-customer-orders";
+import {
+  getHeldBackOrderItemIds,
+  getLockedComponentSignatures,
+  lockStateForUnit,
+  classifyReturnItems,
+  getBookkitParcelDelivered,
+  getPendingComponentVariantIds,
+} from "@/lib/return-line-eligibility";
+import {
+  fallbackBundleComponents,
+  loadBookkitCategoryTree,
+  kindCategoryFor,
+  resolveSubBundleCategories,
+} from "@/lib/bundle-fallback";
 import { Nav } from "@/components/Nav";
 import { Footer } from "@/components/Footer";
 import { ExchangeForm } from "@/components/shop/orders/exchange/ExchangeForm";
-import { RequestBlockedNotice } from "@/components/shop/orders/RequestBlockedNotice";
 
 /**
  * Customer-facing form for raising an exchange request. Server-rendered
@@ -38,9 +51,11 @@ export const dynamic = "force-dynamic";
 async function resolveLocalOrderId(
   idOrNumber: string,
   parentId: string
-): Promise<string | null> {
-  // Dev: ownership scope relaxed — see isExchangeScopeRelaxed.
-  const ownerScope = isExchangeScopeRelaxed()
+): Promise<{ id: string; orderDelivered: boolean; deliveredAt: Date | null } | null> {
+  // Ownership relaxed (all envs) — see isExchangeOwnershipRelaxed. Family
+  // membership is the security boundary and is enforced below via
+  // getParentOrderDetailFromErp (null → not this parent's family).
+  const ownerScope = isExchangeOwnershipRelaxed()
     ? undefined
     : eq(orders.parentId, parentId);
   const isUuid = /^[0-9a-f-]{36}$/i.test(idOrNumber);
@@ -56,16 +71,17 @@ async function resolveLocalOrderId(
         .where(and(eq(orders.orderNumber, idOrNumber), ownerScope))
         .limit(1);
   if (!row) return null;
-  // Delivered gate matches the Request-exchange button: delivered (local
-  // status OR mirror-derived) AND within the 15-day window from delivery.
-  // See isOrderDeliveredForReturns.
-  const delivered = await isOrderDeliveredForReturns(
-    parentId,
-    row.orderNumber,
-    row.status,
-    row.deliveredAt ?? null
-  );
-  return delivered ? row.id : null;
+  // Family authorization (same boundary the button gate uses). We no longer
+  // gate the FORM on order-level delivered/window — that's now decided
+  // PER ITEM (item-wise model): a partially-delivered order must open the
+  // form for its delivered items. Non-family → null → 404.
+  const detail = await getParentOrderDetailFromErp(parentId, row.orderNumber);
+  if (!detail) return null;
+  const orderDelivered =
+    row.status === "delivered" || detail.status === "delivered";
+  const deliveredAt =
+    row.deliveredAt ?? (detail.deliveredAt ? new Date(detail.deliveredAt) : null);
+  return { id: row.id, orderDelivered, deliveredAt };
 }
 
 type SiblingLite = {
@@ -91,45 +107,16 @@ export default async function NewExchangePage({
   const { id } = await params;
 
   const decoded = decodeURIComponent(id);
-  const orderId = await resolveLocalOrderId(decoded, me.id);
-  if (!orderId) notFound();
+  const resolved = await resolveLocalOrderId(decoded, me.id);
+  if (!resolved) notFound();
+  const orderId = resolved.id;
 
   const [order] = await db
-    .select({ id: orders.id, orderNumber: orders.orderNumber })
+    .select({ id: orders.id, orderNumber: orders.orderNumber, schoolId: orders.schoolId })
     .from(orders)
     .where(eq(orders.id, orderId))
     .limit(1);
   if (!order) notFound();
-
-  // Cross-flow lifetime lock: if a non-rejected exchange OR missing
-  // request already exists for this order, the parent can't start a new
-  // one — show the popup instead of the form. (Approved → permanent;
-  // pending → "in progress". Dev relaxes the lock so testers can re-raise.)
-  const blocker = isExchangeScopeRelaxed()
-    ? null
-    : await findOpenRequestForOrder(orderId, me.id);
-  if (blocker) {
-    return (
-      <main className="min-h-screen">
-        <Nav />
-        <div className="mx-auto max-w-2xl px-5 lg:px-8 pt-8 pb-16">
-          <a
-            href={`/shop/orders/${id}`}
-            className="text-[13px] font-medium text-ink-500 hover:text-ink-900"
-          >
-            ← Back to order
-          </a>
-        </div>
-        <RequestBlockedNotice
-          flow="exchange"
-          existingKind={blocker.kind}
-          existingStatus={blocker.status}
-          orderHref={`/shop/orders/${id}`}
-        />
-        <Footer />
-      </main>
-    );
-  }
 
   const items = await db
     .select({
@@ -145,28 +132,58 @@ export default async function NewExchangePage({
     .where(eq(orderItems.orderId, orderId));
   if (items.length === 0) notFound();
 
-  // Lookup any active exchanges so we can mark already-locked order_items
-  // in the picker (matches the per-order-item gate in lib/exchange.ts).
-  const activeRets = await db
-    .select({
-      returnNumber: returns.returnNumber,
-      itemIds: returns.itemIds,
-      status: returns.status,
-      kind: returns.kind,
-    })
-    .from(returns)
-    .where(and(eq(returns.orderId, orderId), eq(returns.parentId, me.id)));
-  const lockedByOrderItem = new Map<string, string | null>();
-  for (const r of activeRets) {
-    if (r.kind !== "exchange") continue;
-    if (r.status !== "requested" && r.status !== "approved") continue;
-    const ids = Array.isArray(r.itemIds) ? (r.itemIds as string[]) : [];
-    for (const oid of ids) {
-      if (!lockedByOrderItem.has(oid)) {
-        lockedByOrderItem.set(oid, r.returnNumber ?? null);
-      }
-    }
-  }
+  // Fallback box composition for magic-box order items that never stored
+  // their per-component picks in bundle_selections (~66%). Lets the parent
+  // exchange an individual item inside the box instead of only the whole
+  // box. The exact size isn't recoverable from the bundle definition, so
+  // those components are flagged `currentUnknown` and the form asks the
+  // parent which size they currently have.
+  const emptyBundleItemIds = items
+    .filter(
+      (it) =>
+        !(Array.isArray(it.bundleSelections) && it.bundleSelections.length > 0)
+    )
+    .map((it) => it.id);
+  const fallbackByItem = await fallbackBundleComponents(emptyBundleItemIds);
+  const fallbackProductIds = new Set<string>();
+  for (const comps of fallbackByItem.values())
+    for (const c of comps) fallbackProductIds.add(c.productId);
+
+  // Item-wise eligibility (2026-07-08). Per-ITEM 10-day window: each item is
+  // "expired" once past 10 days from ITS OWN delivery date (per-line
+  // outward_shipments, falling back to the order delivery date for
+  // bundle/bookkit/magic-box parcels). Dev relaxes expiry so testers on the
+  // prod snapshot — every order long delivered — can still file.
+  const itemElig = await classifyReturnItems(
+    orderId,
+    order.orderNumber,
+    resolved.orderDelivered,
+    resolved.deliveredAt,
+  );
+  // Nothing physically delivered yet → nothing to exchange (a fully-pending
+  // order). Delivered items in a partially-shipped order still pass.
+  if (![...itemElig.values()].some((e) => e.delivered)) notFound();
+  const expiredByOrderItem = new Set<string>(
+    isExchangeScopeRelaxed()
+      ? []
+      : [...itemElig].filter(([, e]) => e.expired).map(([oid]) => oid),
+  );
+
+  // Cross-flow per-ITEM lock: order_items already in a NON-rejected exchange
+  // OR missing request (freed only on rejection). Same Map shape the unit
+  // builder expects (order_item_id → RTN/claim ref). Scoped to the order, so
+  // a care-team request locks the item for the whole family.
+  // Component-level lock (2026-07-09). A Magic Box is ONE order_item whose
+  // components share its id, so the old order_item-level lock collapsed the
+  // whole box once ANY component was requested. `lockByItem` resolves the lock
+  // PER COMPONENT; the authoritative per-unit locked/lockReturnNumber/
+  // someComponentsLocked are assigned in the post-pass just before render (the
+  // inline `lockedByOrderItem` below is a base-lock-only compat default that
+  // the post-pass overrides).
+  const lockByItem = await getLockedComponentSignatures(orderId);
+  const lockedByOrderItem = new Map<string, string | null>(
+    [...lockByItem].filter(([, i]) => i.baseLocked).map(([oid, i]) => [oid, i.baseRef]),
+  );
 
   // Collect every variantId we need siblings for — both the parent
   // variantIds (non-kit items) AND every kit-component variantId.
@@ -203,7 +220,11 @@ export default async function NewExchangePage({
   }
 
   // Per-product variant list (each row's siblings = same-product variants).
-  const productIds = Array.from(new Set(productByVariant.values()));
+  // Include fallback component products so recovered-composition components
+  // get their full size/variant list for the swap picker.
+  const productIds = Array.from(
+    new Set([...productByVariant.values(), ...fallbackProductIds])
+  );
   const variantsByProduct = new Map<string, SiblingLite[]>();
   if (productIds.length > 0) {
     const variantRows = await db
@@ -267,6 +288,25 @@ export default async function NewExchangePage({
     return rawKind ?? "other";
   };
 
+  // School name feeds the sub-bundle scoping vocabulary (the box name alone
+  // says "SAS BP" but the matching sub-bundles are named for the school,
+  // e.g. "SAS Suchitra Other" ← St. Andrews High School Suchitra).
+  const [schoolRow] = order.schoolId
+    ? await db
+        .select({ name: schools.name })
+        .from(schools)
+        .where(eq(schools.id, order.schoolId))
+        .limit(1)
+    : [null as { name: string } | null];
+  const schoolName = schoolRow?.name ?? null;
+
+  // Non-uniform components nest under a single "Books" header so the picker
+  // renders the three-level tree: Magic Box → Books → Text Books / Notebooks /
+  // Other Items, with Uniforms as a sibling of Books.
+  const BOOKS_GROUP = { key: "books", name: "Books" };
+  const isUniformCat = (c: { name: string } | null | undefined) =>
+    c?.name === "Uniforms";
+
   // Build the flat units list. For each order item:
   //   - if it has bundle_selections → emit one unit per kit component
   //   - otherwise → emit one unit for the order item itself
@@ -287,8 +327,46 @@ export default async function NewExchangePage({
     attributes: { name: string; value: string }[];
     hasSiblings: boolean;
     siblings: SiblingLite[];
+    /** True when this component's exact ordered variant/size is unknown
+     *  (recovered from the bundle definition). The form asks the parent
+     *  which size they currently have before the swap. */
+    currentUnknown: boolean;
+    /** Bookkit drill-down grouping: which category (sub_bundle) this leaf
+     *  book sits under. Absent on non-bookkit units. */
+    categoryKey?: string | null;
+    categoryName?: string | null;
+    /** For a bookkit nested INSIDE a magic box: the bookkit's key+name, so the
+     *  form nests its categories under a bookkit header. Absent on a standalone
+     *  bookkit (the card itself is the bookkit) and on uniforms. */
+    bookkitKey?: string | null;
+    bookkitName?: string | null;
     locked: boolean;
     lockReturnNumber: string | null;
+    /** Kit-parent only: SOME (but not all) components are already in a request.
+     *  The box stays open for the rest, but the "whole box" option is disabled. */
+    someComponentsLocked?: boolean;
+    /** Bookkit book whose parcel hasn't arrived yet — shown greyed with a
+     *  "not delivered yet" note, becomes selectable once the parcel lands. */
+    notDelivered?: boolean;
+    /** Kit-parent only: some components aren't delivered yet → "whole box"
+     *  option disabled (you can't exchange a box that's only part-arrived). */
+    someComponentsUndelivered?: boolean;
+    /** Delivered but past this item's own 10-day window — shown greyed with
+     *  the "request period expired" note, not selectable (item-wise). */
+    expired?: boolean;
+  };
+
+  // A nested kit (bookkit, "Book Set", or any products.kind='kit') has
+  // CATEGORIES (sub_bundles) of leaf books — a 3-level tree the flat
+  // bundle_selections/fallback paths collapse. For these we emit one
+  // whole-kit unit + one leaf unit per book, tagged with its category, so
+  // the form offers whole-kit / whole-category / individual-book. Applies to
+  // ALL kits (not just name~"bookkit"); loadBookkitCategoryTree returns []
+  // for flat / single-item kits, which then fall through to the flat path.
+  const isBookkitItem = (it: (typeof items)[number]): boolean => {
+    const vid = it.variantId;
+    const k = vid ? kindByVariant.get(vid) : null;
+    return k === "kit";
   };
 
   const units: Unit[] = [];
@@ -297,6 +375,148 @@ export default async function NewExchangePage({
     const raw = Array.isArray(it.bundleSelections)
       ? (it.bundleSelections as Array<Record<string, unknown>>)
       : [];
+    const fb = fallbackByItem.get(it.id) ?? [];
+
+    // ── Bookkit branch: whole-kit + per-category leaf books ──────────
+    if (isBookkitItem(it)) {
+      const cats = await loadBookkitCategoryTree(
+        it.variantId as string,
+        order.schoolId ?? null
+      );
+      if (cats.length > 0) {
+        const vid = it.variantId ?? "";
+        units.push({
+          unitKey: `kitparent:${it.id}`,
+          orderItemId: it.id,
+          parentName: it.name,
+          parentImage: it.image ?? null,
+          parentHeadLabel: parentHead,
+          isKitComponent: false,
+          isKitParent: true,
+          name: it.name,
+          size: it.size,
+          qty: it.qty,
+          variantId: vid,
+          imageUrl: it.image ?? null,
+          kind: (vid ? kindByVariant.get(vid) : null) ?? "kit",
+          attributes: [],
+          hasSiblings: false,
+          siblings: [],
+          currentUnknown: false,
+          categoryKey: null,
+          categoryName: null,
+          locked: lockedByOrderItem.has(it.id),
+          lockReturnNumber: lockedByOrderItem.get(it.id) ?? null,
+        });
+        for (const cat of cats) {
+          for (const leaf of cat.items) {
+            units.push({
+              unitKey: `comp:${it.id}:${leaf.componentIndex}`,
+              orderItemId: it.id,
+              parentName: it.name,
+              parentImage: it.image ?? null,
+              parentHeadLabel: parentHead,
+              isKitComponent: true,
+              isKitParent: false,
+              name: leaf.name,
+              size: "",
+              qty: leaf.qty,
+              variantId: "",
+              imageUrl: null,
+              // Leaf books flow through "book" reasons regardless of the
+              // catalog kind (matches effectiveKind); "just capture the
+              // book" — no size picker, so no siblings / currentUnknown.
+              kind: effectiveKind(leaf.kind, leaf.name),
+              attributes: [],
+              hasSiblings: false,
+              siblings: [],
+              currentUnknown: false,
+              categoryKey: cat.categoryKey,
+              categoryName: cat.categoryName,
+              locked: lockedByOrderItem.has(it.id),
+              lockReturnNumber: lockedByOrderItem.get(it.id) ?? null,
+            });
+          }
+        }
+        continue;
+      }
+      // No resolvable categories → fall through to the flat paths below.
+    }
+    if (raw.length === 0 && fb.length > 0) {
+      // Recovered-composition path: whole-box unit + one unit per defined
+      // component. Each component lists ALL variants of its product as swap
+      // targets (we don't know which the parent has → currentUnknown).
+      const vid = it.variantId ?? "";
+      const parentProductId = vid ? productByVariant.get(vid) ?? null : null;
+      const parentVariants = parentProductId
+        ? variantsByProduct.get(parentProductId) ?? []
+        : [];
+      const parentSiblings = vid
+        ? parentVariants.filter((v) => v.id !== vid)
+        : [];
+      units.push({
+        unitKey: `kitparent:${it.id}`,
+        orderItemId: it.id,
+        parentName: it.name,
+        parentImage: it.image ?? null,
+        parentHeadLabel: parentHead,
+        isKitComponent: false,
+        isKitParent: true,
+        name: it.name,
+        size: it.size,
+        qty: it.qty,
+        variantId: vid,
+        imageUrl: it.image ?? null,
+        kind: (vid ? kindByVariant.get(vid) : null) ?? "kit",
+        attributes: [],
+        hasSiblings: parentSiblings.length > 0,
+        siblings: parentSiblings,
+        currentUnknown: false,
+        locked: lockedByOrderItem.has(it.id),
+        lockReturnNumber: lockedByOrderItem.get(it.id) ?? null,
+      });
+      // Sub-bundle categories for this box's components (Text Books /
+      // Notebooks / Hindi / Other Items …), scoped to the box's school+grade.
+      const fbSubCats = await resolveSubBundleCategories(
+        fb.map((c) => c.productId).filter(Boolean),
+        it.name,
+        schoolName,
+      );
+      for (const c of fb) {
+        const compVariants = variantsByProduct.get(c.productId) ?? [];
+        const fbKind = effectiveKind(c.kind, c.name);
+        // Prefer the real sub-bundle category; fall back to the coarse
+        // kind-based bucket when the catalog can't place the component.
+        const fbCat = fbSubCats.get(c.productId) ?? kindCategoryFor(fbKind, c.name);
+        const fbBooks = fbCat && !isUniformCat(fbCat) ? BOOKS_GROUP : null;
+        units.push({
+          unitKey: `comp:${it.id}:${c.componentIndex}`,
+          orderItemId: it.id,
+          parentName: it.name,
+          parentImage: it.image ?? null,
+          parentHeadLabel: parentHead,
+          isKitComponent: true,
+          isKitParent: false,
+          name: c.name,
+          size: "",
+          qty: c.qty,
+          variantId: "",
+          imageUrl: null,
+          kind: fbKind,
+          attributes: [],
+          hasSiblings: compVariants.length > 0,
+          siblings: compVariants,
+          currentUnknown: true,
+          categoryKey: fbCat?.key,
+          categoryName: fbCat?.name,
+          bookkitKey: fbBooks?.key,
+          bookkitName: fbBooks?.name,
+          locked: lockedByOrderItem.has(it.id),
+          lockReturnNumber: lockedByOrderItem.get(it.id) ?? null,
+        });
+      }
+      continue;
+    }
     if (raw.length > 0) {
       // Whole-kit unit first: the form's scope chooser offers "exchange
       // the whole box" vs "only some items inside". Kit-level reasons
@@ -324,21 +544,92 @@ export default async function NewExchangePage({
           attributes: [],
           hasSiblings: siblings.length > 0,
           siblings,
+          currentUnknown: false,
           locked: lockedByOrderItem.has(it.id),
           lockReturnNumber: lockedByOrderItem.get(it.id) ?? null,
         });
       }
-      raw.forEach((c, ci) => {
+      // Sub-bundle categories for this box's stored components. A magic box
+      // keeps its books FLAT here (no nested bookkit component), so without
+      // this the 24 books render as one undifferentiated run.
+      const rawProductIds: string[] = [];
+      for (const c of raw) {
+        const v = typeof c.variantId === "string" ? c.variantId : "";
+        const pid = v ? productByVariant.get(v) : null;
+        if (pid) rawProductIds.push(pid);
+      }
+      const rawSubCats = await resolveSubBundleCategories(
+        rawProductIds,
+        it.name,
+        schoolName,
+      );
+
+      for (let ci = 0; ci < raw.length; ci++) {
+        const c = raw[ci];
         const vid = typeof c.variantId === "string" ? c.variantId : "";
+        const compName = typeof c.name === "string" ? c.name : "Component";
+        const compQty = typeof c.qty === "number" ? c.qty : 1;
+
+        // Hybrid: a component that is itself a nested kit (a bookkit sitting
+        // inside a magic box) expands into its category → book leaf units,
+        // so the parent can drill into individual books. Uniform components
+        // stay flat below (their ordered size matters).
+        const cKind = vid ? kindByVariant.get(vid) ?? null : null;
+        if (cKind === "kit" && /^[0-9a-f-]{36}$/i.test(vid)) {
+          const subCats = await loadBookkitCategoryTree(vid, order.schoolId ?? null);
+          if (subCats.length > 0) {
+            for (const cat of subCats) {
+              for (const leaf of cat.items) {
+                units.push({
+                  unitKey: `comp:${it.id}:${ci}:${leaf.componentIndex}`,
+                  orderItemId: it.id,
+                  parentName: it.name,
+                  parentImage: it.image ?? null,
+                  parentHeadLabel: parentHead,
+                  isKitComponent: true,
+                  isKitParent: false,
+                  name: leaf.name,
+                  size: "",
+                  qty: leaf.qty,
+                  variantId: "",
+                  imageUrl: null,
+                  kind: effectiveKind(leaf.kind, leaf.name),
+                  attributes: [],
+                  hasSiblings: false,
+                  siblings: [],
+                  currentUnknown: false,
+                  categoryKey: cat.categoryKey,
+                  categoryName: cat.categoryName,
+                  // The nested bookkit this leaf belongs to — lets the form
+                  // group these categories under a bookkit header inside the
+                  // magic box (instead of flat alongside the uniforms).
+                  bookkitKey: `${ci}`,
+                  bookkitName: compName,
+                  locked: lockedByOrderItem.has(it.id),
+                  lockReturnNumber: lockedByOrderItem.get(it.id) ?? null,
+                });
+              }
+            }
+            continue;
+          }
+        }
+
+        // Flat component (uniform pieces, single items) — unchanged.
         const productId = vid ? productByVariant.get(vid) ?? null : null;
         const allVariants = productId ? variantsByProduct.get(productId) ?? [] : [];
         const siblings = vid ? allVariants.filter((v) => v.id !== vid) : [];
-        const compName = typeof c.name === "string" ? c.name : "Component";
         const compAttrs = Array.isArray(c.attributes)
           ? (c.attributes as { name: string; value: string }[])
           : [];
         const compSize = typeof c.size === "string" ? c.size : "";
-        const compQty = typeof c.qty === "number" ? c.qty : 1;
+        const compKind = effectiveKind(vid ? kindByVariant.get(vid) ?? null : null, compName);
+        // Real sub-bundle category first (Text Books / Notebooks / …), then
+        // the coarse kind-based bucket so uniform pieces still group.
+        const compPid = vid ? productByVariant.get(vid) ?? null : null;
+        const compCat =
+          (compPid ? rawSubCats.get(compPid) : null) ??
+          kindCategoryFor(compKind, compName);
+        const compBooks = compCat && !isUniformCat(compCat) ? BOOKS_GROUP : null;
         units.push({
           unitKey: `comp:${it.id}:${ci}`,
           orderItemId: it.id,
@@ -352,14 +643,19 @@ export default async function NewExchangePage({
           qty: compQty,
           variantId: vid,
           imageUrl: null,
-          kind: effectiveKind(vid ? kindByVariant.get(vid) ?? null : null, compName),
+          kind: compKind,
           attributes: compAttrs,
           hasSiblings: siblings.length > 0,
           siblings,
+          currentUnknown: false,
+          categoryKey: compCat?.key,
+          categoryName: compCat?.name,
+          bookkitKey: compBooks?.key,
+          bookkitName: compBooks?.name,
           locked: lockedByOrderItem.has(it.id),
           lockReturnNumber: lockedByOrderItem.get(it.id) ?? null,
         });
-      });
+      }
     } else {
       const vid = it.variantId ?? "";
       const productId = vid ? productByVariant.get(vid) ?? null : null;
@@ -388,6 +684,7 @@ export default async function NewExchangePage({
         attributes: itAxes,
         hasSiblings: siblings.length > 0,
         siblings,
+        currentUnknown: false,
         locked: lockedByOrderItem.has(it.id),
         lockReturnNumber: lockedByOrderItem.get(it.id) ?? null,
       });
@@ -395,6 +692,102 @@ export default async function NewExchangePage({
   }
 
   if (units.length === 0) notFound();
+
+  // Authoritative per-unit lock post-pass (component-level). A Magic Box card
+  // now collapses ONLY when the WHOLE box is out (kit-parent baseLocked); when
+  // only some components are requested, the box stays open, those components
+  // show locked, and the "whole box" option is disabled (someComponentsLocked).
+  for (const u of units) {
+    const st = lockStateForUnit(lockByItem.get(u.orderItemId), u);
+    u.locked = st.locked;
+    u.lockReturnNumber = st.ref;
+    if (u.isKitParent) u.someComponentsLocked = st.someComponentsLocked;
+  }
+
+  // Flag expired units (past their per-item 10-day window). They stay in the
+  // picker but render greyed / not-selectable with the expiry note.
+  for (const u of units) u.expired = expiredByOrderItem.has(u.orderItemId);
+
+  // Drop held-back lines (out of stock / still out-for-delivery). The
+  // customer doesn't have them yet — we already know and will ship them
+  // later — so they can't be exchanged. Same per-item signal as the
+  // order-page badge; kit / Magic-Box / bundle parents are never flagged.
+  const heldBack = await getHeldBackOrderItemIds(orderId, order.orderNumber);
+
+  // Magic-box BOOKKIT parcel gate (2026-07-09, revised). A magic box's books
+  // ship in a separate bookkit parcel that often lands AFTER the uniforms —
+  // while the order-level status already reads "delivered". The books stay
+  // VISIBLE but are shown DISABLED with a "not delivered yet" note until their
+  // parcel is delivered (they become selectable automatically once it lands).
+  // null = no bookkit parcel info → don't gate.
+  const bookkitDelivered = await getBookkitParcelDelivered(order.orderNumber);
+  const isBookUnit = (u: (typeof units)[number]) =>
+    u.isKitComponent && (u.categoryKey != null || u.kind === "book");
+  const undeliveredBookkit = bookkitDelivered === false;
+  if (undeliveredBookkit) {
+    for (const u of units) if (isBookUnit(u)) u.notDelivered = true;
+    // A kit parent whose books aren't delivered can't be exchanged "whole box"
+    // (part of it hasn't arrived) — flag it so the form disables that option.
+    for (const u of units) {
+      if (u.isKitParent) {
+        u.someComponentsUndelivered = units.some(
+          (c) => c.orderItemId === u.orderItemId && c.isKitComponent && c.notDelivered,
+        );
+      }
+    }
+  }
+
+  // Magic-box UNIFORM/ACCESSORY per-component gate (2026-07-13). A box is one
+  // order_item, so classifyReturnItems marks every component delivered via the
+  // box's order-level flag. But uniform components dispatch as per-component
+  // parcels (item_code == variant sku); a component with no delivered shipment
+  // (e.g. an in-transit hoodie) is still pending. Grey those, matching audit.
+  const pendingCompVars = await getPendingComponentVariantIds(
+    orderId,
+    order.orderNumber
+  );
+  if (pendingCompVars.size > 0) {
+    for (const u of units) {
+      if (u.isKitComponent && u.variantId && pendingCompVars.has(u.variantId.toLowerCase())) {
+        u.notDelivered = true;
+      }
+    }
+  }
+
+  // Only DELIVERED, not-held-back items are exchangeable. A pending line isn't
+  // in the customer's hands, so it must never be SELECTABLE — but it is still
+  // SHOWN, disabled, with a "Pending delivery" note. Silently dropping it (the
+  // behaviour until 2026-07-20) left the customer unable to tell the difference
+  // between "this item can't be exchanged yet" and "we lost your item", and on
+  // a wholly-undelivered order produced a bare 404. `delivered` is the
+  // authoritative per-item signal from classifyReturnItems (per-line
+  // outward_shipments, order-level fallback for bundle/bookkit parcels);
+  // heldBack additionally covers a line marked delivered at the order level but
+  // still lacking its own delivered shipment row, plus audit's packing_state
+  // pin (out-of-stock / still-packing lines).
+  for (const u of units) {
+    if (!itemElig.get(u.orderItemId)?.delivered || heldBack.has(u.orderItemId)) {
+      u.notDelivered = true;
+    }
+  }
+  const eligibleUnits = units;
+
+  // Whole-box exchange is retired — a Magic Box is only ever exchangeable
+  // item-by-item. A kit parent is a display header for its component rows, so
+  // one whose components didn't survive (unresolvable composition) has nothing
+  // under it: drop it, or it renders as a lone selectable "Whole box" row (and,
+  // as the only unit, auto-selects via singleUnit). Components that are merely
+  // PENDING still count as present — the parent must render so the customer can
+  // see them listed as awaiting delivery.
+  const hasComponents = new Set(
+    eligibleUnits.filter((u) => u.isKitComponent).map((u) => u.orderItemId)
+  );
+  const selectableUnits = eligibleUnits.filter(
+    (u) => !u.isKitParent || hasComponents.has(u.orderItemId)
+  );
+  // 404 only when there is genuinely nothing to show. If every unit is merely
+  // pending, we render them disabled rather than 404-ing.
+  if (selectableUnits.length === 0) notFound();
 
   return (
     <main className="min-h-screen">
@@ -416,7 +809,7 @@ export default async function NewExchangePage({
           <ExchangeForm
             orderId={orderId}
             orderNumber={order.orderNumber}
-            units={units}
+            units={selectableUnits}
           />
         </div>
       </div>

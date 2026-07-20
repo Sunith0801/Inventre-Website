@@ -27,6 +27,26 @@ type Unit = {
   variantId: string;
   kind: string;
   attributes: { name: string; value: string }[];
+  /** Bookkit drill-down: the category (sub_bundle) this leaf book sits under.
+   *  Present only on bookkit component units. */
+  categoryKey?: string | null;
+  categoryName?: string | null;
+  /** Nested-bookkit key+name (magic box only) — nests categories under a
+   *  bookkit header. Absent on standalone bookkit + uniforms. */
+  bookkitKey?: string | null;
+  bookkitName?: string | null;
+  // Item-wise: locked = already in a non-rejected exchange/missing request;
+  // expired = past this item's 10-day window. Both render greyed / disabled.
+  locked?: boolean;
+  lockReturnNumber?: string | null;
+  // Kit-parent only: some (not all) components already in a request → box stays
+  // open for the rest, but the "whole box" option is disabled.
+  someComponentsLocked?: boolean;
+  // Bookkit book whose parcel hasn't arrived — greyed "not delivered yet".
+  notDelivered?: boolean;
+  // Kit-parent only: some components not delivered → "whole box" disabled.
+  someComponentsUndelivered?: boolean;
+  expired?: boolean;
 };
 
 type StagedPhoto = {
@@ -88,7 +108,6 @@ export function MissingForm({
   // Per-unit qtyShort, keyed by unit index. Defaults to the unit's full
   // ordered qty (most missing claims are "all of them didn't arrive").
   const [qtyShortByIdx, setQtyShortByIdx] = useState<Record<number, number>>({});
-  const [notes, setNotes] = useState<string>("");
   const [photos, setPhotos] = useState<StagedPhoto[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -127,18 +146,41 @@ export function MissingForm({
     );
   }, [units]);
 
-  const [kitScope, setKitScope] = useState<Record<string, "" | "full" | "items">>({});
+  // ── Bookkit category grouping (mirrors the exchange form) ──────
+  const categoriesFor = (compIdxs: number[]) => {
+    const groups = new Map<string, { name: string; idxs: number[] }>();
+    for (const ci of compIdxs) {
+      const u = units[ci];
+      const key = u?.categoryKey ?? null;
+      if (!key) continue;
+      const g = groups.get(key) ?? { name: u!.categoryName ?? "Items", idxs: [] };
+      g.idxs.push(ci);
+      groups.set(key, g);
+    }
+    return groups;
+  };
 
-  const setKitScopeFor = (orderItemId: string, scope: "full" | "items") => {
-    const g = kitGroups.get(orderItemId);
-    if (!g) return;
+  const [openCategories, setOpenCategories] = useState<Record<string, boolean>>({});
+  const toggleCategoryOpen = (catKey: string) =>
+    setOpenCategories((p) => ({ ...p, [catKey]: !p[catKey] }));
+
+  // A unit can't be selected/deselected when it's locked (already in a
+  // request), expired (past its window), or not yet delivered.
+  const isUnitDisabled = (i: number): boolean => {
+    const u = units[i];
+    return !!u && (!!u.locked || !!u.expired || !!u.notDelivered);
+  };
+
+  const setCategorySelected = (idxs: number[], selected: boolean) => {
     setSelectionConfirmed(false);
-    setKitScope((prev) => ({ ...prev, [orderItemId]: scope }));
     setSelectedIdxs((prev) => {
-      const drop = new Set([g.parentIdx, ...g.compIdxs]);
-      const next = prev.filter((i) => !drop.has(i));
-      if (scope === "full") next.push(g.parentIdx);
-      return next;
+      const set = new Set(prev);
+      for (const i of idxs) {
+        if (isUnitDisabled(i)) continue; // never toggle a disabled unit
+        if (selected) set.add(i);
+        else set.delete(i);
+      }
+      return Array.from(set);
     });
   };
 
@@ -219,11 +261,14 @@ export function MissingForm({
 
       const itemsPayload = selectedIdxs.map((idx) => {
         const u = units[idx];
+        const attrs = u.categoryName
+          ? [{ name: "Category", value: u.categoryName }, ...u.attributes]
+          : u.attributes;
         const missingComponentPath = u.isKitComponent
           ? {
               variantId: u.variantId,
               componentName: u.name,
-              attributes: u.attributes,
+              attributes: attrs,
             }
           : undefined;
         return {
@@ -236,7 +281,7 @@ export function MissingForm({
 
       const body = {
         orderId,
-        notes: notes.trim() || undefined,
+        notes: undefined,
         photos: taggedPhotos,
         items: itemsPayload,
       };
@@ -263,7 +308,12 @@ export function MissingForm({
   // expanded kit group. (The individual-item flow is unchanged.)
   const unitRow = (u: Unit, idx: number) => {
     const active = selectedIdxs.includes(idx);
+    const locked = !!u.locked;
+    const expired = !!u.expired;
+    const notDelivered = !!u.notDelivered;
+    const disabled = locked || expired || notDelivered;
     const toggle = () => {
+      if (disabled) return;
       setSelectionConfirmed(false);
       setSelectedIdxs((prev) =>
         prev.includes(idx) ? prev.filter((i) => i !== idx) : [...prev, idx]
@@ -274,9 +324,12 @@ export function MissingForm({
         <button
           type="button"
           onClick={toggle}
+          disabled={disabled}
           className={
             "w-full text-left rounded-lg border px-3 py-2 text-[13px] flex items-center gap-2 " +
-            (active
+            (disabled
+              ? "border-ink-200 bg-cream-50/60 text-ink-400 cursor-not-allowed"
+              : active
               ? "border-rose-500 bg-rose-50/40 text-ink-900"
               : "border-ink-200 hover:border-ink-400 text-ink-700")
           }
@@ -284,10 +337,12 @@ export function MissingForm({
           <span
             className={
               "h-3.5 w-3.5 rounded-sm border-2 shrink-0 flex items-center justify-center " +
-              (active ? "border-rose-500 bg-rose-500" : "border-ink-300")
+              (disabled
+                ? "border-ink-200 bg-ink-100"
+                : active ? "border-rose-500 bg-rose-500" : "border-ink-300")
             }
           >
-            {active && (
+            {active && !disabled && (
               <svg
                 viewBox="0 0 12 12"
                 className="h-2.5 w-2.5 text-white"
@@ -306,12 +361,30 @@ export function MissingForm({
               {u.isKitComponent && !kitGroups.has(u.orderItemId) && (
                 <span className="text-ink-400"> · in {u.parentName}</span>
               )}
+              {locked && (
+                <span className="text-amber-700">
+                  {" "}· Already in progress
+                  {u.lockReturnNumber ? ` (${u.lockReturnNumber})` : ""}
+                </span>
+              )}
+              {expired && !locked && (
+                <span className="text-amber-700">
+                  {" "}· Request period expired (10 days from delivery)
+                </span>
+              )}
+              {notDelivered && !locked && !expired && (
+                <span className="text-amber-700">
+                  {" "}· Pending delivery — Missing request is not available yet
+                </span>
+              )}
             </span>
           </span>
           <span
             className={
               "shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] uppercase tracking-wider " +
-              (active
+              (disabled
+                ? "border-ink-200 bg-cream-50 text-ink-400"
+                : active
                 ? "border-rose-500/40 bg-white text-rose-700"
                 : "border-ink-200 bg-cream-50 text-ink-500")
             }
@@ -329,14 +402,21 @@ export function MissingForm({
     if (!g) return null;
     const parent = units[g.parentIdx];
     if (!parent) return null;
-    const scope = kitScope[orderItemId] ?? "";
+    // Whole-box "never arrived" has been retired — a Magic Box can only be
+    // reported item-by-item, so the scope is always "items" and the chooser
+    // is gone.
+    const scope = "items" as const;
     const compCount = g.compIdxs.length;
+    // Disabled = an active request on this box OR its 10-day window expired.
+    const disabled = !!parent.locked || !!parent.expired;
     return (
       <li key={`kit:${orderItemId}`}>
         <div
           className={
             "rounded-xl border overflow-hidden " +
-            (scope ? "border-rose-400/60" : "border-ink-200")
+            (disabled
+              ? "border-ink-200 bg-cream-50/60"
+              : scope ? "border-rose-400/60" : "border-ink-200")
           }
         >
           <div className="px-3 py-2.5 border-b border-ink-100 bg-cream-50/40 flex items-center gap-2">
@@ -344,40 +424,145 @@ export function MissingForm({
               <p className="text-[13px] font-medium text-ink-900 truncate">
                 {parent.name}
               </p>
-              <p className="text-[11.5px] text-ink-500">{compCount} items inside</p>
+              <p className="text-[11.5px] text-ink-500">
+                {compCount} items inside
+                {parent.locked && (
+                  <span className="text-amber-700">
+                    {" "}· Already in progress
+                    {parent.lockReturnNumber ? ` (${parent.lockReturnNumber})` : ""}
+                  </span>
+                )}
+                {parent.someComponentsLocked && !parent.locked && (
+                  <span className="text-amber-700">
+                    {" "}· Some items already in a request — pick from the rest
+                  </span>
+                )}
+                {parent.expired && !parent.locked && (
+                  <span className="text-amber-700">
+                    {" "}· Request period expired (10 days from delivery)
+                  </span>
+                )}
+              </p>
             </div>
             <span className="shrink-0 rounded-full border border-ink-200 bg-white px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-ink-500">
               {categoryLabel(parent.kind)}
             </span>
           </div>
+          {!disabled && (
           <div className="p-3 space-y-2">
             <p className="text-[11.5px] font-semibold uppercase tracking-wider text-ink-500">
-              What didn&apos;t arrive?
+              Which items didn&apos;t arrive?
             </p>
-            <ScopeOption
-              checked={scope === "full"}
-              onSelect={() => setKitScopeFor(orderItemId, "full")}
-              title="The whole box never arrived"
-              hint="The entire kit is missing from the delivery."
-            />
-            <ScopeOption
-              checked={scope === "items"}
-              onSelect={() => setKitScopeFor(orderItemId, "items")}
-              title="Only some items inside are missing"
-              hint="The box arrived, but some items weren't in it — pick them below."
-            />
-            {scope === "full" && (
-              <div className="rounded-lg bg-rose-50 border border-rose-200 px-3 py-2 text-[12px] text-rose-900">
-                Whole box selected — reporting the complete kit ({compCount} items) as
-                not arrived.
-              </div>
-            )}
-            {scope === "items" && (
-              <ul className="space-y-1.5 pt-1">
-                {g.compIdxs.map((ci) => unitRow(units[ci], ci))}
-              </ul>
-            )}
+            <p className="-mt-1 text-[11.5px] text-ink-500">
+              Pick the specific items inside this box that weren&apos;t in it — the
+              rest stays reported as received.
+            </p>
+            {(() => {
+              const cats = categoriesFor(g.compIdxs);
+              if (cats.size === 0) {
+                return (
+                  <ul className="space-y-1.5 pt-1">
+                    {g.compIdxs.map((ci) => unitRow(units[ci], ci))}
+                  </ul>
+                );
+              }
+              // Ungrouped components (e.g. uniform pieces in a hybrid magic
+              // box) render flat above the category accordions.
+              const ungrouped = g.compIdxs.filter((ci) => !units[ci]?.categoryKey);
+
+              const catLi = (catKey: string, cat: { name: string; idxs: number[] }) => {
+                // "Whole category" acts only on SELECTABLE books — a locked /
+                // expired / not-yet-delivered book stays untouched so the
+                // category checkbox can't sneak an ineligible item into the
+                // claim. The count still shows the full category size.
+                const selectable = cat.idxs.filter((i) => !isUnitDisabled(i));
+                const allSelected =
+                  selectable.length > 0 && selectable.every((i) => selectedIdxs.includes(i));
+                const someSelected = selectable.some((i) => selectedIdxs.includes(i));
+                const open = openCategories[catKey] ?? someSelected;
+                const selCount = selectable.filter((i) => selectedIdxs.includes(i)).length;
+                return (
+                  <li key={catKey} className="rounded-lg border border-ink-200 overflow-hidden">
+                    <div className="flex items-center gap-2 px-2.5 py-2 bg-cream-50/50">
+                      <button
+                        type="button"
+                        disabled={selectable.length === 0}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setCategorySelected(selectable, !allSelected);
+                        }}
+                        className={
+                          "h-3.5 w-3.5 rounded-sm border-2 shrink-0 flex items-center justify-center " +
+                          (allSelected
+                            ? "border-rose-500 bg-rose-500"
+                            : someSelected
+                            ? "border-rose-500 bg-rose-500/30"
+                            : "border-ink-300")
+                        }
+                        aria-label="Select whole category"
+                      >
+                        {allSelected && (
+                          <svg viewBox="0 0 12 12" className="h-2.5 w-2.5 text-white" fill="none" stroke="currentColor" strokeWidth="2.5">
+                            <path d="M2 6l2.5 2.5L10 3" strokeLinecap="round" strokeLinejoin="round" />
+                          </svg>
+                        )}
+                      </button>
+                      <button type="button" onClick={() => toggleCategoryOpen(catKey)} className="flex-1 min-w-0 text-left">
+                        <span className="block truncate text-[13px] font-medium text-ink-900">{cat.name}</span>
+                        <span className="block text-[11px] text-ink-500">
+                          {cat.idxs.length} item{cat.idxs.length === 1 ? "" : "s"}
+                          {selCount > 0 ? ` · ${selCount} selected` : ""} · tap to {open ? "collapse" : "expand"}
+                        </span>
+                      </button>
+                    </div>
+                    {open && (
+                      <ul className="space-y-1.5 p-2 border-t border-ink-100">
+                        {cat.idxs.map((ci) => unitRow(units[ci], ci))}
+                      </ul>
+                    )}
+                  </li>
+                );
+              };
+
+              // Group a nested magic-box bookkit's categories under a bookkit
+              // header; a standalone bookkit's categories render directly.
+              const byBookkit = new Map<string, [string, { name: string; idxs: number[] }][]>();
+              const loose: [string, { name: string; idxs: number[] }][] = [];
+              for (const [catKey, cat] of cats) {
+                const bkName = units[cat.idxs[0]]?.bookkitName ?? null;
+                if (bkName) {
+                  if (!byBookkit.has(bkName)) byBookkit.set(bkName, []);
+                  byBookkit.get(bkName)!.push([catKey, cat]);
+                } else {
+                  loose.push([catKey, cat]);
+                }
+              }
+
+              return (
+                <ul className="space-y-2 pt-1">
+                  {ungrouped.map((ci) => unitRow(units[ci], ci))}
+                  {loose.map(([catKey, cat]) => catLi(catKey, cat))}
+                  {[...byBookkit].map(([bkName, entries]) => {
+                    const bookCount = entries.reduce((n, [, c]) => n + c.idxs.length, 0);
+                    return (
+                      <li key={`bk:${bkName}`} className="rounded-xl border border-ink-200 overflow-hidden">
+                        <div className="px-2.5 py-2 bg-cream-100/70 border-b border-ink-100">
+                          <p className="text-[12.5px] font-semibold text-ink-900 truncate">{bkName}</p>
+                          <p className="text-[10.5px] text-ink-500">
+                            Bookkit · {bookCount} book{bookCount === 1 ? "" : "s"} in {entries.length} categor{entries.length === 1 ? "y" : "ies"} · tap a category to expand
+                          </p>
+                        </div>
+                        <ul className="space-y-2 p-2">
+                          {entries.map(([catKey, cat]) => catLi(catKey, cat))}
+                        </ul>
+                      </li>
+                    );
+                  })}
+                </ul>
+              );
+            })()}
           </div>
+          )}
         </div>
       </li>
     );
@@ -424,6 +609,11 @@ export function MissingForm({
                   }
                   return;
                 }
+                // Whole-box "never arrived" is retired: a kit parent is never
+                // selectable on its own. If its components couldn't be
+                // resolved it falls out of kitGroups — drop it rather than
+                // letting it render as a "whole box" row.
+                if (u.isKitParent) return;
                 rows.push(unitRow(u, idx));
               });
               return rows;
@@ -500,22 +690,6 @@ export function MissingForm({
               );
             })}
           </ul>
-        </div>
-      )}
-
-      {/* Notes */}
-      {selectionConfirmed && (
-        <div>
-          <label className="block text-[12px] font-semibold uppercase tracking-wider text-ink-700">
-            Any details (optional)
-          </label>
-          <textarea
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            rows={3}
-            placeholder="e.g. The box had a small tear but everything else was inside."
-            className="mt-2 w-full rounded-lg border border-ink-200 bg-white px-3 py-2.5 text-[14px]"
-          />
         </div>
       )}
 
@@ -611,18 +785,24 @@ function ScopeOption({
   onSelect,
   title,
   hint,
+  disabled,
 }: {
   checked: boolean;
   onSelect: () => void;
   title: string;
   hint: string;
+  disabled?: boolean;
 }) {
   return (
     <div
-      onClick={onSelect}
+      onClick={disabled ? undefined : onSelect}
+      aria-disabled={disabled}
       className={
-        "rounded-lg border px-3 py-2.5 cursor-pointer " +
-        (checked
+        "rounded-lg border px-3 py-2.5 " +
+        (disabled
+          ? "border-ink-200 bg-cream-50/60 opacity-60 cursor-not-allowed "
+          : "cursor-pointer ") +
+        (checked && !disabled
           ? "border-rose-500 bg-rose-50/40"
           : "border-ink-200 hover:border-ink-400 bg-white")
       }
@@ -631,7 +811,7 @@ function ScopeOption({
         <span
           className={
             "mt-0.5 h-3.5 w-3.5 rounded-full border-2 shrink-0 " +
-            (checked ? "border-rose-500 bg-rose-500" : "border-ink-300")
+            (checked && !disabled ? "border-rose-500 bg-rose-500" : "border-ink-300")
           }
         />
         <div className="flex-1 min-w-0">
