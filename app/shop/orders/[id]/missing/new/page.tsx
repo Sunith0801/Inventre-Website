@@ -12,7 +12,7 @@ import {
   schools,
 } from "@/db/schema";
 import { getCurrentParent } from "@/lib/session";
-import { isExchangeTester, isExchangeScopeRelaxed, isExchangeOwnershipRelaxed } from "@/lib/exchange-gate";
+import { isExchangeTester, isExchangeOwnershipRelaxed } from "@/lib/exchange-gate";
 import { getParentOrderDetailFromErp } from "@/lib/erp-customer-orders";
 import {
   getHeldBackOrderItemIds,
@@ -24,6 +24,7 @@ import {
 } from "@/lib/return-line-eligibility";
 import {
   fallbackBundleComponents,
+  emptyContainerProductIds,
   loadBookkitCategoryTree,
   kindCategoryFor,
   resolveSubBundleCategories,
@@ -47,7 +48,14 @@ export const dynamic = "force-dynamic";
 async function resolveLocalOrderId(
   idOrNumber: string,
   parentId: string,
-): Promise<{ id: string; orderDelivered: boolean; deliveredAt: Date | null } | null> {
+): Promise<{
+  id: string;
+  orderDelivered: boolean;
+  deliveredAt: Date | null;
+  /** The SAME order-detail object /shop/orders/[id] renders, so the picker
+   *  can reuse its per-item / per-component badge status verbatim. */
+  detail: Awaited<ReturnType<typeof getParentOrderDetailFromErp>>;
+} | null> {
   // Ownership relaxed (all envs) — see isExchangeOwnershipRelaxed. Family
   // membership is the security boundary, enforced below via
   // getParentOrderDetailFromErp (null → not this parent's family).
@@ -76,7 +84,7 @@ async function resolveLocalOrderId(
     row.status === "delivered" || detail.status === "delivered";
   const deliveredAt =
     row.deliveredAt ?? (detail.deliveredAt ? new Date(detail.deliveredAt) : null);
-  return { id: row.id, orderDelivered, deliveredAt };
+  return { id: row.id, orderDelivered, deliveredAt, detail };
 }
 
 export default async function NewMissingClaimPage({
@@ -101,11 +109,11 @@ export default async function NewMissingClaimPage({
     .limit(1);
   if (!order) notFound();
 
-  // Item-wise eligibility (2026-07-08). Per-ITEM 10-day window (expired) +
-  // cross-flow per-item lock (item already in a non-rejected exchange OR
-  // missing request, freed only on rejection). Both applied as a post-pass
-  // over the built units below. Dev relaxes expiry so testers on the prod
-  // snapshot can still file.
+  // Item-wise eligibility (2026-07-08): which order_items are delivered (and
+  // therefore reportable). Cross-flow per-item lock (item already in a
+  // non-rejected exchange OR missing request, freed only on rejection) is
+  // applied as a post-pass over the built units below. There is no time
+  // window — a delivered item stays eligible forever.
   const itemElig = await classifyReturnItems(
     orderId,
     order.orderNumber,
@@ -113,11 +121,6 @@ export default async function NewMissingClaimPage({
     resolved.deliveredAt,
   );
   if (![...itemElig.values()].some((e) => e.delivered)) notFound();
-  const expiredByOrderItem = new Set<string>(
-    isExchangeScopeRelaxed()
-      ? []
-      : [...itemElig].filter(([, e]) => e.expired).map(([oid]) => oid),
-  );
   // Component-level lock (2026-07-09) — see exchange/new/page.tsx. Resolves the
   // lock PER COMPONENT so a Magic Box reopens for its still-eligible items; the
   // authoritative per-unit fields are set in the post-pass below.
@@ -259,7 +262,7 @@ export default async function NewMissingClaimPage({
     bookkitKey?: string | null;
     bookkitName?: string | null;
     // Item-wise state (set in a post-pass): locked = already in a
-    // non-rejected request; expired = past this item's 10-day window.
+    // non-rejected request.
     locked?: boolean;
     lockReturnNumber?: string | null;
     /** Kit-parent only: some (not all) components already requested → box stays
@@ -269,7 +272,6 @@ export default async function NewMissingClaimPage({
     notDelivered?: boolean;
     /** Kit-parent only: some components not delivered → "whole box" disabled. */
     someComponentsUndelivered?: boolean;
-    expired?: boolean;
   };
 
   // Any nested kit (bookkit / "Book Set" / kind='kit') → category drill-down.
@@ -406,6 +408,11 @@ export default async function NewMissingClaimPage({
         it.name,
         schoolName,
       );
+      // Empty bookkit-category containers ("Bundle 1 Other" — a sub_bundle
+      // with zero components, shown as "· Size Standard"). They name a group,
+      // not a thing the parent received, so they must not appear as a
+      // selectable line. See emptyContainerProductIds for the catalog cause.
+      const emptyContainers = await emptyContainerProductIds(rawProductIds);
 
       for (let ci = 0; ci < raw.length; ci++) {
         const c = raw[ci];
@@ -416,6 +423,9 @@ export default async function NewMissingClaimPage({
         // Hybrid: a bookkit component inside a magic box expands into its
         // category → book leaf units; uniform components stay flat.
         const cKind = vid ? kindByVariant.get(vid) ?? null : null;
+        // Drop the empty category container outright (see emptyContainers).
+        const cPid = vid ? productByVariant.get(vid) ?? null : null;
+        if (cPid && emptyContainers.has(cPid)) continue;
         if (cKind === "kit" && /^[0-9a-f-]{36}$/i.test(vid)) {
           const subCats = await loadBookkitCategoryTree(vid, order.schoolId ?? null);
           if (subCats.length > 0) {
@@ -492,16 +502,15 @@ export default async function NewMissingClaimPage({
 
   if (units.length === 0) notFound();
 
-  // Item-wise post-pass: tag each unit with its lock (already in a request)
-  // and expired (past its 10-day window) state so the form greys them. Lock is
-  // COMPONENT-level: a Magic Box collapses only when the whole box is out; when
-  // only some components are claimed the box stays open for the rest.
+  // Item-wise post-pass: tag each unit with its lock (already in a request) so
+  // the form greys them. Lock is COMPONENT-level: a Magic Box collapses only
+  // when the whole box is out; when only some components are claimed the box
+  // stays open for the rest.
   for (const u of units) {
     const st = lockStateForUnit(lockByItem.get(u.orderItemId), u);
     u.locked = st.locked;
     u.lockReturnNumber = st.ref;
     if (u.isKitParent) u.someComponentsLocked = st.someComponentsLocked;
-    u.expired = expiredByOrderItem.has(u.orderItemId);
   }
 
   // Drop held-back lines (out of stock / still out-for-delivery). We already
@@ -558,6 +567,59 @@ export default async function NewMissingClaimPage({
       u.notDelivered = true;
     }
   }
+
+  // ── BADGE PARITY (2026-07-27) ────────────────────────────────────────
+  // Single source of truth: an item is selectable ONLY when the order page
+  // badges it "delivered". Anything the order page shows as pending (or shows
+  // no badge for) is NOT selectable here.
+  //
+  // Why: this page used to recompute delivery itself (classifyReturnItems +
+  // getPendingComponentVariantIds + getHeldBackOrderItemIds), a strictly
+  // POORER resolver than the one behind the order-page badge. The badge also
+  // honours audit's packing_state pin, the per-category floor from
+  // `derived_delivery_by_category`, and a base-name fallback that matches
+  // blank-item_code (whole-parcel) rows. The picker's own gate bails out
+  // entirely when a box isn't per-component "tracked" — measured on prod,
+  // ~300 delivered boxes have per-component dispatch rows that don't
+  // reconcile to any component sku/base-name, so nothing was gated and
+  // pending pieces stayed selectable while the order page correctly showed
+  // them Pending. Reusing the badge makes the two agree by construction.
+  //
+  // Applied as a UNION with the existing gates (never un-hides anything they
+  // caught), so this can only ever be more conservative.
+  {
+    const norm = (s: string | null | undefined) =>
+      (s ?? "").split(" · ")[0].trim().toLowerCase().replace(/\s+/g, " ");
+    const compByVariant = new Map<string, string | null | undefined>();
+    const compByName = new Map<string, string | null | undefined>();
+    const lineByName = new Map<string, string | null | undefined>();
+    for (const di of resolved.detail?.items ?? []) {
+      const ln = norm(di.name);
+      if (ln && !lineByName.has(ln)) lineByName.set(ln, di.status);
+      for (const c of di.bundleSelections ?? []) {
+        if (c.variantId) compByVariant.set(c.variantId.toLowerCase(), c.status);
+        const cn = norm(c.name);
+        if (cn && !compByName.has(cn)) compByName.set(cn, c.status);
+      }
+    }
+    const badgeFor = (u: (typeof units)[number]) => {
+      if (u.isKitComponent) {
+        if (u.variantId && compByVariant.has(u.variantId.toLowerCase()))
+          return compByVariant.get(u.variantId.toLowerCase());
+        return compByName.get(norm(u.name));
+      }
+      return lineByName.get(norm(u.name));
+    };
+    for (const u of units) {
+      if (u.isKitParent) continue; // header row, never selectable anyway
+      const b = badgeFor(u);
+      // `undefined` = the order page has no badge for this unit (it isn't
+      // tracked at that granularity) → leave the existing gates to decide.
+      // An explicit non-"delivered" badge blocks it.
+      if (b !== undefined && b !== "delivered") u.notDelivered = true;
+    }
+  }
+
   const eligibleUnits = units;
 
   // Whole-box "never arrived" is retired — a Magic Box is only ever reportable

@@ -413,3 +413,48 @@ export async function loadBookkitCategoryTree(
   if (!hasRealCategory(cats)) return [];
   return cats;
 }
+
+/**
+ * Of the given product ids, which are EMPTY containers — a `sub_bundle`
+ * (bookkit category) that has no `bundle_components` under it at all.
+ *
+ * Why this exists (2026-07-27): a magic box's stored `bundle_selections` can
+ * name a CATEGORY rather than a book — e.g. "Bundle 1 Other", kind
+ * `sub_bundle`, carrying the auto-created "Standard" variant. The picker's
+ * nested-expansion only fires for `kind = 'kit'`, so a `sub_bundle` fell
+ * through to the flat-component branch and rendered as a selectable line
+ * reading "Bundle 1 Other · Size Standard" — a container the parent can
+ * neither identify nor sensibly exchange.
+ *
+ * The root cause is a catalog naming split: those 9 "Bundle N Other"
+ * sub_bundles hold 0 components while an identically-named `book`-kind twin
+ * holds the real 1–4 books (same shape as the audit /boms split). Until the
+ * catalog is healed, the picker hides the empty containers rather than
+ * offering a meaningless row.
+ *
+ * NOTE it returns only the EMPTY ones. A populated category (e.g.
+ * "SAS Keesara Grade UKG Other", 5 books) is left alone — it still names a
+ * real group of items, so hiding it would silently drop those books from the
+ * flow.
+ */
+export async function emptyContainerProductIds(
+  productIds: string[],
+): Promise<Set<string>> {
+  const empty = new Set<string>();
+  const ids = [...new Set(productIds.filter(Boolean))];
+  if (ids.length === 0) return empty;
+  const rows = (await db.execute(sql`
+    SELECT p.id::text AS id
+      FROM products p
+     WHERE p.id IN (${sql.join(ids.map((i) => sql`${i}::uuid`), sql`, `)})
+       AND p.kind = 'sub_bundle'
+       AND NOT EXISTS (
+         SELECT 1
+           FROM product_bundles pb
+           JOIN bundle_components bc ON bc.bundle_id = pb.id
+          WHERE pb.product_id = p.id
+       )
+  `)) as unknown as Array<{ id: string }>;
+  for (const r of rows) empty.add(r.id);
+  return empty;
+}

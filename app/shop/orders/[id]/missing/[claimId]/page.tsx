@@ -1,15 +1,22 @@
 import { notFound } from "next/navigation";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
+import { getParentOrderDetailFromErp } from "@/lib/erp-customer-orders";
 import { db } from "@/db/client";
-import { missingItemClaims, orders } from "@/db/schema";
+import { missingItemClaims, orders, schools } from "@/db/schema";
 import { getCurrentParent } from "@/lib/session";
 import { isExchangeTester } from "@/lib/exchange-gate";
 import { Nav } from "@/components/Nav";
 import { Footer } from "@/components/Footer";
 import {
-  Clock, CheckCircle2, AlertCircle, Package, PackageX, Phone,
+  Clock, CheckCircle2, AlertCircle, Package, PackageX, Phone, XCircle,
 } from "lucide-react";
 import { firstPickupSaturday } from "@/lib/date";
+import {
+  isCancelledReason,
+  stripCancelledPrefix,
+  isCancellableRequestStatus,
+} from "@/lib/exchange-shared";
+import { CancelRequestButton } from "@/components/shop/orders/CancelRequestButton";
 
 /**
  * Customer-facing missing-item claim status page. Mirrors the exchange
@@ -23,11 +30,15 @@ export const dynamic = "force-dynamic";
 // CC contact info — shown on every state for the hybrid path.
 const CC_PHONE = "+91 9999912345";
 
+// Schools whose collection happens at the Inventre store, not the school
+// office. For these the banner copy says "the store" instead of "school".
+const STORE_PICKUP_SCHOOL_CODES = new Set(["KLINK", "QLPHP"]);
+
 const STATUS_COPY: Record<
   string,
   {
     title: string;
-    body: (ctx: { pickupLabel: string | null }) => React.ReactNode;
+    body: (ctx: { pickupLabel: string | null; atStore?: boolean }) => React.ReactNode;
     tone: "amber" | "emerald" | "rose" | "ink";
     Icon: typeof Clock;
   }
@@ -41,15 +52,38 @@ const STATUS_COPY: Record<
   },
   approved: {
     title: "Approved",
-    body: ({ pickupLabel }) =>
-      `Approved. We're preparing your missing item to send to school. Visit on ${pickupLabel ?? "the scheduled Saturday"} to collect.`,
+    body: ({ pickupLabel, atStore }) =>
+      atStore ? (
+        <>
+          Approved. We&apos;re preparing your missing item and will keep it ready
+          at the{" "}
+          <span className="font-semibold">
+            Inventre Experience Store, Ashoka Mall, Kukatpally
+          </span>
+          . Visit on {pickupLabel ?? "the scheduled day"} to collect.
+        </>
+      ) : (
+        `Approved. We're preparing your missing item to send to school. Visit on ${pickupLabel ?? "the scheduled Saturday"} to collect.`
+      ),
     tone: "emerald",
     Icon: CheckCircle2,
   },
   received_at_school: {
     title: "Replacement arrived at school",
-    body: ({ pickupLabel }) =>
-      `Your missing item has arrived at the school. Come ${pickupLabel ? `on ${pickupLabel}` : "during the scheduled pickup window"} to pick it up.`,
+    body: ({ pickupLabel, atStore }) =>
+      atStore ? (
+        <>
+          Your missing item has arrived at the{" "}
+          <span className="font-semibold">
+            Inventre Experience Store, Ashoka Mall, Kukatpally
+          </span>
+          . Come{" "}
+          {pickupLabel ? `on ${pickupLabel}` : "during the scheduled pickup window"}{" "}
+          to pick it up.
+        </>
+      ) : (
+        `Your missing item has arrived at the school. Come ${pickupLabel ? `on ${pickupLabel}` : "during the scheduled pickup window"} to pick it up.`
+      ),
     tone: "emerald",
     Icon: Package,
   },
@@ -66,6 +100,13 @@ const STATUS_COPY: Record<
       "We weren't able to approve this claim. See the reason below — if you think this is a mistake, please contact customer care.",
     tone: "rose",
     Icon: AlertCircle,
+  },
+  cancelled: {
+    title: "Cancelled",
+    body: () =>
+      "You cancelled this claim, so the replacement won't be sent. You can raise a new claim any time if you still need one.",
+    tone: "ink",
+    Icon: XCircle,
   },
 };
 
@@ -120,25 +161,57 @@ export default async function MissingClaimDetailPage({
     .select({
       cl: missingItemClaims,
       order: orders,
+      schoolCode: schools.schoolCode,
     })
     .from(missingItemClaims)
     .innerJoin(orders, eq(orders.id, missingItemClaims.orderId))
-    .where(and(eq(missingItemClaims.id, claimId), eq(missingItemClaims.parentId, me.id)))
+    .innerJoin(schools, eq(schools.id, orders.schoolId))
+    .where(eq(missingItemClaims.id, claimId))
     .limit(1);
   if (!row) notFound();
+  // FAMILY-IDENTITY AUTHORIZATION (2026-07-27) — replaces the strict
+  // `parent_id === me.id` match that used to sit in the WHERE above. That
+  // match 404'd this page for any family member whose own `parents` row isn't
+  // the one on the request: split accounts, co-guardians, and EVERY
+  // care-team-raised request (those carry the ORDER's parent_id, not the
+  // reporter's). Measured on prod: ~27% of exchanges / ~21% of claims had at
+  // least one such family member. Every other path — My Orders, order detail,
+  // the pickers, the submit handlers — dropped this match long ago (see
+  // isExchangeOwnershipRelaxed); these two status pages were the last
+  // holdouts. getParentOrderDetailFromErp applies the SAME family scope as
+  // My Orders and returns null for anyone outside the family, so the security
+  // boundary is unchanged — this only widens access to orders the parent can
+  // already see.
+  if (!(await getParentOrderDetailFromErp(me.id, row.order.orderNumber))) notFound();
+
+  const atStore = STORE_PICKUP_SCHOOL_CODES.has(row.schoolCode ?? "");
 
   // Promote 'approved' → 'received_at_school' pseudo-state once the
   // replacementArrivedAt timestamp is set (same UI pattern as the
   // exchange flow).
   const baseStatus = row.cl.status;
-  const status =
-    baseStatus === "approved" && row.cl.replacementArrivedAt
+  const isCancelled =
+    baseStatus === "rejected" && isCancelledReason(row.cl.rejectionReason);
+  const status = isCancelled
+    ? "cancelled"
+    : baseStatus === "approved" && row.cl.replacementArrivedAt
       ? "received_at_school"
       : baseStatus;
+  const canCancel = isCancellableRequestStatus(
+    baseStatus,
+    !!row.cl.replacementArrivedAt,
+  );
+  const cancelReason = isCancelled
+    ? stripCancelledPrefix(row.cl.rejectionReason)
+    : null;
   const copy = STATUS_COPY[status] ?? STATUS_COPY.requested;
   const pickupLabel = row.cl.pickupDate ? formatPickupLabel(row.cl.pickupDate) : null;
   const Icon = copy.Icon;
   const tone = copy.tone;
+  const title =
+    atStore && status === "received_at_school"
+      ? "Replacement arrived at store"
+      : copy.title;
 
   return (
     <main className="min-h-screen">
@@ -172,11 +245,35 @@ export default async function MissingClaimDetailPage({
           <Icon className={"h-5 w-5 mt-0.5 shrink-0 " + TONE_ICON[tone]} />
           <div className="text-[13px]">
             <p className={"font-display text-[14px] font-bold " + TONE_TITLE[tone]}>
-              {copy.title}
+              {title}
             </p>
-            <p className={"mt-0.5 " + TONE_BODY[tone]}>{copy.body({ pickupLabel })}</p>
+            <p className={"mt-0.5 " + TONE_BODY[tone]}>{copy.body({ pickupLabel, atStore })}</p>
           </div>
         </div>
+
+        {/* Self-cancel — only while the claim is still early (approval pending
+            / approved but not yet dispatched to school). */}
+        {canCancel && (
+          <div className="mt-3">
+            <CancelRequestButton
+              kind="missing"
+              orderId={orderIdParam}
+              requestId={row.cl.id}
+            />
+          </div>
+        )}
+
+        {/* Cancelled: show the customer's own reason plainly. */}
+        {isCancelled && cancelReason && (
+          <div className="mt-3 rounded-2xl border border-ink-200 bg-cream-50/60 p-4 text-[13px]">
+            <p className="font-display text-[13px] font-bold text-ink-800">
+              Your cancellation reason
+            </p>
+            <p className="mt-1 text-ink-700 whitespace-pre-line italic">
+              &ldquo;{cancelReason}&rdquo;
+            </p>
+          </div>
+        )}
 
         {status === "rejected" && row.cl.rejectionReason && (
           <div className="mt-3 rounded-2xl border border-rose-200 bg-rose-50/50 p-4 text-[13px]">

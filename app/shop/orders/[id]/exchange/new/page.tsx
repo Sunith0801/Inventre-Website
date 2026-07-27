@@ -13,7 +13,7 @@ import {
   schools,
 } from "@/db/schema";
 import { getCurrentParent } from "@/lib/session";
-import { isExchangeTester, isExchangeScopeRelaxed, isExchangeOwnershipRelaxed } from "@/lib/exchange-gate";
+import { isExchangeTester, isExchangeOwnershipRelaxed } from "@/lib/exchange-gate";
 import { getParentOrderDetailFromErp } from "@/lib/erp-customer-orders";
 import {
   getHeldBackOrderItemIds,
@@ -25,6 +25,7 @@ import {
 } from "@/lib/return-line-eligibility";
 import {
   fallbackBundleComponents,
+  emptyContainerProductIds,
   loadBookkitCategoryTree,
   kindCategoryFor,
   resolveSubBundleCategories,
@@ -51,7 +52,14 @@ export const dynamic = "force-dynamic";
 async function resolveLocalOrderId(
   idOrNumber: string,
   parentId: string
-): Promise<{ id: string; orderDelivered: boolean; deliveredAt: Date | null } | null> {
+): Promise<{
+  id: string;
+  orderDelivered: boolean;
+  deliveredAt: Date | null;
+  /** The SAME order-detail object /shop/orders/[id] renders, so the picker
+   *  can reuse its per-item / per-component badge status verbatim. */
+  detail: Awaited<ReturnType<typeof getParentOrderDetailFromErp>>;
+} | null> {
   // Ownership relaxed (all envs) — see isExchangeOwnershipRelaxed. Family
   // membership is the security boundary and is enforced below via
   // getParentOrderDetailFromErp (null → not this parent's family).
@@ -81,7 +89,7 @@ async function resolveLocalOrderId(
     row.status === "delivered" || detail.status === "delivered";
   const deliveredAt =
     row.deliveredAt ?? (detail.deliveredAt ? new Date(detail.deliveredAt) : null);
-  return { id: row.id, orderDelivered, deliveredAt };
+  return { id: row.id, orderDelivered, deliveredAt, detail };
 }
 
 type SiblingLite = {
@@ -149,11 +157,9 @@ export default async function NewExchangePage({
   for (const comps of fallbackByItem.values())
     for (const c of comps) fallbackProductIds.add(c.productId);
 
-  // Item-wise eligibility (2026-07-08). Per-ITEM 10-day window: each item is
-  // "expired" once past 10 days from ITS OWN delivery date (per-line
-  // outward_shipments, falling back to the order delivery date for
-  // bundle/bookkit/magic-box parcels). Dev relaxes expiry so testers on the
-  // prod snapshot — every order long delivered — can still file.
+  // Item-wise eligibility (2026-07-08): which order_items are delivered (and
+  // therefore exchangeable). There is no time window — a delivered item stays
+  // eligible forever.
   const itemElig = await classifyReturnItems(
     orderId,
     order.orderNumber,
@@ -163,11 +169,6 @@ export default async function NewExchangePage({
   // Nothing physically delivered yet → nothing to exchange (a fully-pending
   // order). Delivered items in a partially-shipped order still pass.
   if (![...itemElig.values()].some((e) => e.delivered)) notFound();
-  const expiredByOrderItem = new Set<string>(
-    isExchangeScopeRelaxed()
-      ? []
-      : [...itemElig].filter(([, e]) => e.expired).map(([oid]) => oid),
-  );
 
   // Cross-flow per-ITEM lock: order_items already in a NON-rejected exchange
   // OR missing request (freed only on rejection). Same Map shape the unit
@@ -351,9 +352,6 @@ export default async function NewExchangePage({
     /** Kit-parent only: some components aren't delivered yet → "whole box"
      *  option disabled (you can't exchange a box that's only part-arrived). */
     someComponentsUndelivered?: boolean;
-    /** Delivered but past this item's own 10-day window — shown greyed with
-     *  the "request period expired" note, not selectable (item-wise). */
-    expired?: boolean;
   };
 
   // A nested kit (bookkit, "Book Set", or any products.kind='kit') has
@@ -563,6 +561,11 @@ export default async function NewExchangePage({
         it.name,
         schoolName,
       );
+      // Empty bookkit-category containers ("Bundle 1 Other" — a sub_bundle
+      // with zero components, shown as "· Size Standard"). They name a group,
+      // not a thing the parent received, so they must not appear as a
+      // selectable line. See emptyContainerProductIds for the catalog cause.
+      const emptyContainers = await emptyContainerProductIds(rawProductIds);
 
       for (let ci = 0; ci < raw.length; ci++) {
         const c = raw[ci];
@@ -575,6 +578,9 @@ export default async function NewExchangePage({
         // so the parent can drill into individual books. Uniform components
         // stay flat below (their ordered size matters).
         const cKind = vid ? kindByVariant.get(vid) ?? null : null;
+        // Drop the empty category container outright (see emptyContainers).
+        const cPid = vid ? productByVariant.get(vid) ?? null : null;
+        if (cPid && emptyContainers.has(cPid)) continue;
         if (cKind === "kit" && /^[0-9a-f-]{36}$/i.test(vid)) {
           const subCats = await loadBookkitCategoryTree(vid, order.schoolId ?? null);
           if (subCats.length > 0) {
@@ -704,10 +710,6 @@ export default async function NewExchangePage({
     if (u.isKitParent) u.someComponentsLocked = st.someComponentsLocked;
   }
 
-  // Flag expired units (past their per-item 10-day window). They stay in the
-  // picker but render greyed / not-selectable with the expiry note.
-  for (const u of units) u.expired = expiredByOrderItem.has(u.orderItemId);
-
   // Drop held-back lines (out of stock / still out-for-delivery). The
   // customer doesn't have them yet — we already know and will ship them
   // later — so they can't be exchanged. Same per-item signal as the
@@ -770,6 +772,59 @@ export default async function NewExchangePage({
       u.notDelivered = true;
     }
   }
+
+  // ── BADGE PARITY (2026-07-27) ────────────────────────────────────────
+  // Single source of truth: an item is selectable ONLY when the order page
+  // badges it "delivered". Anything the order page shows as pending (or shows
+  // no badge for) is NOT selectable here.
+  //
+  // Why: this page used to recompute delivery itself (classifyReturnItems +
+  // getPendingComponentVariantIds + getHeldBackOrderItemIds), a strictly
+  // POORER resolver than the one behind the order-page badge. The badge also
+  // honours audit's packing_state pin, the per-category floor from
+  // `derived_delivery_by_category`, and a base-name fallback that matches
+  // blank-item_code (whole-parcel) rows. The picker's own gate bails out
+  // entirely when a box isn't per-component "tracked" — measured on prod,
+  // ~300 delivered boxes have per-component dispatch rows that don't
+  // reconcile to any component sku/base-name, so nothing was gated and
+  // pending pieces stayed selectable while the order page correctly showed
+  // them Pending. Reusing the badge makes the two agree by construction.
+  //
+  // Applied as a UNION with the existing gates (never un-hides anything they
+  // caught), so this can only ever be more conservative.
+  {
+    const norm = (s: string | null | undefined) =>
+      (s ?? "").split(" · ")[0].trim().toLowerCase().replace(/\s+/g, " ");
+    const compByVariant = new Map<string, string | null | undefined>();
+    const compByName = new Map<string, string | null | undefined>();
+    const lineByName = new Map<string, string | null | undefined>();
+    for (const di of resolved.detail?.items ?? []) {
+      const ln = norm(di.name);
+      if (ln && !lineByName.has(ln)) lineByName.set(ln, di.status);
+      for (const c of di.bundleSelections ?? []) {
+        if (c.variantId) compByVariant.set(c.variantId.toLowerCase(), c.status);
+        const cn = norm(c.name);
+        if (cn && !compByName.has(cn)) compByName.set(cn, c.status);
+      }
+    }
+    const badgeFor = (u: (typeof units)[number]) => {
+      if (u.isKitComponent) {
+        if (u.variantId && compByVariant.has(u.variantId.toLowerCase()))
+          return compByVariant.get(u.variantId.toLowerCase());
+        return compByName.get(norm(u.name));
+      }
+      return lineByName.get(norm(u.name));
+    };
+    for (const u of units) {
+      if (u.isKitParent) continue; // header row, never selectable anyway
+      const b = badgeFor(u);
+      // `undefined` = the order page has no badge for this unit (it isn't
+      // tracked at that granularity) → leave the existing gates to decide.
+      // An explicit non-"delivered" badge blocks it.
+      if (b !== undefined && b !== "delivered") u.notDelivered = true;
+    }
+  }
+
   const eligibleUnits = units;
 
   // Whole-box exchange is retired — a Magic Box is only ever exchangeable

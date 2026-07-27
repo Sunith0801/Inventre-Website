@@ -1,13 +1,22 @@
 import { notFound } from "next/navigation";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
+import { getParentOrderDetailFromErp } from "@/lib/erp-customer-orders";
 import { db } from "@/db/client";
-import { returns, returnItems, orderItems, orders } from "@/db/schema";
+import { returns, returnItems, orderItems, orders, schools } from "@/db/schema";
 import { getCurrentParent } from "@/lib/session";
 import { isExchangeTester } from "@/lib/exchange-gate";
-import { formatPickupLabel } from "@/lib/exchange";
+import {
+  formatPickupLabel,
+  isCancelledReason,
+  stripCancelledPrefix,
+  isCancellableRequestStatus,
+} from "@/lib/exchange";
 import { Nav } from "@/components/Nav";
 import { Footer } from "@/components/Footer";
-import { Clock, CheckCircle2, AlertCircle, Package } from "lucide-react";
+import { Clock, CheckCircle2, AlertCircle, Package, XCircle } from "lucide-react";
+import { resolveDuplicateOf } from "@/lib/return-duplicates";
+import { DuplicateOfNote } from "@/components/shop/orders/DuplicateOfNote";
+import { CancelRequestButton } from "@/components/shop/orders/CancelRequestButton";
 
 /**
  * Status detail for a single exchange request. Server-rendered behind
@@ -18,11 +27,20 @@ import { Clock, CheckCircle2, AlertCircle, Package } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
+// Schools whose exchange/missing collection happens at the Inventre store,
+// not at the school office. For these, the banner copy says "the store"
+// instead of "your school".
+const STORE_PICKUP_SCHOOL_CODES = new Set(["KLINK", "QLPHP"]);
+
 const STATUS_COPY: Record<
   string,
   {
     title: string;
-    body: (args: { pickupLabel: string | null; reason?: string | null }) => string;
+    body: (args: {
+      pickupLabel: string | null;
+      reason?: string | null;
+      atStore?: boolean;
+    }) => React.ReactNode;
     tone: "amber" | "emerald" | "rose" | "ink";
     Icon: typeof Clock;
   }
@@ -36,15 +54,38 @@ const STATUS_COPY: Record<
   },
   approved: {
     title: "Approved",
-    body: ({ pickupLabel }) =>
-      `Visit your school on ${pickupLabel ?? "the scheduled Saturday"} to collect the exchange. Please show this order to the school office to confirm.`,
+    body: ({ pickupLabel, atStore }) =>
+      atStore ? (
+        <>
+          Visit the{" "}
+          <span className="font-semibold">
+            Inventre Experience Store, Ashoka Mall, Kukatpally
+          </span>{" "}
+          on {pickupLabel ?? "the scheduled day"} to collect the exchange. Please
+          show this order at the store to confirm.
+        </>
+      ) : (
+        `Visit your school on ${pickupLabel ?? "the scheduled Saturday"} to collect the exchange. Please show this order to the school office to confirm.`
+      ),
     tone: "emerald",
     Icon: CheckCircle2,
   },
   replacement_arrived: {
     title: "Replacement arrived at school",
-    body: ({ pickupLabel }) =>
-      `Your replacement has arrived at the school. Come ${pickupLabel ? `on ${pickupLabel}` : "during the scheduled pickup window"} with the original item to complete the exchange.`,
+    body: ({ pickupLabel, atStore }) =>
+      atStore ? (
+        <>
+          Your replacement has arrived at the{" "}
+          <span className="font-semibold">
+            Inventre Experience Store, Ashoka Mall, Kukatpally
+          </span>
+          . Come{" "}
+          {pickupLabel ? `on ${pickupLabel}` : "during the scheduled pickup window"}{" "}
+          with the original item to complete the exchange.
+        </>
+      ) : (
+        `Your replacement has arrived at the school. Come ${pickupLabel ? `on ${pickupLabel}` : "during the scheduled pickup window"} with the original item to complete the exchange.`
+      ),
     tone: "emerald",
     Icon: CheckCircle2,
   },
@@ -54,6 +95,13 @@ const STATUS_COPY: Record<
       "We weren't able to approve this exchange. If you think this is a mistake, please contact our support team.",
     tone: "rose",
     Icon: AlertCircle,
+  },
+  cancelled: {
+    title: "Cancelled",
+    body: () =>
+      "You cancelled this request, so the replacement won't be sent. You can raise a new request any time if you still need one.",
+    tone: "ink",
+    Icon: XCircle,
   },
   received: {
     title: "Exchange completed",
@@ -108,13 +156,31 @@ export default async function ExchangeDetailPage({
     .select({
       ret: returns,
       order: orders,
+      schoolCode: schools.schoolCode,
     })
     .from(returns)
     .innerJoin(orders, eq(orders.id, returns.orderId))
-    .where(and(eq(returns.id, returnId), eq(returns.parentId, me.id)))
+    .innerJoin(schools, eq(schools.id, orders.schoolId))
+    .where(eq(returns.id, returnId))
     .limit(1);
   if (!row) notFound();
   if (row.ret.kind !== "exchange") notFound();
+  // FAMILY-IDENTITY AUTHORIZATION (2026-07-27) — replaces the strict
+  // `parent_id === me.id` match that used to sit in the WHERE above. That
+  // match 404'd this page for any family member whose own `parents` row isn't
+  // the one on the request: split accounts, co-guardians, and EVERY
+  // care-team-raised request (those carry the ORDER's parent_id, not the
+  // reporter's). Measured on prod: ~27% of exchanges / ~21% of claims had at
+  // least one such family member. Every other path — My Orders, order detail,
+  // the pickers, the submit handlers — dropped this match long ago (see
+  // isExchangeOwnershipRelaxed); these two status pages were the last
+  // holdouts. getParentOrderDetailFromErp applies the SAME family scope as
+  // My Orders and returns null for anyone outside the family, so the security
+  // boundary is unchanged — this only widens access to orders the parent can
+  // already see.
+  if (!(await getParentOrderDetailFromErp(me.id, row.order.orderNumber))) notFound();
+
+  const atStore = STORE_PICKUP_SCHOOL_CODES.has(row.schoolCode ?? "");
 
   const lineRows = await db
     .select({
@@ -129,18 +195,50 @@ export default async function ExchangeDetailPage({
   // the audit-side webhook has stamped the arrival timestamp. The
   // underlying status stays `approved` in DB — this is a UI-only sub-state.
   const baseStatus = row.ret.status as keyof typeof STATUS_COPY;
-  const status: keyof typeof STATUS_COPY =
-    baseStatus === "approved" && row.ret.replacementArrivedAt
+  // A "rejected" row whose reason begins "Cancelled — " is a customer/staff
+  // cancellation, not a decline — render it as its own "Cancelled" state
+  // (see lib/exchange-shared.ts §"Customer self-cancellation").
+  const isCancelled =
+    baseStatus === "rejected" && isCancelledReason(row.ret.rejectionReason);
+  const status: keyof typeof STATUS_COPY = isCancelled
+    ? "cancelled"
+    : baseStatus === "approved" && row.ret.replacementArrivedAt
       ? "replacement_arrived"
       : baseStatus;
+  // Cancellable while still early (requested / approved and not yet dispatched
+  // to school). The ERP is the final authority; this only decides whether to
+  // show the button.
+  const canCancel = isCancellableRequestStatus(
+    baseStatus,
+    !!row.ret.replacementArrivedAt,
+  );
+  const cancelReason = isCancelled
+    ? stripCancelledPrefix(row.ret.rejectionReason)
+    : null;
   const copy = STATUS_COPY[status] ?? STATUS_COPY.requested;
   const pickupLabel = row.ret.pickupDate ? formatPickupLabel(row.ret.pickupDate) : null;
   const Icon = copy.Icon;
   const tone = copy.tone;
+  const title =
+    atStore && status === "replacement_arrived"
+      ? "Replacement arrived at store"
+      : copy.title;
 
   const photos: { url: string; key: string }[] = Array.isArray(row.ret.photos)
     ? (row.ret.photos as { url: string; key: string }[])
     : [];
+
+  // When the rejection was a duplicate, resolve the other RTN(s): prefer
+  // the structured `duplicate_of` (new rejections), fall back to RTNs
+  // scraped from the reason text (older rejections predating the column).
+  const dups =
+    status === "rejected"
+      ? resolveDuplicateOf(
+          row.ret.duplicateOf,
+          row.ret.rejectionReason,
+          row.ret.returnNumber
+        )
+      : [];
 
   return (
     <main className="min-h-screen">
@@ -178,25 +276,53 @@ export default async function ExchangeDetailPage({
           <Icon className={"h-5 w-5 mt-0.5 shrink-0 " + TONE_ICON[tone]} />
           <div className="text-[13px]">
             <p className={"font-display text-[14px] font-bold " + TONE_TITLE[tone]}>
-              {copy.title}
+              {title}
             </p>
             <p className={"mt-0.5 " + TONE_BODY[tone]}>
-              {copy.body({ pickupLabel, reason: row.ret.reason })}
+              {copy.body({ pickupLabel, reason: row.ret.reason, atStore })}
             </p>
           </div>
         </div>
 
+        {/* Self-cancel — only while the request is still early (approval
+            pending / approved but not yet dispatched to school). */}
+        {canCancel && (
+          <div className="mt-3">
+            <CancelRequestButton
+              kind="exchange"
+              orderId={orderIdParam}
+              requestId={row.ret.id}
+            />
+          </div>
+        )}
+
+        {/* Cancelled: show the customer's own reason plainly (not the rose
+            "reason from our team" box, which is for genuine declines). */}
+        {isCancelled && cancelReason && (
+          <div className="mt-3 rounded-2xl border border-ink-200 bg-cream-50/60 p-4 text-[13px]">
+            <p className="font-display text-[13px] font-bold text-ink-800">
+              Your cancellation reason
+            </p>
+            <p className="mt-1 text-ink-700 whitespace-pre-line italic">
+              &ldquo;{cancelReason}&rdquo;
+            </p>
+          </div>
+        )}
+
         {/* When rejected and customer-care left a specific reason, surface
             it verbatim. Previously the customer just saw the generic
             "contact support" line above and had no idea why. */}
-        {status === "rejected" && row.ret.rejectionReason && (
+        {status === "rejected" && (row.ret.rejectionReason || dups.length > 0) && (
           <div className="mt-3 rounded-2xl border border-rose-200 bg-rose-50/50 p-4 text-[13px]">
             <p className="font-display text-[13px] font-bold text-rose-900">
               Reason from our team
             </p>
-            <p className="mt-1 text-rose-900 whitespace-pre-line italic">
-              &ldquo;{row.ret.rejectionReason}&rdquo;
-            </p>
+            {row.ret.rejectionReason && (
+              <p className="mt-1 text-rose-900 whitespace-pre-line italic">
+                &ldquo;{row.ret.rejectionReason}&rdquo;
+              </p>
+            )}
+            <DuplicateOfNote dups={dups} />
           </div>
         )}
 
@@ -211,12 +337,15 @@ export default async function ExchangeDetailPage({
               // (Magic Box / Bookkit), surface that component as the real
               // subject of the exchange — the order_item row alone reads
               // as just "SAS KS GRADE 6 MAGIC BOX BOYS · Standard" and
-              // hides what the customer actually pointed at. The path
-              // lives on the parent `returns` row (one per request).
+              // hides what the customer actually pointed at. The path lives
+              // PER return_item (each flagged component is its own row), so
+              // read it off `ri` — NOT the parent `returns` row, whose single
+              // path would mislabel every line with the first component's name
+              // (e.g. 9 different magic-box parts all shown as "Bloomers").
               const path =
-                row.ret.requestedComponentPath &&
-                typeof row.ret.requestedComponentPath === "object"
-                  ? (row.ret.requestedComponentPath as {
+                ri.requestedComponentPath &&
+                typeof ri.requestedComponentPath === "object"
+                  ? (ri.requestedComponentPath as {
                       variantId?: string;
                       componentName?: string | null;
                       attributes?: { name?: string; value?: string }[];
