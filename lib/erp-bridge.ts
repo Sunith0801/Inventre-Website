@@ -11,6 +11,8 @@ import {
   parents,
   productVariants,
   products,
+  productBundles,
+  bundleComponents,
   webhookDeliveries,
   webhookEndpoints,
   erpOutboundQueue,
@@ -367,6 +369,150 @@ export async function buildErpOrderPayload(
         size: typeof s?.size === "string" && s.size.length > 0 ? s.size : null,
         variant_label: variantLabel.length > 0 ? variantLabel : null,
       });
+    }
+  }
+
+  // ── Fallback: fixed kits that carry no bundle_selections ─────────────
+  // A `kind='kit'` fixed bundle (Mini Kits, mandate kits) has no
+  // configurator — the PDP adds it straight to the cart with no picks — so
+  // `order_items.bundle_selections` stays NULL and the loop above emits
+  // nothing. Audit then falls back to its OWN curated BOM
+  // (routers/orders.py -> services/bookkit_bom.explode_bookkits), which for
+  // these kits is either absent or wrong: every SAS Suchitra Mini Kit
+  // resolved to the generic `SAS Suchitra Other` BOM, which drops the
+  // grade-specific books (Grooming Book 8, Opendoor Thinking
+  // Assessment-SAS) and adds a phantom "Packaging & Transport" — diagnosed
+  // 2026-08-06 on SAL-ORD-2026-40305…40319. Rebuild the contents from
+  // `bundle_components` instead. Audit prefers order-pushed sub-items over
+  // its BOM, so this also corrects the pick list (routers/warehouse_packing)
+  // and the stock deduction (services/bookkit_stock), not just the display.
+  //
+  // SCOPE GUARD — only kits whose components are ALL LEAF products (no
+  // `product_bundles` row of their own). Real Bookkits nest one level
+  // deeper: their components are `sub_bundle` CONTAINERS ("CAS CBSE Grade 1
+  // Notebook", "CAS LR CBSE Other"), not books, and audit's recursive BOM
+  // already explodes them to the right titles. Pushing the containers would
+  // replace a correct 30-title book list with 4 meaningless names and
+  // wreck the pick list for 306 bookkits. Verified against prod
+  // 2026-08-06: 124 active kits are all-leaf, 89 of those have an audit
+  // BOM, 86 match it exactly, and the only 3 that differ are the broken
+  // Mini Kits — so this can only ever add correct data.
+  //
+  // ALL-OR-NOTHING per line: if ANY component fails to resolve to an ERP
+  // item code, emit nothing for that kit and leave audit on its BOM. 37
+  // catalogue products (across 20 kits) carry no product_variants row at
+  // all and would resolve to nothing; a partial contents list is worse
+  // than none, because audit would silently under-pick the box.
+  const kitFallbackLines = rawItems.filter(
+    ({ item, product }) =>
+      product.kind === "kit" &&
+      (!Array.isArray(item.bundleSelections) ||
+        (item.bundleSelections as unknown[]).length === 0)
+  );
+  if (kitFallbackLines.length > 0) {
+    const kitProductIds = Array.from(
+      new Set(kitFallbackLines.map(({ product }) => product.id))
+    );
+    type KitComponentRow = {
+      kit_product_id: string;
+      qty: number;
+      bound_variant_id: string | null;
+      component_product_id: string | null;
+      component_name: string | null;
+      component_item_code: string | null;
+      component_erp_name: string | null;
+      variant_erp_name: string | null;
+      variant_sku: string | null;
+      variant_size: string | null;
+      variant_count: number;
+      component_is_bundle: boolean;
+    };
+    const componentRows = (await db.execute(sql`
+      SELECT
+        pb.product_id                        AS kit_product_id,
+        bc.qty                               AS qty,
+        bc.variant_id                        AS bound_variant_id,
+        cp.id                                AS component_product_id,
+        cp.name                              AS component_name,
+        cp.item_code                         AS component_item_code,
+        cp.erp_name                          AS component_erp_name,
+        cv.erp_name                          AS variant_erp_name,
+        cv.sku                               AS variant_sku,
+        cv.size                              AS variant_size,
+        (SELECT count(*) FROM product_variants v WHERE v.product_id = cp.id)
+                                             AS variant_count,
+        EXISTS (SELECT 1 FROM product_bundles pb2 WHERE pb2.product_id = cp.id)
+                                             AS component_is_bundle
+      FROM product_bundles pb
+      JOIN bundle_components bc ON bc.bundle_id = pb.id
+      LEFT JOIN product_variants bcv ON bcv.id = bc.variant_id
+      LEFT JOIN products cp ON cp.id = COALESCE(bc.product_id, bcv.product_id)
+      LEFT JOIN product_variants cv ON cv.id = COALESCE(
+        bc.variant_id,
+        (SELECT v2.id FROM product_variants v2
+          WHERE v2.product_id = cp.id ORDER BY v2.id LIMIT 1)
+      )
+      WHERE pb.product_id IN (${sql.join(
+        kitProductIds.map((id) => sql`${id}`),
+        sql`, `
+      )})
+      ORDER BY cp.name
+    `)) as unknown as KitComponentRow[];
+
+    const componentsByKit = new Map<string, KitComponentRow[]>();
+    for (const row of componentRows) {
+      const list = componentsByKit.get(row.kit_product_id);
+      if (list) list.push(row);
+      else componentsByKit.set(row.kit_product_id, [row]);
+    }
+
+    // `products.erp_name` on a catalogue book holds a UUID (the legacy ERP
+    // docname), while `products.item_code` holds the readable code audit's
+    // `items` master is keyed on — so item_code wins here, the reverse of
+    // resolveItemCode()'s parent-line order. The variant's own erp_name /
+    // sku still come first: mig 0049 auto-inserts a Standard variant per
+    // kit-eligible product and stores the readable code in `sku`.
+    const componentItemCode = (row: KitComponentRow): string | null =>
+      row.variant_erp_name ||
+      row.variant_sku ||
+      row.component_item_code ||
+      row.component_erp_name ||
+      null;
+
+    for (const { variant, product } of kitFallbackLines) {
+      const comps = componentsByKit.get(product.id) ?? [];
+      if (comps.length === 0) continue;
+      const unresolvable = comps.filter(
+        (c) =>
+          !c.component_product_id ||
+          c.component_is_bundle ||
+          (!c.bound_variant_id && Number(c.variant_count) !== 1) ||
+          !componentItemCode(c)
+      );
+      if (unresolvable.length > 0) {
+        console.warn(
+          `[erp-bridge] kit sub-item fallback skipped for ${product.name} on order ${orderId}: ` +
+            `${unresolvable.length}/${comps.length} components unresolvable ` +
+            `(nested bundle or no variant) — leaving audit on its BOM`
+        );
+        continue;
+      }
+      const parentItemCode = resolveItemCode(variant, product);
+      for (const c of comps) {
+        subItems.push({
+          parent_item_code: parentItemCode,
+          item_code: componentItemCode(c),
+          item_name: c.component_name ?? componentItemCode(c),
+          qty: c.qty ?? 1,
+          // Every book variant is the placeholder "Standard" (mig 0049) —
+          // sending it would badge each title with a meaningless size.
+          size:
+            c.variant_size && c.variant_size !== "Standard"
+              ? c.variant_size
+              : null,
+          variant_label: null,
+        });
+      }
     }
   }
 
