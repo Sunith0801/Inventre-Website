@@ -23,6 +23,14 @@ function baseName(s: string | null | undefined): string {
  * two must never disagree. "Delivered · N pending" IS a delivered floor; the
  * N held-back pieces are pinned separately by packing_state.
  */
+function categoryFloorDelivered(raw: string | null | undefined): boolean {
+  const s = (raw ?? "").toLowerCase();
+  if (!s) return false;
+  if (s.includes("out for delivery") || s.includes("ofd")) return false;
+  if (s.includes("not") && s.includes("deliver")) return false;
+  return s.includes("deliver");
+}
+
 /**
  * SQL predicate: TRUE when audit's category floor for the line's own category
  * is SETTLED — exactly "Delivered", with no "· N pending" shortfall remainder.
@@ -46,14 +54,6 @@ const SETTLED_CATEGORY_SQL = sql`
          THEN (so.raw::jsonb)->'derived_delivery_by_category'
                 ->>lower(trim(coalesce(i.category, '')))
     END, '') ~* '^delivered( *· *0+ +pending)?$'`;
-
-function categoryFloorDelivered(raw: string | null | undefined): boolean {
-  const s = (raw ?? "").toLowerCase();
-  if (!s) return false;
-  if (s.includes("out for delivery") || s.includes("ofd")) return false;
-  if (s.includes("not") && s.includes("deliver")) return false;
-  return s.includes("deliver");
-}
 
 /**
  * Audit's whole `derived_delivery_by_category` map for an order, coarse-mapped
@@ -188,15 +188,17 @@ export async function getHeldBackOrderItemIds(
   const held = new Set<string>();
   if (!orderNo) return held;
 
-  // Per-line shipment rank keyed by item_code (delivered=2, OFD=1, else 0).
+  // Per-line shipment rank keyed by item_code (delivered=2, OFD=1, else 0),
+  // plus the row's own item_category for the category-floor rescue below.
   // Blank item_codes = parcel-level dispatch (bookkit / magic box) — ignored.
-  const shipRows = rows<{ item_code: string; rank: number }>(
+  const shipRows = rows<{ item_code: string; rank: number; item_category: string | null }>(
     await db.execute(sql`
       SELECT item_code,
              max(CASE lower(status)
                    WHEN 'delivered'        THEN 2
                    WHEN 'out_for_delivery' THEN 1
-                   ELSE 0 END)::int AS rank
+                   ELSE 0 END)::int AS rank,
+             min(lower(nullif(trim(coalesce(item_category, '')), ''))) AS item_category
         FROM erp.outward_shipments
        WHERE order_erp_name = ${orderNo}
          AND is_deleted = false
@@ -232,7 +234,23 @@ export async function getHeldBackOrderItemIds(
   const perLineMode = shipRows.length > 0;
 
   const rankByCode = new Map<string, number>();
-  for (const r of shipRows) rankByCode.set(r.item_code, r.rank);
+  const shipCatByCode = new Map<string, string | null>();
+  for (const r of shipRows) {
+    rankByCode.set(r.item_code, r.rank);
+    shipCatByCode.set(r.item_code, r.item_category);
+  }
+  // Audit's per-category delivery floor + the whole-parcel floor — the SAME
+  // two signals classifyReturnItems and the order-page badge already apply.
+  // Without them this gate held back every line whose carrier row is stuck at
+  // `dispatched`, which is the normal end state for a Porter / school drop:
+  // the courier posts no per-line delivered scan, so audit settles the
+  // CATEGORY instead. SAL-ORD-2026-34410 — uniform floor "Delivered", polo +
+  // hoodie rows frozen at `dispatched` — badged Delivered on the order page
+  // yet showed "Pending delivery — Exchange request is not available yet" in
+  // the picker, because the badge-parity union can only ever REMOVE
+  // selectability, never restore what this gate took away.
+  const catFloor = await loadCategoryFloor(orderNo);
+  const parcelFloor = await loadParcelDeliveredCategories(orderNo);
 
   // Local lines with their resolved item_code + whether they're a bundle
   // parent (kit / magic box / sub-bundle, or carrying bundle_selections).
@@ -274,7 +292,19 @@ export async function getHeldBackOrderItemIds(
     }
     if (!perLineMode) continue; // no per-line rank rows → order-level gate governs
     const rank = rankByCode.get(l.item_code) ?? 0;
-    if (rank < 2) held.add(l.id); // pending OR out-for-delivery → held back
+    if (rank >= 2) continue; // own delivered scan
+    // Stuck at `dispatched` (rank 0) but audit has settled the row's OWN
+    // category → delivered, exactly as classifyReturnItems rules. Rank 1
+    // (out_for_delivery) is NEVER rescued: that is the carrier saying the
+    // parcel is not with the customer yet.
+    const shipCat = shipCatByCode.get(l.item_code) ?? null;
+    if (
+      rank < 1 &&
+      shipCat &&
+      (catFloor.get(shipCat) === true || parcelFloor.has(shipCat))
+    )
+      continue;
+    held.add(l.id); // pending OR out-for-delivery → held back
   }
   return held;
 }
