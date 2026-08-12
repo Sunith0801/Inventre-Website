@@ -9,7 +9,7 @@ import "server-only";
  * SAL-ORD-2026-27054). These tables are not in db/schema.ts (external
  * mirror) so we use raw SQL via db.execute().
  */
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, or } from "drizzle-orm";
 import { sql, type SQL } from "drizzle-orm";
 import { db } from "@/db/client";
 import {
@@ -29,9 +29,11 @@ import {
   groupItemsByAuditCategory,
   groupItemsByRootCategory,
   type CategoryGroup,
+  type CategoryGroupStatus,
 } from "@/lib/order-category-tracking";
 import { erpAuthedGet } from "@/lib/erp-jwt";
 import { upsertShipmentMirror, type ErpShipmentResp } from "@/lib/erp-poll";
+import { backgroundRefreshOrderHeader } from "@/lib/erp-order-header-refresh";
 
 // Per-shipment last-refresh timestamp keyed by audit id. In-memory only —
 // when audit's own cron refreshes a shipment, the next page render after
@@ -77,6 +79,17 @@ async function attrsByVariantId(
 ): Promise<Map<string, { name: string; value: string }[]>> {
   const out = new Map<string, { name: string; value: string }[]>();
   if (variantIds.length === 0) return out;
+  // Legacy bundle_selections sometimes store a SKU / product name in
+  // `variantId` (e.g. "SAS KS Primary Bag") instead of a UUID. The
+  // variantId column is uuid-typed, so feeding those into the IN-list
+  // crashes the whole query with 22P02 (invalid input syntax for type
+  // uuid) — taking the entire order-detail API down with a 500. Drop the
+  // non-UUID ids: they have no product_variant_attributes rows anyway, so
+  // the line just falls back to its concatenated-SKU display.
+  const uuids = variantIds.filter((v) =>
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v),
+  );
+  if (uuids.length === 0) return out;
   const rows = await db
     .select({
       variantId: productVariantAttributes.variantId,
@@ -86,7 +99,7 @@ async function attrsByVariantId(
     .from(productVariantAttributes)
     .innerJoin(productAttributes, eq(productAttributes.id, productVariantAttributes.attributeId))
     .innerJoin(productAttributeValues, eq(productAttributeValues.id, productVariantAttributes.valueId))
-    .where(inArray(productVariantAttributes.variantId, variantIds));
+    .where(inArray(productVariantAttributes.variantId, uuids));
   for (const r of rows) {
     const list = out.get(r.variantId) ?? [];
     list.push({ name: r.name, value: r.value });
@@ -359,7 +372,29 @@ export type ParentOrderListItem = {
   // sales_orders.customer_name; enrollment comes from erp.customers.
   studentName: string | null;
   enrollment: string | null;
+  // Raw CCAvenue status word (payments.gatewayResponseMessage) for the local
+  // order, when present — lets the list show "Initiated"/"Aborted"/… meaning
+  // under an abandoned checkout. Null for mirror-only / paid orders.
+  paymentStatusRaw: string | null;
 };
+
+/** Turn a raw shipment status into something a customer can read.
+ *  Returns null for the placeholders ERP emits when it has no real state
+ *  yet ("unknown", "", "-"), so those beats are dropped from the timeline
+ *  entirely rather than shown as a meaningless "unknown" node. */
+function humaniseShipmentStatus(raw: string | null | undefined): string | null {
+  const v = (raw ?? "").trim();
+  if (!v || /^(unknown|none|null|-|—)$/i.test(v)) return null;
+  const spaced = v.replace(/[_-]+/g, " ").toLowerCase();
+  const NICE: Record<string, string> = {
+    "in transit": "In transit",
+    "out for delivery": "Out for delivery",
+    rto: "Returned to origin",
+    ndr: "Delivery attempted",
+  };
+  if (NICE[spaced]) return NICE[spaced];
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+}
 
 export async function listParentOrdersFromErp(
   parentId: string
@@ -396,6 +431,7 @@ export async function listParentOrdersFromErp(
     student_name: string | null;
     enrollment: string | null;
     local_status: string | null;
+    pay_raw_status: string | null;
   }>(
     await db.execute(sql`
       WITH parent_orders AS (
@@ -509,7 +545,17 @@ export async function listParentOrdersFromErp(
                so.raw->>'enrollment_number',
                c.custom_enrollment_number
              ) AS enrollment,
-             po.local_status
+             po.local_status,
+             -- Raw CCAvenue status word for this order's local payment, if
+             -- any (latest by created_at). Surfaces "Initiated"/"Aborted"/…
+             -- so the list can show the real meaning of an abandoned
+             -- checkout. Scalar subquery → NULL when there is no local
+             -- payment row (mirror-only / never-paid-locally orders).
+             (SELECT p.gateway_response_message
+                FROM payments p
+               WHERE p.order_id = lo.id
+               ORDER BY p.created_at DESC
+               LIMIT 1) AS pay_raw_status
         FROM parent_orders po
         LEFT JOIN erp.sales_orders so ON so.erp_name = po.order_no
         LEFT JOIN orders lo
@@ -620,6 +666,7 @@ export async function listParentOrdersFromErp(
     thumbUrl: imgUrl(o.thumb),
     studentName: o.student_name,
     enrollment: o.enrollment,
+    paymentStatusRaw: o.pay_raw_status ?? null,
   }));
 }
 
@@ -651,10 +698,21 @@ export type ParentOrderDetail = {
     id: string;
     name: string;
     size: string;
+    /** Per-axis attributes (Colour · Size) for a plain line item, resolved
+     *  from product_variant_attributes — the SAME enrichment Magic Box
+     *  contents get. Empty for legacy variants with no attribute rows or
+     *  ERP-mirror-only lines whose SKU doesn't map to a local variant. */
+    attributes: { name: string; value: string }[];
     qty: number;
     unitPrice: number;
     total: number;
     imageUrl: string;
+    /** Per-item delivery status for this line, resolved from the line's OWN
+     *  shipment row (erp.outward_shipments.item_code == variant sku). Only set
+     *  for plain (non-bundle) lines when the order is line-level tracked;
+     *  null/undefined otherwise (the UI then shows no per-item badge and the
+     *  category card status stands). */
+    status?: CategoryGroupStatus | null;
     /** Magic Box / bundle picks captured at checkout. null for plain lines.
      *  ERP-synced orders are best-effort enriched from the local
      *  `order_items` mirror by orderNumber — if the local row has been
@@ -669,6 +727,17 @@ export type ParentOrderDetail = {
       variantId: string;
       size: string;
       attributes: { name: string; value: string }[];
+      /** Per-component delivery status inside a Magic Box, resolved from the
+       *  component's own shipment row (variant sku == item_code). A component
+       *  held back from an otherwise-dispatched box reads "pending". Undefined
+       *  when the box isn't line-level tracked (ships as a whole parcel), so
+       *  the UI shows no per-component badge in that case. */
+      status?: CategoryGroupStatus | null;
+      /** Shipment category (lowercased: "uniform" / "bookkit" / …) this
+       *  component was dispatched under, so the per-category tracking card can
+       *  list its own components. Held-back components inherit the box's
+       *  dominant category. Null when unresolved. */
+      category?: string | null;
     }[] | null;
   }[];
   payment: { provider: string; status: string; method: string | null } | null;
@@ -679,6 +748,22 @@ export type ParentOrderDetail = {
     dispatchedAt: string | null;
     deliveredAt: string | null;
   }[];
+  /** Return-to-Origin lifecycle, mirrored from audit (the single source of
+   *  truth): a shipment with status='returned' and/or carrier scans labelled
+   *  "Set RTO Initiated" / "RTO In Transit" / "RTO Delivered" / "Return as per
+   *  client instruction". Null when the order has no RTO. Drives the prominent
+   *  RTO badge + sub-timeline on the order page so a returned parcel no longer
+   *  masquerades as "Out for Delivery". */
+  rto?: {
+    /** RTO in progress (initiated, not yet back at origin). */
+    active: boolean;
+    /** RTO completed — parcel delivered back to origin. */
+    delivered: boolean;
+    /** Current RTO stage = latest RTO scan label (e.g. "RTO In Transit"). */
+    stage: string | null;
+    /** RTO scans, oldest-first. */
+    timeline: { at: string; label: string; location: string | null }[];
+  } | null;
   /** Rich per-shipment view used by the storefront order page. Each entry
    *  has a merged chronological timeline that intermixes system status
    *  transitions (Auto-poll) with raw carrier scans (location + label).
@@ -729,6 +814,16 @@ export type ParentOrderDetail = {
   /** True when the ERP poll hasn't run for this order yet — the UI
    *  shows a "Tracking will appear within a few minutes" banner. */
   pollPending: boolean;
+  /** Raw CCAvenue status word (payments.gatewayResponseMessage), used to show
+   *  the actual gateway status + its meaning on an abandoned checkout.
+   *  Populated by the order-detail API route (getOrderPlacementInfo), not the
+   *  query itself — null until enriched. */
+  paymentStatusRaw?: string | null;
+  /** False when this order can no longer be re-ordered because a one-per-
+   *  student item (Magic Box) is already placed for the student. The UI hides
+   *  the "Place the order again" button and shows an "already placed" note.
+   *  Enriched by the API route; defaults to true (allow) when unknown. */
+  canReorder?: boolean;
 };
 
 export async function getParentOrderDetailFromErp(
@@ -760,6 +855,7 @@ export async function getParentOrderDetailFromErp(
     dispatched_pu: number;
     enrollment: string | null;
     local_ship: Record<string, unknown> | null;
+    local_shipping: number | null;
     derived_by_category: Record<string, string> | null;
     derived_categories_present: string[] | null;
   }>(
@@ -783,6 +879,7 @@ export async function getParentOrderDetailFromErp(
                AS dispatched_pu,
              c.custom_enrollment_number AS enrollment,
              lo.shipping_address AS local_ship,
+             lo.shipping AS local_shipping,
              so.raw->'derived_delivery_by_category' AS derived_by_category,
              -- Guard against the value being a jsonb scalar (incl. jsonb
              -- null), which COALESCE does NOT replace — only SQL NULL
@@ -836,6 +933,8 @@ export async function getParentOrderDetailFromErp(
     image: string | null;
     bundle_selections: unknown;
     sku: string | null;
+    variant_id: string | null;
+    size: string | null;
   }>(
     await db.execute(sql`
       -- Items source: prefer the LOCAL order_items (captured at checkout,
@@ -855,13 +954,26 @@ export async function getParentOrderDetailFromErp(
                oi.qty::float8 AS qty,
                (oi.unit_price / 100.0)::float8 AS rate,
                (oi.total      / 100.0)::float8 AS amount,
-               oi.image_snapshot AS image,
+               -- Image: prefer the R2 snapshot captured at checkout; fall
+               -- back to the ERP item image (resolved by SKU → erp.items,
+               -- then its variant parent). ~7k delivered line items have a
+               -- null/empty image_snapshot but a perfectly good
+               -- erp.items.image — without this fallback they rendered an
+               -- empty grey box on the order page even though the SAME
+               -- thumbnail shows on the My-Orders list (whose query already
+               -- has this fallback). Magic Box parents stay blank (no item
+               -- image exists) but list their contents below regardless.
+               COALESCE(NULLIF(oi.image_snapshot,''), NULLIF(li.image,''), NULLIF(lvt.image,'')) AS image,
                oi.bundle_selections AS bundle_selections,
                pv.sku AS sku,
+               oi.variant_id::text AS variant_id,
+               oi.size AS size,
                row_number() OVER (ORDER BY oi.id) AS rn
           FROM order_items oi
           JOIN orders lo ON lo.id = oi.order_id
           LEFT JOIN product_variants pv ON pv.id = oi.variant_id
+          LEFT JOIN erp.items li  ON li.erp_name  = pv.sku
+          LEFT JOIN erp.items lvt ON lvt.erp_name = li.variant_of
          WHERE lo.erp_so_name = ${orderNo}
       ),
       erp_items AS (
@@ -871,18 +983,24 @@ export async function getParentOrderDetailFromErp(
                soi.amount::float8 AS amount,
                COALESCE(NULLIF(it.image,''), NULLIF(vt.image,'')) AS image,
                NULL::jsonb AS bundle_selections,
-               soi.item_code AS sku
+               soi.item_code AS sku,
+               -- Mirror-only lines have no local order_items row; map the
+               -- SKU (== item_code) back to a local variant so we can still
+               -- resolve size + colour attributes.
+               pv2.id::text AS variant_id,
+               pv2.size AS size
           FROM erp.sales_order_items soi
           LEFT JOIN erp.items it ON it.erp_name = soi.item_code
           LEFT JOIN erp.items vt ON vt.erp_name = it.variant_of
+          LEFT JOIN product_variants pv2 ON pv2.sku = soi.item_code
          WHERE soi.order_erp_name = ${orderNo}
          ORDER BY soi.id
       )
-      SELECT id, item_name, qty, rate, amount, image, bundle_selections, sku
+      SELECT id, item_name, qty, rate, amount, image, bundle_selections, sku, variant_id, size
         FROM local_items
        WHERE (SELECT count(*) FROM local_items) > 0
       UNION ALL
-      SELECT id, item_name, qty, rate, amount, image, bundle_selections, sku
+      SELECT id, item_name, qty, rate, amount, image, bundle_selections, sku, variant_id, size
         FROM erp_items
        WHERE (SELECT count(*) FROM local_items) = 0
     `)
@@ -907,45 +1025,86 @@ export async function getParentOrderDetailFromErp(
     carrier_events: unknown;
   }>(
     await db.execute(sql`
-      SELECT id::int        AS shipment_id,
-             partner, tracking_number, status,
-             dispatched_at::text AS dispatched_at,
-             delivered_at::text  AS delivered_at,
-             item_category, description, carrier_events
+      (
+        -- Audit's mirror frequently holds DUPLICATE outward_shipments rows
+        -- for ONE physical parcel — the same AWB synced many times (e.g.
+        -- a single srocket AWB mirrored 12×; 5,110 orders carry >1 row,
+        -- 3,067 share an AWB). Each duplicate rendered as its own identical
+        -- "Shipment history" card with the same carrier timeline. Collapse
+        -- to one row per (category, AWB), keeping the most-progressed copy.
+        SELECT DISTINCT ON (item_category, COALESCE(tracking_number, ''))
+               id::int        AS shipment_id,
+               partner, tracking_number, status,
+               dispatched_at::text AS dispatched_at,
+               delivered_at::text  AS delivered_at,
+               item_category, description, carrier_events
+          FROM erp.outward_shipments
+         WHERE order_erp_name = ${orderNo}
+           AND is_deleted = false
+           -- Hide legacy synthetic rows. These were written before the
+           -- carrier-side AWB came back from srocket/dtdc; once the real
+           -- shipment row arrives (with a partner-issued tracking number),
+           -- the synthetic acts as a stub that double-counts the parcel.
+           AND COALESCE(tracking_number, '') NOT LIKE 'syn:%'
+         ORDER BY item_category, COALESCE(tracking_number, ''),
+                  (status = 'delivered') DESC,
+                  delivered_at DESC NULLS LAST,
+                  dispatched_at DESC NULLS LAST,
+                  id DESC
+      )
+      UNION ALL
+      (
+        SELECT NULL::int      AS shipment_id,
+               partner, tracking_number,
+               CASE
+                 WHEN status = 'dispatched' THEN 'shipped'
+                 WHEN status = 'sealed'     THEN 'packed'
+                 ELSE status
+               END AS status,
+               dispatched_at::text AS dispatched_at,
+               NULL::text          AS delivered_at,
+               NULL::text          AS item_category,
+               NULL::text          AS description,
+               NULL::jsonb         AS carrier_events
+          FROM erp.packing_units pu
+         WHERE pu.order_erp_name = ${orderNo}
+           AND pu.status IN ('sealed','dispatched')
+           -- Once an outward_shipments row exists for this order, it owns
+           -- the lifecycle (it's the only place that flips to "delivered").
+           -- Keeping packing_units in the union double-counts and pegs the
+           -- timeline at "shipped" forever, because packing_units never
+           -- progresses past "dispatched".
+           AND NOT EXISTS (
+             SELECT 1 FROM erp.outward_shipments os
+              WHERE os.order_erp_name = pu.order_erp_name
+           )
+      )
+      ORDER BY dispatched_at DESC NULLS LAST
+    `)
+  );
+
+  // Categories delivered on a SYNTHETIC (`syn:`) shipment row. The query above
+  // hides those rows on purpose — as visible "Shipment history" cards they are
+  // stubs that double-count a parcel whose real AWB arrived later. But audit
+  // mints a syn: AWB for every carrier-less handover, so a Porter drop or a
+  // shipped_to_school delivery IS a syn: row (1,962 + 3,397 delivered rows on
+  // prod). Filtering them out of the STATUS fold meant those deliveries were
+  // invisible: the card read "pending" days after the parent had the parcel,
+  // which in turn kept the exchange / missing button hidden
+  // (SAL-ORD-2026-39849, -39655 and ~80 more).
+  //
+  // So: keep them out of the rendered history (unchanged), but let a delivered
+  // one raise its category's floor — status only, nothing else is read.
+  const synDeliveredRows = rows<{ cat: string | null; dispatched_at: string | null }>(
+    await db.execute(sql`
+      SELECT lower(trim(coalesce(item_category, ''))) AS cat,
+             max(dispatched_at)::text AS dispatched_at
         FROM erp.outward_shipments
        WHERE order_erp_name = ${orderNo}
          AND is_deleted = false
-         -- Hide legacy synthetic rows. These were written before the
-         -- carrier-side AWB came back from srocket/dtdc; once the real
-         -- shipment row arrives (with a partner-issued tracking number),
-         -- the synthetic acts as a stub that double-counts the parcel.
-         AND COALESCE(tracking_number, '') NOT LIKE 'syn:%'
-      UNION ALL
-      SELECT NULL::int      AS shipment_id,
-             partner, tracking_number,
-             CASE
-               WHEN status = 'dispatched' THEN 'shipped'
-               WHEN status = 'sealed'     THEN 'packed'
-               ELSE status
-             END AS status,
-             dispatched_at::text AS dispatched_at,
-             NULL::text          AS delivered_at,
-             NULL::text          AS item_category,
-             NULL::text          AS description,
-             NULL::jsonb         AS carrier_events
-        FROM erp.packing_units pu
-       WHERE pu.order_erp_name = ${orderNo}
-         AND pu.status IN ('sealed','dispatched')
-         -- Once an outward_shipments row exists for this order, it owns
-         -- the lifecycle (it's the only place that flips to "delivered").
-         -- Keeping packing_units in the union double-counts and pegs the
-         -- timeline at "shipped" forever, because packing_units never
-         -- progresses past "dispatched".
-         AND NOT EXISTS (
-           SELECT 1 FROM erp.outward_shipments os
-            WHERE os.order_erp_name = pu.order_erp_name
-         )
-      ORDER BY dispatched_at DESC NULLS LAST
+         AND COALESCE(tracking_number, '') LIKE 'syn:%'
+         AND lower(status) = 'delivered'
+       GROUP BY 1
     `)
   );
 
@@ -969,6 +1128,15 @@ export async function getParentOrderDetailFromErp(
                  created_at::text AS created_at
             FROM erp.outward_status_events
            WHERE shipment_id IN ${sql.raw(`(${shipmentIds.join(",")})`)}
+             -- Drop NO-OP transitions (from_status = to_status). Audit's
+             -- 'onedrive-consolidate' reconcile job re-stamps the terminal
+             -- state on every run, writing hundreds of identical
+             -- 'delivered → delivered' rows per shipment (397,986 of
+             -- 567,476 rows = 70% are no-ops; one shipment had 773). They
+             -- carry no information and flooded the customer timeline,
+             -- burying the real carrier scans. Keep genuine transitions
+             -- (incl. the initial one where from_status IS NULL).
+             AND from_status IS DISTINCT FROM to_status
            ORDER BY shipment_id, created_at
         `)
       )
@@ -998,6 +1166,9 @@ export async function getParentOrderDetailFromErp(
   // Size, bookkit 2nd Language) would render the raw concatenated SKU.
   const erpBundleVariantIds: string[] = [];
   for (const it of items) {
+    // Plain line item's own variant — so Colour · Size render on the line
+    // itself, not just inside Magic Box contents.
+    if (it.variant_id) erpBundleVariantIds.push(it.variant_id);
     const bs = it.bundle_selections as
       | { variantId?: string }[]
       | null
@@ -1062,18 +1233,150 @@ export async function getParentOrderDetailFromErp(
       pickedQty: qtys.pickedQty,
       returnedQty: qtys.returnedQty,
       erpCategory: qtys.erpCategory,
+      itemCode: it.sku ?? null,
     };
   });
   const itemsForGrouping =
     erpLines.length > 0 ? erpLines : localItemsForGrouping;
 
+  // Resolve every Magic Box component variantId → sku (== shipment item_code)
+  // + product kind in one batched query. Legacy bundle_selections sometimes
+  // store the SKU (not a UUID) in `variantId` — those would blow up the
+  // `id IN (…)` uuid cast (string_to_uuid), so keep only UUID-shaped ids and
+  // resolve the rest by sku. Kind (uniform / accessory / book / consumable /
+  // …) is the reliable OFFLINE signal for a component's audit category when
+  // its parcel ships with a blank item_code (bookkit): see componentCategoryOf.
+  const UUID_RE =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const componentVariantIds = Array.from(
+    new Set(
+      items.flatMap((it) => {
+        const bs = it.bundle_selections as
+          | { variantId?: string }[]
+          | null
+          | undefined;
+        return Array.isArray(bs)
+          ? bs
+              .map((c) => c?.variantId)
+              .filter((v): v is string => !!v && UUID_RE.test(v))
+          : [];
+      })
+    )
+  );
+  const legacyComponentSkus = Array.from(
+    new Set(
+      items.flatMap((it) => {
+        const bs = it.bundle_selections as
+          | { variantId?: string }[]
+          | null
+          | undefined;
+        return Array.isArray(bs)
+          ? bs
+              .map((c) => c?.variantId)
+              .filter((v): v is string => !!v && !UUID_RE.test(v))
+          : [];
+      })
+    )
+  );
+  const skuByVariantId = new Map<string, string>();
+  const kindByVariantId = new Map<string, string>();
+  const kindBySku = new Map<string, string>();
+  if (componentVariantIds.length > 0) {
+    const rSku = rows<{ id: string; sku: string | null; kind: string | null }>(
+      await db.execute(sql`
+        SELECT pv.id::text AS id, pv.sku, p.kind
+          FROM product_variants pv
+          JOIN products p ON p.id = pv.product_id
+         WHERE pv.id IN (${sql.join(
+           componentVariantIds.map((v) => sql`${v}`),
+           sql`, `
+         )})
+      `)
+    );
+    for (const x of rSku) {
+      if (x.sku) skuByVariantId.set(x.id, x.sku);
+      if (x.kind) {
+        kindByVariantId.set(x.id, x.kind);
+        if (x.sku) kindBySku.set(x.sku, x.kind);
+      }
+    }
+  }
+  if (legacyComponentSkus.length > 0) {
+    const rKind = rows<{ sku: string; kind: string | null }>(
+      await db.execute(sql`
+        SELECT pv.sku, p.kind
+          FROM product_variants pv
+          JOIN products p ON p.id = pv.product_id
+         WHERE pv.sku IN (${sql.join(
+           legacyComponentSkus.map((v) => sql`${v}`),
+           sql`, `
+         )})
+      `)
+    );
+    for (const x of rKind) if (x.sku && x.kind) kindBySku.set(x.sku, x.kind);
+  }
+
   let categoryGroups: Awaited<ReturnType<typeof groupItemsByRootCategory>>;
   const auditCat = o.derived_by_category ?? null;
+  // `derived_delivery_by_category` is recomputed by audit at READ time and
+  // only snapshotted here when the SO row itself is mirrored — a shipment-only
+  // change (most visibly a Porter drop AT the school, which audit counts as
+  // the delivery moment) never touches audit's SO row, so this map can sit
+  // frozen at "Pending" indefinitely. The webhook path now re-pulls the header
+  // on every shipment event; this throttled render-time refresh heals orders
+  // whose event was missed or predates that. Skipped once everything reads
+  // delivered — there's nothing left to progress to.
+  if (
+    !auditCat ||
+    Object.values(auditCat).some(
+      (v) => !(v ?? "").toString().toLowerCase().startsWith("delivered")
+    )
+  ) {
+    backgroundRefreshOrderHeader(orderNo);
+  }
   if (auditCat && Object.keys(auditCat).length > 0) {
+    // Recover the true set of delivery categories the customer bought. Audit's
+    // `derived_delivery_categories_present` sometimes OMITS a whole-parcel
+    // category — SAL-ORD-2026-24491 lists only ["uniform"] though its 31
+    // bookkit books delivered (by_cat has "bookkit":"Delivered"). Without
+    // "bookkit" in `present`, groupItemsByAuditCategory builds no Bookkit card
+    // and every book vanishes from the tracking section. Map each component's
+    // product kind → audit category and union it into `present` (only for
+    // categories that actually appear in the by_cat ledger, so we never invent
+    // one the order doesn't have). Only augment a NON-empty audit list — an
+    // empty/absent one keeps its existing "fall back to all by_cat keys"
+    // behaviour untouched.
+    const byCatKeys = new Set(
+      Object.keys(auditCat).map((k) => k.toLowerCase())
+    );
+    const kindToCatRaw = (kind: string | undefined): string | null => {
+      if (!kind) return null;
+      if (kind === "book" || kind === "consumable") return "bookkit";
+      if (kind === "uniform" || kind === "accessory" || kind === "kit")
+        return "uniform";
+      return null;
+    };
+    const componentCats = new Set<string>();
+    for (const it of items)
+      for (const c of ((it.bundle_selections as
+        | { variantId?: string }[]
+        | null
+        | undefined) ?? [])) {
+        const vid = c?.variantId;
+        if (!vid) continue;
+        const cat = kindToCatRaw(kindByVariantId.get(vid) ?? kindBySku.get(vid));
+        if (cat && byCatKeys.has(cat)) componentCats.add(cat);
+      }
+    const auditPresent = (o.derived_categories_present ?? [])
+      .map((s) => (s ?? "").toString().toLowerCase().trim())
+      .filter(Boolean);
+    const presentArg = auditPresent.length
+      ? Array.from(new Set([...auditPresent, ...componentCats]))
+      : o.derived_categories_present ?? null;
     categoryGroups = groupItemsByAuditCategory(
       itemsForGrouping,
       auditCat,
-      o.derived_categories_present ?? null
+      presentArg
     );
   } else {
     // Pre-mirror orders (no derived_delivery_by_category on audit yet).
@@ -1101,6 +1404,57 @@ export async function getParentOrderDetailFromErp(
     );
   }
 
+  // `outward_shipments` is a SEQUENCE of delivery ATTEMPTS, not an unordered
+  // set: an RTO'd parcel is re-packed and re-shipped under a NEW AWB. Folding
+  // the rows with max()/any() lets a stale "returned" from attempt #1 outrank
+  // the live attempt #2, so the parent saw a rose RTO banner while the
+  // reshipment was out for delivery (SAL-ORD-2026-35517). A `returned`
+  // shipment is SUPERSEDED once a later-dispatched shipment exists for the
+  // same category — it is then history (still rendered as its own shipment
+  // card with its own timeline), not the order's current state.
+  const shipKeyOf = (s: { item_category: string | null; tracking_number: string | null }) =>
+    `${(s.item_category ?? "").toLowerCase().trim()}|${s.tracking_number ?? ""}`;
+  const supersededShipments = new Set<string>();
+  // Newest dispatch per category — also consulted by the syn: delivery fold
+  // below, so it lives outside the block.
+  const latestDispatchByCat = new Map<string, string>();
+  {
+    for (const s of shipments) {
+      if (!s.dispatched_at) continue;
+      const cat = (s.item_category ?? "").toLowerCase().trim();
+      const prev = latestDispatchByCat.get(cat);
+      if (!prev || s.dispatched_at > prev)
+        latestDispatchByCat.set(cat, s.dispatched_at);
+    }
+    for (const s of shipments) {
+      if ((s.status ?? "").toLowerCase() !== "returned") continue;
+      const latest = latestDispatchByCat.get(
+        (s.item_category ?? "").toLowerCase().trim()
+      );
+      // Strictly earlier than the newest attempt in its own category → a
+      // later parcel replaced it. Same-timestamp rows are NOT superseded.
+      if (latest && s.dispatched_at && s.dispatched_at < latest)
+        supersededShipments.add(shipKeyOf(s));
+    }
+  }
+  const isSupersededShipment = (s: {
+    item_category: string | null;
+    tracking_number: string | null;
+  }) => supersededShipments.has(shipKeyOf(s));
+
+  // Syn: deliveries obey the SAME supersession rule as a returned parcel: one
+  // dispatched strictly before the newest attempt in its own category is a
+  // past attempt, not the current state. SAL-ORD-2026-36818 is the case —
+  // a porter drop on 18 Jul followed by a fresh DTDC parcel dispatched 3 Aug;
+  // without this the card would read "delivered" over a parcel still in transit.
+  const synDeliveredCats = new Set<string>();
+  for (const r of synDeliveredRows) {
+    if (!r.cat) continue;
+    const latest = latestDispatchByCat.get(r.cat);
+    if (latest && r.dispatched_at && r.dispatched_at < latest) continue;
+    synDeliveredCats.add(r.cat);
+  }
+
   // Audit's `derived_delivery_by_category` is sometimes stale — its
   // backend recomputes on a schedule, so a freshly-progressed parcel can
   // sit at "Pending" for minutes while the shipment row already says
@@ -1118,6 +1472,11 @@ export async function getParentOrderDetailFromErp(
   const shipmentStatusToCategory = (s: string | null | undefined): string => {
     const v = (s ?? "").toLowerCase().trim();
     if (v === "delivered") return "delivered";
+    // RTO: a parcel that went back to origin reads as "returned" on the
+    // category card (rose badge + stage-6 returned tint) — without this it
+    // fell through to "pending" and the card showed Confirmed/awaiting-dispatch
+    // even though the shipment had already been dispatched and returned.
+    if (v === "returned") return "returned";
     if (
       v === "out_for_delivery" ||
       v === "out for delivery" ||
@@ -1144,9 +1503,22 @@ export async function getParentOrderDetailFromErp(
     for (const s of shipments) {
       const sCat = (s.item_category ?? "").toLowerCase().trim();
       if (sCat !== catKey) continue;
+      // A returned parcel that a later reshipment replaced is history — it
+      // must not win the fold over the live attempt (returned ranks equal to
+      // delivered below, so without this it outranks "out for delivery").
+      if (isSupersededShipment(s)) continue;
       const mapped = shipmentStatusToCategory(s.status);
       if (rankOf(mapped) > rankOf(bestFromShipments)) bestFromShipments = mapped;
     }
+    // A syn:-tracked delivered row for this category (Porter / handed to the
+    // school / manual drop) counts toward the fold even though it never
+    // renders as a history card. Strictly an upgrade — it can't outrank an
+    // equal-ranked "returned", so an RTO'd category keeps reading returned.
+    if (
+      synDeliveredCats.has(catKey) &&
+      rankOf("delivered") > rankOf(bestFromShipments)
+    )
+      bestFromShipments = "delivered";
     if (rankOf(bestFromShipments) > rankOf(g.status)) {
       // Bump the badge AND realign the quantity counters so the subtitle
       // matches ("4 / 4 out for delivery" rather than "4 awaiting dispatch").
@@ -1158,6 +1530,13 @@ export async function getParentOrderDetailFromErp(
       if (bestFromShipments === "delivered") {
         g.deliveredQty = g.totalQty;
         g.pickedQty = 0;
+        g.returnedQty = 0;
+      } else if (bestFromShipments === "returned") {
+        // RTO — the whole category came back; reflect it in the counters so
+        // the subtitle reads "N returned" rather than "N awaiting dispatch".
+        g.returnedQty = g.totalQty;
+        g.deliveredQty = 0;
+        g.pickedQty = 0;
       } else {
         g.pickedQty = g.totalQty;
         g.deliveredQty = 0;
@@ -1165,6 +1544,11 @@ export async function getParentOrderDetailFromErp(
       for (const it of g.items) {
         if (bestFromShipments === "delivered") {
           it.deliveredQty = it.qty;
+          it.pickedQty = 0;
+          it.returnedQty = 0;
+        } else if (bestFromShipments === "returned") {
+          it.returnedQty = it.qty;
+          it.deliveredQty = 0;
           it.pickedQty = 0;
         } else {
           it.pickedQty = it.qty;
@@ -1174,48 +1558,460 @@ export async function getParentOrderDetailFromErp(
     }
   }
 
+  // ── Per-item badge status ───────────────────────────────────────────
+  // The category card above is parcel-level. But newer orders are tracked
+  // at the LINE level: erp.outward_shipments carries an item_code per
+  // dispatched line. When that's the case, show each item its OWN status
+  // rather than inheriting the whole category's — an out-of-stock line held
+  // back from an otherwise out-for-delivery parcel should read "pending",
+  // not "out for delivery" (e.g. SAL-ORD-2026-10691's Sports Track).
+  //
+  // Rule (customer-facing): report the line's REAL state — delivered / out
+  // for delivery / in transit / returned. "pending" is reserved for lines
+  // with genuinely nothing to report (cancelled, out-of-stock, held back, or
+  // NO shipment row at all); it used to swallow every non-delivered state,
+  // so a parcel on the van read "pending" to the parent. A `dispatched` line
+  // reads "in transit" — the same word `shipmentStatusToCategory` gives the
+  // category card, so the card and the Items list never disagree on a line.
+  // Only orders that actually have per-line shipment rows switch to this
+  // mode; magic-box parents / legacy category-only orders keep the category
+  // status on every line (perItemMode stays false for them).
+  // TRUE when audit's own category floor for the line's category is SETTLED —
+  // exactly "Delivered", with no "· N pending" shortfall remainder. Audit
+  // appends that remainder for every piece it still counts as held back, so a
+  // bare "Delivered" is audit stating nothing is short in that category: any
+  // packing_state pin left on one of its lines is a stale packing-time
+  // snapshot audit never cleared, and must not badge the line "pending" or
+  // block an exchange/missing request on it. Measured on prod 2026-08-12:
+  // 37 lines / 19 orders (e.g. SAL-ORD-2026-00280 — "Fully Delivered", uniform
+  // floor "Delivered", yet 5 lines still pinned 'packed'). Lines under a
+  // "Delivered · N pending" floor keep their pin (SAL-ORD-2026-34537).
+  // Requires the query to join erp.sales_orders as `so` and alias the item
+  // table as `i`. Mirrored verbatim in lib/return-line-eligibility.ts.
+  const SETTLED_CATEGORY_SQL = sql`
+    coalesce(
+      CASE WHEN jsonb_typeof((so.raw::jsonb)->'derived_delivery_by_category') = 'object'
+           THEN (so.raw::jsonb)->'derived_delivery_by_category'
+                  ->>lower(trim(coalesce(i.category, '')))
+      END, '') ~* '^delivered( *· *0+ +pending)?$'`;
+  const SHIP_RANK_SQL = sql`(CASE lower(status)
+                     WHEN 'delivered'        THEN 5
+                     WHEN 'out_for_delivery' THEN 4
+                     WHEN 'in_transit'       THEN 3
+                     WHEN 'dispatched'       THEN 2
+                     WHEN 'returned'         THEN 1
+                     ELSE 0 END)`;
+  const rankToItemStatus = (rank: number): CategoryGroupStatus =>
+    rank >= 5
+      ? "delivered"
+      : rank === 4
+        ? "out for delivery"
+        : rank === 3 || rank === 2
+          ? "in transit"
+          : rank === 1
+            ? "returned"
+            : "pending";
+  const perItemShipRank = new Map<string, number>();
+  {
+    const rowsPI = rows<{ item_code: string; rank: number }>(
+      await db.execute(sql`
+        SELECT item_code, max(${SHIP_RANK_SQL})::int AS rank
+          FROM erp.outward_shipments
+         WHERE order_erp_name = ${orderNo}
+           AND is_deleted = false
+           AND item_code IS NOT NULL AND item_code <> ''
+         GROUP BY item_code
+      `)
+    );
+    for (const r of rowsPI) perItemShipRank.set(r.item_code, r.rank);
+  }
+  // Per-line "held back" signal mirrored from audit (erp.sales_order_items.
+  // packing_state). Any non-null value ('oos' / 'packed' / 'pending') means
+  // the line is demonstrably NOT delivered — it was out of stock, sealed but
+  // not dispatched, or skipped by packing — even when its whole category
+  // rolled up to "Delivered · N pending" and shipped as one blank-item_code
+  // parcel. This is the ONLY per-item signal for orders like
+  // SAL-ORD-2026-34537 (KLS Half Pants out-of-stock; its 5 uniform siblings
+  // delivered in the same parcel). Audit already computes it on the order
+  // payload with all the nuance (bookkit textbooks + uniform pieces inside a
+  // delivered parcel resolve to NULL → they correctly inherit delivered).
+  const heldBackCodes = new Set<string>();
+  {
+    const rowsHB = rows<{ item_code: string | null }>(
+      await db.execute(sql`
+        SELECT i.item_code
+          FROM erp.sales_order_items i
+          JOIN erp.sales_orders so ON so.erp_name = i.order_erp_name
+         WHERE i.order_erp_name = ${orderNo}
+           AND i.item_code IS NOT NULL AND i.item_code <> ''
+           AND i.packing_state IS NOT NULL
+           AND NOT (${SETTLED_CATEGORY_SQL})
+      `)
+    );
+    for (const r of rowsHB) if (r.item_code) heldBackCodes.add(r.item_code);
+  }
+  // Decide per CATEGORY, not per order. A category switches to per-item
+  // badges only if its OWN shipment rows carry item_codes matching its
+  // lines. This matters because some categories dispatch at the parcel
+  // level with a blank item_code (e.g. bookkit ships as one delivered
+  // parcel) — those must keep the category status on every line, or a
+  // delivered bookkit would read "pending". The uniform category here
+  // has per-line codes, so its unmatched line (Sports Track, held back
+  // out-of-stock) correctly reads "pending" while its shipped siblings
+  // read "out for delivery".
+  for (const g of categoryGroups) {
+    const groupHasPerLine = g.items.some(
+      (it) => it.itemCode && perItemShipRank.has(it.itemCode)
+    );
+    if (!groupHasPerLine) continue; // keep category status on every line
+    for (const it of g.items) {
+      const hasRow = !!(it.itemCode && perItemShipRank.has(it.itemCode));
+      const rank = it.itemCode ? perItemShipRank.get(it.itemCode) ?? 0 : 0;
+      // Audit is the source of truth: when it rolls the CATEGORY up to
+      // delivered, any line that WAS dispatched (has its own shipment row) is
+      // delivered too — even if that per-line row is stale at "dispatched"
+      // (e.g. local_vendor rows never flipped to delivered while a DTDC parcel
+      // for the same category delivered). A line with NO row is genuinely held
+      // back and stays pending.
+      if (g.status === "delivered" && hasRow) {
+        it.status = "delivered";
+      } else {
+        it.status = rankToItemStatus(rank);
+      }
+    }
+  }
+
+  // Held-back override (applies to EVERY category, even ones with no per-line
+  // shipment rows — the case the loop above `continue`s past). Audit's
+  // packing_state pins the exact line that didn't ship, so it wins over the
+  // category-delivered floor: an out-of-stock uniform piece reads "pending"
+  // while the rest of the parcel that delivered stays "delivered". We also
+  // move the held-back qty from the group's delivered bucket into picked, so
+  // the header counter reads an honest "7 / 9 delivered" instead of "9 / 9"
+  // contradicting the pending line below (audit's own label: "Delivered · N
+  // pending"). The group STATUS badge is left at delivered — matching audit.
+  for (const g of categoryGroups)
+    for (const it of g.items) {
+      if (!it.itemCode || !heldBackCodes.has(it.itemCode)) continue;
+      // `packing_state` is a snapshot taken AT packing time; audit never
+      // clears it when a line flagged 'oos' is later found and shipped anyway.
+      // SAL-ORD-2026-34839: the skort was pinned 'oos' at 20 Jul 13:13, then
+      // dispatched at 13:27 and delivered 24 Jul — its own shipment row says
+      // delivered, yet the pin forced the line to "pending" and zeroed the
+      // counter to "0 / 2". A line with its OWN shipment row at dispatched or
+      // beyond was physically in a parcel, so it is NOT held back: the carrier
+      // row (a live fact) outranks the pin (a stale snapshot). Lines with no
+      // row at all — the genuine out-of-stock case this override exists for,
+      // e.g. SAL-ORD-2026-34537 — have rank 0 and still read pending.
+      if ((perItemShipRank.get(it.itemCode) ?? 0) >= 2) continue;
+      if (it.status !== "pending") {
+        const wasDelivered = it.deliveredQty;
+        g.deliveredQty = Math.max(0, g.deliveredQty - wasDelivered);
+        g.pickedQty += it.qty;
+        it.deliveredQty = 0;
+        it.pickedQty = it.qty;
+      }
+      it.status = "pending";
+    }
+
+  // ── Per-item / per-component status for the Items list badges ────────
+  // A richer item_code → status map than perItemShipRank above (adds
+  // in-transit / returned). item_code == variant sku, so each plain line and
+  // each Magic Box component resolves its OWN parcel's state. Absence from
+  // the map = no line-level shipment row for that sku.
+  // Shares `rankToItemStatus` / `SHIP_RANK_SQL` with the category loop above,
+  // so the Items list and the category card never disagree on the same line.
+  // Component base name (strip the " · Colour · Size" suffix the mirror puts
+  // on decoded descriptions) so a component matches its shipment row by name
+  // when the parcel carries a blank item_code (e.g. a bookkit ships at the
+  // parcel level with only a description).
+  const normName = (s: string | null | undefined) =>
+    (s ?? "").split(" · ")[0].trim().toLowerCase().replace(/\s+/g, " ");
+  const perItemStatusByCode = new Map<string, CategoryGroupStatus>();
+  const perItemRankByName = new Map<string, number>();
+  // item_code / base-name → shipment item_category (lowercased), so a Magic
+  // Box component can be routed to the right tracking card (uniform vs bookkit).
+  const catByCode = new Map<string, string>();
+  const catByName = new Map<string, string>();
+  {
+    const rowsIS = rows<{
+      item_code: string | null;
+      description: string | null;
+      item_category: string | null;
+      rank: number;
+    }>(
+      await db.execute(sql`
+        SELECT item_code, description, item_category,
+               ${SHIP_RANK_SQL}::int AS rank
+          FROM erp.outward_shipments
+         WHERE order_erp_name = ${orderNo}
+           AND is_deleted = false
+      `)
+    );
+    const bestCode = new Map<string, number>();
+    for (const x of rowsIS) {
+      const cat = (x.item_category ?? "").trim().toLowerCase();
+      if (x.item_code) {
+        const prev = bestCode.get(x.item_code) ?? -1;
+        if (x.rank > prev) bestCode.set(x.item_code, x.rank);
+        if (cat && !catByCode.has(x.item_code)) catByCode.set(x.item_code, cat);
+      }
+      const nm = normName(x.description);
+      if (nm) {
+        const prev = perItemRankByName.get(nm) ?? -1;
+        if (x.rank > prev) perItemRankByName.set(nm, x.rank);
+        if (cat && !catByName.has(nm)) catByName.set(nm, cat);
+      }
+    }
+    for (const [code, rank] of bestCode)
+      perItemStatusByCode.set(code, rankToItemStatus(rank));
+  }
+  // Non-bundle top-level lines reuse the per-item status the category loop
+  // already computed (it carries the "only when line-tracked" guard, so a
+  // parcel-level bookkit stays on its category status instead of "pending").
+  // Keyed by item_code (== sku), NOT the grouping row id — the grouping
+  // source may be the ERP mirror (ids like "erp:123") which never match the
+  // local order_items ids, whereas item_code is consistent across both.
+  const statusByItemCode = new Map<string, CategoryGroupStatus>();
+  for (const g of categoryGroups)
+    for (const it of g.items)
+      if (it.itemCode) statusByItemCode.set(it.itemCode, it.status);
+  // Category status by (lowercased) name — used to apply the same "audit says
+  // the category is delivered → its dispatched components are delivered" floor
+  // to Magic Box components as the category loop applies to plain lines.
+  const catStatusByName = new Map<string, CategoryGroupStatus>();
+  for (const g of categoryGroups)
+    catStatusByName.set(g.rootCategoryName.toLowerCase(), g.status);
+  // Resolve a Magic Box component to its own parcel status: prefer an exact
+  // sku↔item_code match; fall back to a base-name match (covers parcel-level
+  // rows with a blank item_code, e.g. bookkit). Returns null when neither hits.
+  const componentStatusOf = (
+    variantId: string,
+    name: string
+  ): CategoryGroupStatus | null => {
+    // 1) UUID variantId → resolved sku; 2) legacy variantId that IS already a
+    //    sku/item_code; 3) base-name (blank-item_code parcels like bookkit).
+    const sku = skuByVariantId.get(variantId);
+    if (sku && perItemStatusByCode.has(sku)) return perItemStatusByCode.get(sku)!;
+    if (perItemStatusByCode.has(variantId)) return perItemStatusByCode.get(variantId)!;
+    const byName = perItemRankByName.get(normName(name));
+    if (byName !== undefined) return rankToItemStatus(byName);
+    return null;
+  };
+  // True when a Magic Box component is flagged held-back by audit's
+  // packing_state (out-of-stock / sealed-not-dispatched / skipped). Keyed by
+  // item_code; the component's sku (== item_code) resolves via skuByVariantId,
+  // and legacy rows store the sku directly in variantId. Name-only matching
+  // isn't available (packing_state is per item_code, not description).
+  const componentHeldBack = (variantId: string): boolean => {
+    const sku = skuByVariantId.get(variantId);
+    return (!!sku && heldBackCodes.has(sku)) || heldBackCodes.has(variantId);
+  };
+  // Audit's per-category status straight off the order header
+  // (`derived_delivery_by_category`, e.g. {"bookkit":"Delivered","uniform":
+  // "Delivered · 1 pending"}). This is the authoritative category floor even
+  // for a category (bookkit) that ships as a single blank-item_code parcel and
+  // therefore never appears in catByCode/categoryGroups. Coarse-mapped to the
+  // same 3 buckets the per-item badge uses (delivered / out for delivery /
+  // else→pending). "Delivered · N pending" → delivered (the parcel delivered;
+  // the N held-back lines are pinned separately, per component, below).
+  const coarseCatStatus = (raw: string): CategoryGroupStatus => {
+    const s = raw.toLowerCase();
+    if (s.includes("out for delivery") || s.includes("ofd"))
+      return "out for delivery";
+    if (s.includes("not") && s.includes("deliver")) return "pending";
+    if (s.includes("deliver")) return "delivered";
+    return "pending";
+  };
+  const rawCatStatus = new Map<string, CategoryGroupStatus>();
+  if (o.derived_by_category && typeof o.derived_by_category === "object")
+    for (const [k, v] of Object.entries(o.derived_by_category))
+      if (typeof v === "string")
+        rawCatStatus.set(k.trim().toLowerCase(), coarseCatStatus(v));
+  const categoriesPresent = new Set(rawCatStatus.keys());
+  // Product kind → audit category, restricted to categories actually present
+  // on this order. book/consumable → bookkit; uniform/accessory/kit → uniform.
+  //
+  // A BOOKKIT is catalogued as kind='kit' (the same `effectiveKind` heuristic
+  // the exchange page and return-line-eligibility use: kind='kit' + a name
+  // containing "bookkit" IS a book). Without the name check it fell into the
+  // uniform branch below, inherited the uniform category — which IS dispatched
+  // line-by-line — and, matching no uniform shipment row of its own, was badged
+  // "pending" on an order whose books had actually been delivered
+  // (SAL-ORD-2026-22600's "SMS Grade 1 Bookkit"). The exchange picker gates
+  // books off the bookkit parcel instead, so it correctly let the parent
+  // request them, and the two surfaces contradicted each other.
+  const kindToCategory = (
+    kind: string | undefined,
+    name?: string
+  ): string | null => {
+    if (!kind) return null;
+    const isBookkitNamedKit =
+      kind === "kit" && (name ?? "").toLowerCase().includes("bookkit");
+    if (
+      (kind === "book" || kind === "consumable" || isBookkitNamedKit) &&
+      categoriesPresent.has("bookkit")
+    )
+      return "bookkit";
+    if (
+      (kind === "uniform" || kind === "accessory" || kind === "kit") &&
+      categoriesPresent.has("uniform")
+    )
+      return "uniform";
+    if (categoriesPresent.has(kind)) return kind;
+    return null;
+  };
+  // The shipment category (uniform / bookkit / …) a component was dispatched
+  // under: prefer an exact shipment match (sku/name), then fall back to the
+  // product kind (reliable when the component's parcel carries a blank
+  // item_code, e.g. every book in a bookkit). null only when neither resolves
+  // — the caller then assigns the box's dominant category.
+  const componentCategoryOf = (
+    variantId: string,
+    name: string
+  ): string | null => {
+    const sku = skuByVariantId.get(variantId);
+    if (sku && catByCode.has(sku)) return catByCode.get(sku)!;
+    if (catByCode.has(variantId)) return catByCode.get(variantId)!;
+    const byName = catByName.get(normName(name));
+    if (byName) return byName;
+    const kind = kindByVariantId.get(variantId) ?? kindBySku.get(variantId);
+    return kindToCategory(kind, name);
+  };
+  // Categories dispatched at the LINE level — i.e. where at least one COMPONENT
+  // resolved to its own shipment row (exact sku, base-name, or a packing_state
+  // held-back flag). Only in such a category does an UNMATCHED component mean
+  // "held back" (→ pending). A whole-parcel category (bookkit ships as one
+  // parcel; some magic boxes ship the whole uniform under the box-parent sku as
+  // item_code, matching NO component) is NOT line-tracked — its components
+  // inherit the category status wholesale (a delivered bookkit → every book
+  // delivered). This is scoped per-COMPONENT, not per-catByCode-value: a
+  // shipment row keyed by the box-parent sku carries a category but matches no
+  // component, so it must not flip that category to "line-tracked".
+  const lineTrackedCategories = new Set<string>();
+  for (const it of items)
+    for (const s of ((it.bundle_selections as
+      | { variantId?: string; name?: string }[]
+      | null
+      | undefined) ?? [])) {
+      if (!s?.variantId) continue;
+      const matched =
+        componentStatusOf(s.variantId, s.name ?? "") !== null ||
+        componentHeldBack(s.variantId);
+      if (!matched) continue;
+      const cat = componentCategoryOf(s.variantId, s.name ?? "");
+      if (cat) lineTrackedCategories.add(cat);
+    }
+
   const pollPending =
     !pollMeta?.erp_last_polled_at &&
     !!pollMeta?.created_at &&
     Date.now() - new Date(pollMeta.created_at).getTime() < 10 * 60_000;
 
+  // ── RTO (Return to Origin) ──────────────────────────────────────────
+  // Audit mirrors the carrier's RTO lifecycle into outward_shipments
+  // (status='returned') and the scan log (carrier_events labelled
+  // "Set RTO Initiated" / "RTO In Transit" / "RTO Out For Delivery" /
+  // "RTO Delivered" / "Return as per client instruction"). Promote it to a
+  // first-class signal so the customer sees a clear RTO badge + sub-timeline
+  // instead of a frozen "Out for Delivery". Gated below so a parcel that
+  // ultimately delivered (RTO reversed / re-attempted OK) doesn't show a
+  // stale "returning" banner.
+  const RTO_LABEL_RE = /\brto\b|return to origin|return as per client|waiting for rto/i;
+  const rawRtoEvents: { at: string; label: string; location: string | null }[] = [];
+  let anyReturnedShipment = false;
+  for (const s of shipments) {
+    // Skip attempts a later reshipment replaced: their RTO is history, and
+    // both the `returned` status AND their carrier RTO scans would otherwise
+    // pin the header at "returned" while the new parcel is in flight.
+    if (isSupersededShipment(s)) continue;
+    if ((s.status ?? "").toLowerCase() === "returned") anyReturnedShipment = true;
+    const evs = Array.isArray(s.carrier_events)
+      ? (s.carrier_events as { at?: string; label?: string; location?: string }[])
+      : [];
+    for (const ev of evs) {
+      if (ev?.at && ev?.label && RTO_LABEL_RE.test(ev.label)) {
+        rawRtoEvents.push({ at: ev.at, label: ev.label, location: ev.location ?? null });
+      }
+    }
+  }
+  // Audit's mirror frequently carries the SAME scan many times over (one
+  // RTO beat seen ×26) — collapse exact duplicates (at + label + location)
+  // so the timeline shows each beat once.
+  const seenRto = new Set<string>();
+  const rtoEvents = rawRtoEvents
+    .filter((e) => {
+      const k = `${e.at}|${e.label}|${e.location ?? ""}`;
+      if (seenRto.has(k)) return false;
+      seenRto.add(k);
+      return true;
+    })
+    .sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
+  const isRto = anyReturnedShipment || rtoEvents.length > 0;
+  const rtoDelivered = rtoEvents.some((e) => /rto delivered/i.test(e.label));
+
+  const baseStatus = uiStatus(
+    o.display_status,
+    shipments.length,
+    shipDelivered,
+    o.sealed_pu,
+    o.dispatched_pu,
+    shipments.filter((s) => s.status === "out_for_delivery").length,
+    // audit_cat_all_delivered: compute from the per-category fields
+    // we already pulled. true when every category in `present` is in
+    // a delivered state per `by_cat` — keeps the order-level header
+    // in sync with the per-category cards below.
+    (() => {
+      const present = o.derived_categories_present ?? [];
+      const byCat = o.derived_by_category ?? {};
+      if (present.length === 0) return false;
+      const byCatLc: Record<string, string> = {};
+      for (const [k, v] of Object.entries(byCat))
+        byCatLc[k.toLowerCase()] = String(v ?? "").toLowerCase();
+      return present.every((p) => {
+        const v = byCatLc[(p ?? "").toLowerCase()] ?? "";
+        return v === "delivered" || v === "fully delivered" || v === "completed";
+      });
+    })(),
+    // in-transit shipment count — lifts the order header off "shipped"
+    // onto "in transit" the moment the carrier scans a line-haul leg.
+    shipments.filter((s) => s.status === "in_transit").length
+  );
+  // Surface RTO only when the order hasn't otherwise reached the customer:
+  // a 'delivered' or 'cancelled' base status (audit, the source of truth)
+  // outranks a stale RTO scan — e.g. SAL-ORD-…-04556 RTO-initiated then
+  // delivered. Otherwise a shipment gone RTO is NOT a normal "out for
+  // delivery"/"shipped", so we both expose the `rto` object AND flip the
+  // header to "returned" so its tint reflects reality.
+  const rto =
+    isRto && baseStatus !== "delivered" && baseStatus !== "cancelled"
+      ? {
+          active: !rtoDelivered,
+          delivered: rtoDelivered,
+          stage:
+            rtoEvents.length > 0
+              ? rtoEvents[rtoEvents.length - 1]!.label
+              : "Return to origin",
+          timeline: rtoEvents,
+        }
+      : null;
+  const headlineStatus = rto ? "returned" : baseStatus;
+
   return {
     id: o.order_no,
     orderNumber: o.order_no,
-    status: uiStatus(
-      o.display_status,
-      shipments.length,
-      shipDelivered,
-      o.sealed_pu,
-      o.dispatched_pu,
-      shipments.filter((s) => s.status === "out_for_delivery").length,
-      // audit_cat_all_delivered: compute from the per-category fields
-      // we already pulled. true when every category in `present` is in
-      // a delivered state per `by_cat` — keeps the order-level header
-      // in sync with the per-category cards below.
-      (() => {
-        const present = o.derived_categories_present ?? [];
-        const byCat = o.derived_by_category ?? {};
-        if (present.length === 0) return false;
-        const byCatLc: Record<string, string> = {};
-        for (const [k, v] of Object.entries(byCat))
-          byCatLc[k.toLowerCase()] = String(v ?? "").toLowerCase();
-        return present.every((p) => {
-          const v = byCatLc[(p ?? "").toLowerCase()] ?? "";
-          return v === "delivered" || v === "fully delivered" || v === "completed";
-        });
-      })(),
-      // in-transit shipment count — lifts the order header off "shipped"
-      // onto "in transit" the moment the carrier scans a line-haul leg.
-      shipments.filter((s) => s.status === "in_transit").length
-    ),
+    status: headlineStatus,
+    rto,
     paymentStatus:
       (o.payment_status ?? "").toUpperCase() === "SUCCESS"
         ? "paid"
         : (o.payment_status ?? "pending").toLowerCase(),
     subtotal: o.net_total ?? o.grand_total ?? 0,
     tax: o.tax_total ?? 0,
-    shipping: 0,
+    // Shipping isn't carried on the ERP mirror; read the real fee from the
+    // local orders row (paise → rupees). Falls back to 0 when the local row
+    // isn't linked (erp_so_name unset), preserving prior behaviour.
+    shipping: Math.round((o.local_shipping ?? 0) / 100),
     discount: 0,
     total: o.grand_total ?? 0,
     shippingAddress: {
@@ -1238,28 +2034,112 @@ export async function getParentOrderDetailFromErp(
     deliveredAt:
       shipments.find((s) => s.delivered_at)?.delivered_at ?? null,
     createdAt: created,
-    items: items.map((it) => ({
-      id: String(it.id),
-      name: it.item_name ?? "Item",
-      size: "",
-      qty: it.qty ?? 0,
-      unitPrice: Math.round(it.rate ?? 0),
-      total: Math.round(it.amount ?? 0),
-      imageUrl: imgUrl(it.image),
-      bundleSelections: ((it.bundle_selections as
-        | {
-            componentProductId: string;
-            name: string;
-            qty: number;
-            variantId: string;
-            size: string;
-          }[]
-        | null
-        | undefined) ?? null)?.map((s) => ({
-        ...s,
-        attributes: erpAttrsByVariant.get(s.variantId) ?? [],
-      })) ?? null,
-    })),
+    items: items.map((it) => {
+      const bundleSelections =
+        ((it.bundle_selections as
+          | {
+              componentProductId: string;
+              name: string;
+              qty: number;
+              variantId: string;
+              size: string;
+            }[]
+          | null
+          | undefined) ?? null) ?? null;
+      // A box is "line-level tracked" when at least one of its components
+      // resolves to its own shipment row (by sku OR name). Only then does an
+      // unmatched component mean "held back" (→ pending); otherwise the box
+      // shipped as a whole parcel and we leave components un-badged rather
+      // than showing a false pending.
+      const boxHasPerLine = !!bundleSelections?.some(
+        (s) =>
+          componentStatusOf(s.variantId, s.name) !== null ||
+          componentHeldBack(s.variantId)
+      );
+      // Dominant category of the box = the category most of its components
+      // were dispatched under. A held-back component (no shipment row, so no
+      // category) is filed under it so it still appears in the right tracking
+      // card (e.g. the never-shipped Hoodie belongs with the uniform parcel).
+      let dominantCat: string | null = null;
+      if (bundleSelections) {
+        const counts = new Map<string, number>();
+        for (const s of bundleSelections) {
+          const c = componentCategoryOf(s.variantId, s.name);
+          if (c) counts.set(c, (counts.get(c) ?? 0) + 1);
+        }
+        for (const [c, n] of counts)
+          if (dominantCat === null || n > (counts.get(dominantCat) ?? 0))
+            dominantCat = c;
+      }
+      return {
+        id: String(it.id),
+        name: it.item_name ?? "Item",
+        size: it.size ?? "",
+        attributes: it.variant_id
+          ? erpAttrsByVariant.get(it.variant_id) ?? []
+          : [],
+        qty: it.qty ?? 0,
+        unitPrice: Math.round(it.rate ?? 0),
+        total: Math.round(it.amount ?? 0),
+        imageUrl: imgUrl(it.image),
+        // Plain (non-bundle) lines get the per-item status the category loop
+        // computed (keyed by sku); bundle parents are represented by their
+        // components below, so they carry no top-level badge.
+        status: bundleSelections
+          ? null
+          : (it.sku ? statusByItemCode.get(it.sku) : undefined) ?? null,
+        bundleSelections:
+          bundleSelections?.map((s) => {
+            const own = componentStatusOf(s.variantId, s.name); // delivered | pending | null
+            const heldBack = componentHeldBack(s.variantId);
+            const cat = componentCategoryOf(s.variantId, s.name) ?? dominantCat;
+            // Category floor from audit's header map first (authoritative even
+            // for a whole-parcel category like bookkit that never lands in
+            // catStatusByName), then the categoryGroups status.
+            const catStatus = cat
+              ? rawCatStatus.get(cat) ?? catStatusByName.get(cat)
+              : undefined;
+            const catDelivered = catStatus === "delivered";
+            // Is this component's OWN category dispatched line-by-line? Only
+            // then does an unmatched component mean "held back". A whole-parcel
+            // category (bookkit ships as one blank-item_code parcel) has no
+            // per-line rows → its components inherit the category status.
+            const catLineTracked = !!cat && lineTrackedCategories.has(cat);
+            // Same staleness as the plain-line guard above: `packing_state` is
+            // a packing-time snapshot audit never clears once the pinned piece
+            // is found and shipped anyway. A component whose OWN shipment row
+            // actually moved was in a parcel → not held back. "returned" is
+            // deliberately excluded (rank 1): that parcel genuinely never
+            // reached the customer, so the pin still wins there.
+            const movedOnItsOwn =
+              own === "delivered" ||
+              own === "out for delivery" ||
+              own === "in transit";
+            // Audit's packing_state wins outright: a held-back component reads
+            // "pending" even when its category delivered (out-of-stock piece in
+            // an otherwise-delivered parcel). Otherwise: delivered row →
+            // delivered; has a row but not delivered → delivered when audit says
+            // the whole category delivered (stale per-line row), else pending.
+            // NO row: held back (→ pending) only when the category IS line-
+            // tracked; a whole-parcel category inherits its category status
+            // (a delivered bookkit → every book delivered); no category at all
+            // → pending only if the box is line-tracked, else no badge.
+            let status: CategoryGroupStatus | null;
+            if (heldBack && !movedOnItsOwn) status = "pending";
+            else if (own === "delivered") status = "delivered";
+            else if (own !== null) status = catDelivered ? "delivered" : "pending";
+            else if (catLineTracked) status = "pending";
+            else if (cat && catStatus) status = catStatus;
+            else status = boxHasPerLine ? "pending" : null;
+            return {
+              ...s,
+              attributes: erpAttrsByVariant.get(s.variantId) ?? [],
+              status,
+              category: cat,
+            };
+          }) ?? null,
+      };
+    }),
     payment: o.payment_status
       ? {
           provider: o.payment_flow ?? "ERP",
@@ -1311,13 +2191,20 @@ export async function getParentOrderDetailFromErp(
         badge: string;
       }[] = [];
       for (const ev of sys) {
+        // A parent only needs WHAT happened and WHEN. Deliberately dropped:
+        //  - `actor` — internal staff / integration handles ("onedrive-sanath",
+        //    "Sanath"). Never send a colleague's name to a customer.
+        //  - the `from → to` arrow, which surfaced raw placeholders like
+        //    "unknown → delivered".
+        // `badge` stays in the payload (it colours the timeline dot) but is no
+        // longer rendered as text — how we learned of a scan is our business.
+        const to = humaniseShipmentStatus(ev.to_status);
+        if (!to) continue;
         events.push({
           kind: "system",
           at: new Date(ev.created_at + "Z").toISOString(),
-          label: ev.from_status
-            ? `${ev.from_status} → ${ev.to_status}`
-            : ev.to_status,
-          source: ev.actor,
+          label: to,
+          source: null,
           badge: classifyActor(ev.actor),
         });
       }
@@ -1327,6 +2214,8 @@ export async function getParentOrderDetailFromErp(
           kind: "carrier",
           at: ev.at,
           label: ev.label ?? ev.code ?? "Scan",
+          // For a carrier scan `source` is the LOCATION ("Hyderabad Hub") —
+          // that one is useful to a parent, so it stays.
           source: ev.location ?? null,
           badge: "Carrier scan",
         });
@@ -1337,6 +2226,17 @@ export async function getParentOrderDetailFromErp(
       // descending-by-time on a parcel page, so this matches the
       // mental model people already have.
       events.sort((a, b) => (a.at > b.at ? -1 : a.at < b.at ? 1 : 0));
+      // Collapse exact-duplicate events (same kind/label/timestamp/source).
+      // Repeated auto-polls and carrier re-scans can emit identical rows;
+      // after the no-op filter above this is a final safety net so the
+      // timeline never shows the same beat twice in a row.
+      const seenEv = new Set<string>();
+      const dedupedEvents = events.filter((e) => {
+        const k = `${e.kind}|${e.label}|${e.at}|${e.source ?? ""}`;
+        if (seenEv.has(k)) return false;
+        seenEv.add(k);
+        return true;
+      });
       return {
         shipmentId: s.shipment_id,
         partner: s.partner ?? "—",
@@ -1348,7 +2248,7 @@ export async function getParentOrderDetailFromErp(
         dispatchedAt: s.dispatched_at,
         deliveredAt: s.delivered_at,
         carrierEventCount: carrier.length,
-        events,
+        events: dedupedEvents,
       };
     }),
     studentName: o.customer_name,
@@ -1377,10 +2277,28 @@ export async function getParentOrderDetailLocal(
     ? eq(orders.id, idOrOrderNumber)
     : eq(orders.orderNumber, idOrOrderNumber);
 
+  // Ownership must mirror the LIST resolver (getParentOrders), not a strict
+  // orders.parent_id == me check. On split / co-guardian accounts an order
+  // can be placed under a secondary parent record (a different parents.id)
+  // while its student belongs to the primary login. Such orders DO appear in
+  // My Orders (the list matches by student_id via the family graph), so the
+  // detail page must accept the same scope — otherwise clicking the visible
+  // order 404s with "Order not found".
+  const fam = await getFamilyIdentity(parentId);
+  const parentIds = fam?.parentIds?.length ? fam.parentIds : [parentId];
+  const studentIds = fam?.studentIds ?? [];
+  const ownership =
+    studentIds.length > 0
+      ? or(
+          inArray(orders.parentId, parentIds),
+          inArray(orders.studentId, studentIds)
+        )
+      : inArray(orders.parentId, parentIds);
+
   const [o] = await db
     .select()
     .from(orders)
-    .where(and(eq(orders.parentId, parentId), matcher))
+    .where(and(ownership, matcher))
     .limit(1);
   if (!o) return null;
 
@@ -1417,6 +2335,8 @@ export async function getParentOrderDetailLocal(
   // Multi-axis attribute enrichment, same as the ERP-path branch above.
   const localBundleVariantIds: string[] = [];
   for (const l of lines) {
+    // Plain line item's own variant — Colour · Size on the line itself.
+    if (l.variantId) localBundleVariantIds.push(l.variantId);
     const bs = l.bundleSelections as
       | { variantId?: string }[]
       | null
@@ -1534,6 +2454,9 @@ export async function getParentOrderDetailLocal(
       id: l.id,
       name: l.nameSnapshot,
       size: l.size,
+      attributes: l.variantId
+        ? localAttrsByVariant.get(l.variantId) ?? []
+        : [],
       qty: l.qty,
       unitPrice: Math.round((l.unitPrice ?? 0) / 100),
       total: Math.round((l.total ?? 0) / 100),

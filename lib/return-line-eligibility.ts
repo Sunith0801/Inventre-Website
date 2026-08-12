@@ -1,7 +1,6 @@
 import "server-only";
 import { sql } from "drizzle-orm";
 import { db } from "@/db/client";
-import { REQUEST_WINDOW_DAYS } from "@/lib/exchange-shared";
 import { fallbackBundleComponents, loadBookkitCategoryTree } from "@/lib/bundle-fallback";
 
 function rows<T>(r: unknown): T[] {
@@ -17,15 +16,126 @@ function baseName(s: string | null | undefined): string {
 }
 
 /**
- * Does this order contain a Magic Box line (`products.kind = 'magic_box'`)?
- *
- * Magic-Box exemption (2026-07-13): an order with a Magic Box is NOT subject
- * to the 10-day exchange/missing window — its uniform + bookkit parcels ship
- * on unreliable dates, so delivery alone keeps it eligible indefinitely. The
- * create paths pass this into `isOrderDeliveredForReturns(skipWindow)`, and
- * `classifyReturnItems` applies the same rule per-item (it detects the flag
- * from its own line query — no extra round-trip on the render hot path).
+ * Coarse-map one value of audit's `derived_delivery_by_category` map (e.g.
+ * "Delivered", "Delivered · 1 pending", "Not Delivered", "Out For Delivery")
+ * to a delivered / not-delivered floor. EXACT mirror of `coarseCatStatus` in
+ * lib/erp-customer-orders.ts, which is what the order-page badge uses — the
+ * two must never disagree. "Delivered · N pending" IS a delivered floor; the
+ * N held-back pieces are pinned separately by packing_state.
  */
+/**
+ * SQL predicate: TRUE when audit's category floor for the line's own category
+ * is SETTLED — exactly "Delivered", with no "· N pending" shortfall remainder.
+ *
+ * Audit appends that remainder for every piece it still counts as held back,
+ * so a bare "Delivered" is audit stating nothing is short in that category. A
+ * `packing_state` pin surviving under a settled floor is therefore a stale
+ * packing-time snapshot (audit never clears the pin when a line flagged 'oos'
+ * or 'packed' is later found and shipped) and must NOT block an exchange /
+ * missing request. Lines under a "Delivered · N pending" floor keep their pin
+ * — audit is still counting them short (SAL-ORD-2026-34537).
+ *
+ * EXACT mirror of `SETTLED_CATEGORY_SQL` in lib/erp-customer-orders.ts, which
+ * is what the order-page badge uses; the badge and the gate must never
+ * disagree ("Pending badge ⇒ not selectable"). Requires the query to join
+ * erp.sales_orders as `so` and alias erp.sales_order_items as `i`.
+ */
+const SETTLED_CATEGORY_SQL = sql`
+  coalesce(
+    CASE WHEN jsonb_typeof((so.raw::jsonb)->'derived_delivery_by_category') = 'object'
+         THEN (so.raw::jsonb)->'derived_delivery_by_category'
+                ->>lower(trim(coalesce(i.category, '')))
+    END, '') ~* '^delivered( *· *0+ +pending)?$'`;
+
+function categoryFloorDelivered(raw: string | null | undefined): boolean {
+  const s = (raw ?? "").toLowerCase();
+  if (!s) return false;
+  if (s.includes("out for delivery") || s.includes("ofd")) return false;
+  if (s.includes("not") && s.includes("deliver")) return false;
+  return s.includes("deliver");
+}
+
+/**
+ * Audit's whole `derived_delivery_by_category` map for an order, coarse-mapped
+ * to a per-category delivered floor: Map<category, delivered>. Empty when the
+ * order has no mirror row / no map (legacy orders) → callers fall back to the
+ * raw parcel rows + the order-level flag exactly as before.
+ */
+async function loadCategoryFloor(orderNo: string): Promise<Map<string, boolean>> {
+  const out = new Map<string, boolean>();
+  if (!orderNo) return out;
+  const r = rows<{ cat: string; val: string | null }>(
+    await db.execute(sql`
+      SELECT lower(trim(kv.key)) AS cat, kv.value AS val
+        FROM erp.sales_orders so
+        CROSS JOIN LATERAL jsonb_each_text(
+          -- erp.sales_orders.raw is json (NOT jsonb) — cast before any
+          -- jsonb_* call or postgres errors 42883 at runtime.
+          CASE WHEN jsonb_typeof((so.raw::jsonb)->'derived_delivery_by_category') = 'object'
+               THEN (so.raw::jsonb)->'derived_delivery_by_category'
+               ELSE '{}'::jsonb END
+        ) AS kv(key, value)
+       WHERE so.erp_name = ${orderNo}
+    `),
+  );
+  for (const x of r) out.set(x.cat, categoryFloorDelivered(x.val));
+  return out;
+}
+
+/**
+ * Categories this order delivered as ONE parcel-level `outward_shipments` row
+ * (blank `item_code`) — how Porter / shipped_to_school / manual / auto_bookkit
+ * deliveries are recorded: a whole category handed over in a single drop, with
+ * no per-line carrier scan ever posted.
+ *
+ * The order-page category card already bumps to "delivered" off exactly these
+ * rows (erp-customer-orders.ts `bestFromShipments`), but this gate could not
+ * see them: `classifyReturnItems` reads only per-line CODED rows plus audit's
+ * `derived_delivery_by_category`, and for a Porter drop audit routinely leaves
+ * that map at "Pending" / "Packed" for weeks (custom_display_status stays
+ * "Not Yet Delivered"). Result on prod: the card read Delivered while neither
+ * Request-exchange nor Report-missing appeared — SAL-ORD-2026-24501 (bookkit,
+ * porter SMSAW-PORTER-00679, delivered 04 Aug), SAL-ORD-2026-25490 and 96 more.
+ *
+ * Blank item_code ONLY. A coded delivered row already speaks for its own line
+ * via `rank >= 2`; letting one coded row settle its whole category would run
+ * over the held-back (`packing_state`) lines that deliberately read pending.
+ */
+async function loadParcelDeliveredCategories(
+  orderNo: string,
+): Promise<Set<string>> {
+  const out = new Set<string>();
+  if (!orderNo) return out;
+  // Supersession mirrors the order page (erp-customer-orders.ts
+  // `isSupersededShipment`): a delivered parcel dispatched strictly BEFORE the
+  // newest attempt in its own category is a past attempt — a fresh parcel is
+  // in flight for that category, so it must not settle it (SAL-ORD-2026-36818:
+  // porter drop 18 Jul, DTDC reship dispatched 3 Aug and still in transit).
+  const r = rows<{ cat: string | null }>(
+    await db.execute(sql`
+      WITH s AS (
+        SELECT lower(trim(coalesce(item_category, ''))) AS cat,
+               item_code, lower(status) AS status, dispatched_at
+          FROM erp.outward_shipments
+         WHERE order_erp_name = ${orderNo}
+           AND is_deleted = false
+      ),
+      latest AS (
+        SELECT cat, max(dispatched_at) AS dispatched_at FROM s GROUP BY cat
+      )
+      SELECT DISTINCT s.cat AS cat
+        FROM s
+        JOIN latest l ON l.cat = s.cat
+       WHERE (s.item_code IS NULL OR s.item_code = '')
+         AND s.status = 'delivered'
+         AND (s.dispatched_at IS NULL OR l.dispatched_at IS NULL
+              OR s.dispatched_at >= l.dispatched_at)
+    `),
+  );
+  for (const x of r) if (x.cat) out.add(x.cat);
+  return out;
+}
+
 /**
  * Order-item ids on this order that are COMPOSED lines — a Magic Box
  * (`products.kind = 'magic_box'`) or a kit/bookkit (`kind = 'kit'`).
@@ -49,20 +159,6 @@ export async function getComposedOrderItemIds(orderId: string): Promise<Set<stri
     `),
   );
   return new Set(r.map((x) => x.id));
-}
-
-export async function orderHasMagicBox(orderId: string): Promise<boolean> {
-  const r = rows<{ n: number }>(
-    await db.execute(sql`
-      SELECT count(*)::int AS n
-        FROM order_items oi
-        JOIN product_variants pv ON pv.id = oi.variant_id
-        JOIN products p ON p.id = pv.product_id
-       WHERE oi.order_id = ${orderId}
-         AND p.kind = 'magic_box'
-    `),
-  );
-  return (r[0]?.n ?? 0) > 0;
 }
 
 /**
@@ -119,11 +215,13 @@ export async function getHeldBackOrderItemIds(
   // carry packing_state.
   const packingRows = rows<{ item_code: string }>(
     await db.execute(sql`
-      SELECT DISTINCT item_code
-        FROM erp.sales_order_items
-       WHERE order_erp_name = ${orderNo}
-         AND packing_state IS NOT NULL
-         AND item_code IS NOT NULL AND item_code <> ''
+      SELECT DISTINCT i.item_code
+        FROM erp.sales_order_items i
+        JOIN erp.sales_orders so ON so.erp_name = i.order_erp_name
+       WHERE i.order_erp_name = ${orderNo}
+         AND i.packing_state IS NOT NULL
+         AND i.item_code IS NOT NULL AND i.item_code <> ''
+         AND NOT (${SETTLED_CATEGORY_SQL})
     `),
   );
   const packingHeldCodes = new Set(packingRows.map((r) => r.item_code));
@@ -163,8 +261,14 @@ export async function getHeldBackOrderItemIds(
   for (const l of lineRows) {
     if (l.is_bundle) continue; // parcel-level → stays eligible
     if (!l.item_code) continue; // can't resolve a code → don't over-hide
-    // Audit says this line is not with the customer, whatever the parcel says.
-    if (packingHeldCodes.has(l.item_code)) {
+    // Audit says this line is not with the customer, whatever the parcel says
+    // — UNLESS its own shipment row says delivered. `packing_state` is a
+    // packing-time snapshot audit never clears when a line pinned 'oos' is
+    // later found and shipped (SAL-ORD-2026-34839). Mirrors the order-page
+    // badge guard in erp-customer-orders.ts: the carrier row outranks the
+    // stale pin, so the button and the badge never disagree. Rank 2 here is
+    // strictly `delivered` — an out-for-delivery line stays held back.
+    if (packingHeldCodes.has(l.item_code) && (rankByCode.get(l.item_code) ?? 0) < 2) {
       held.add(l.id);
       continue;
     }
@@ -184,20 +288,19 @@ export async function getHeldBackOrderItemIds(
  *                   and legacy blank-code orders that ship as one parcel).
  *   • deliveredAt — the date this item was delivered (per-item shipment
  *                   `delivered_at`; falls back to the order delivery date for
- *                   non-per-line items — your window-fallback choice).
- *   • expired     — delivered AND past its own 10-day window measured from
- *                   `deliveredAt`. Unknown date → NOT expired (in-window),
- *                   matching isWithinReturnsWindow's null handling.
+ *                   non-per-line items).
  *
  * This is the single source of truth the forms + button gate use to decide,
- * PER ITEM: show as eligible (delivered, in-window) / hide (not delivered) /
- * grey as expired. The active-request lock (item already in a non-rejected
- * request) is layered on top by the callers.
+ * PER ITEM: show as eligible (delivered) / hide (not delivered). The
+ * active-request lock (item already in a non-rejected request) is layered on
+ * top by the callers.
+ *
+ * NOTE (2026-07-23): the post-delivery time window was removed — a delivered
+ * item stays eligible forever, so there is no `expired` state.
  */
 export interface ItemEligibility {
   delivered: boolean;
   deliveredAt: Date | null;
-  expired: boolean;
 }
 
 export async function classifyReturnItems(
@@ -205,26 +308,26 @@ export async function classifyReturnItems(
   orderNo: string,
   orderLevelDelivered: boolean,
   orderDeliveredAt: Date | null,
-  now: Date = new Date(),
 ): Promise<Map<string, ItemEligibility>> {
   const out = new Map<string, ItemEligibility>();
-  const windowMs = REQUEST_WINDOW_DAYS > 0 ? REQUEST_WINDOW_DAYS * 86_400_000 : 0;
-  const isExpired = (d: Date | null): boolean => {
-    if (windowMs <= 0 || !d) return false; // window disabled / unknown date → in-window
-    return now.getTime() - d.getTime() > windowMs;
-  };
 
   // Per-line shipment status + delivered_at keyed by item_code. Blank
   // item_codes = parcel-level dispatch (bookkit / magic box) — ignored here;
   // those lines fall back to the order-level signals below.
-  const shipRows = rows<{ item_code: string; rank: number; delivered_at: string | null }>(
+  const shipRows = rows<{
+    item_code: string;
+    rank: number;
+    delivered_at: string | null;
+    item_category: string | null;
+  }>(
     await db.execute(sql`
       SELECT item_code,
              max(CASE lower(status)
                    WHEN 'delivered'        THEN 2
                    WHEN 'out_for_delivery' THEN 1
                    ELSE 0 END)::int AS rank,
-             max(delivered_at) AS delivered_at
+             max(delivered_at) AS delivered_at,
+             min(lower(nullif(trim(coalesce(item_category, '')), ''))) AS item_category
         FROM erp.outward_shipments
        WHERE order_erp_name = ${orderNo}
          AND is_deleted = false
@@ -235,10 +338,35 @@ export async function classifyReturnItems(
   const hasPerLine = shipRows.length > 0;
   const rankByCode = new Map<string, number>();
   const deliveredAtByCode = new Map<string, Date | null>();
+  const categoryByCode = new Map<string, string | null>();
   for (const r of shipRows) {
     rankByCode.set(r.item_code, r.rank);
     deliveredAtByCode.set(r.item_code, r.delivered_at ? new Date(r.delivered_at) : null);
+    categoryByCode.set(r.item_code, r.item_category);
   }
+
+  // Audit's per-category delivery FLOOR — the same signal the order-page badge
+  // (erp-customer-orders.ts: `own !== null` → catDelivered ? "delivered" :
+  // "pending") and the exchange/missing picker (getPendingComponentVariantIds,
+  // getBookkitParcelDelivered) already honour. This gate did NOT, which is how
+  // an order could badge every piece "Delivered" and still show no Request-
+  // exchange / Report-missing button at all (SAL-ORD-2026-33270: a Porter
+  // uniform parcel whose 11 per-item rows sit at `dispatched` forever because
+  // the courier never posts a per-line delivered scan — audit settles the
+  // CATEGORY instead, `derived_delivery_by_category.uniform = "Delivered"`).
+  //
+  // The floor can only ADD eligibility, never remove it, and the button it
+  // un-hides merely OPENS the per-item picker — which applies its own
+  // per-component gates on top. So a category audit has NOT settled stays shut.
+  const catFloor = await loadCategoryFloor(orderNo);
+  const anyCategoryDelivered = Array.from(catFloor.values()).some(Boolean);
+
+  // Second floor, same spirit: categories physically delivered as one
+  // blank-item_code parcel (Porter & co). Audit's category map lags these by
+  // weeks, so without this the card badges Delivered and the button stays
+  // hidden. See loadParcelDeliveredCategories.
+  const parcelFloor = await loadParcelDeliveredCategories(orderNo);
+  const anyParcelDelivered = parcelFloor.size > 0;
 
   const lineRows = rows<{
     id: string;
@@ -264,30 +392,39 @@ export async function classifyReturnItems(
     `),
   );
 
-  // Magic-Box exemption (2026-07-13): if ANY line in this order is a Magic
-  // Box, the WHOLE order is exempt from the 10-day window — no item ever
-  // reports `expired`. Magic boxes split into uniform + bookkit parcels that
-  // deliver on unreliable dates, so a fixed window from "delivery" is wrong.
-  const hasMagicBox = lineRows.some((l) => l.is_magic_box);
-
   for (const l of lineRows) {
     const perLine =
       hasPerLine && !l.is_bundle && !!l.item_code && rankByCode.has(l.item_code);
     let delivered: boolean;
     let deliveredAt: Date | null;
     if (perLine) {
-      delivered = (rankByCode.get(l.item_code!) ?? 0) >= 2;
-      deliveredAt = delivered ? deliveredAtByCode.get(l.item_code!) ?? orderDeliveredAt : null;
+      const rank = rankByCode.get(l.item_code!) ?? 0;
+      // Has a row but no delivered scan → delivered when audit has settled the
+      // row's own category (mirrors the badge). NOT out-for-delivery: that is
+      // a live "not yet with the customer" signal from the carrier itself, and
+      // categoryFloorDelivered() already refuses an OFD category floor.
+      const cat = categoryByCode.get(l.item_code!) ?? null;
+      delivered =
+        rank >= 2 ||
+        (rank < 1 &&
+          !!cat &&
+          (catFloor.get(cat) === true || parcelFloor.has(cat)));
+      deliveredAt = delivered
+        ? deliveredAtByCode.get(l.item_code!) ?? orderDeliveredAt
+        : null;
     } else {
       // Bundle / bookkit / magic-box parcel, or an order with no per-line
-      // tracking → governed by the order-level delivered signal + date.
-      delivered = orderLevelDelivered;
+      // tracking → governed by the order-level delivered signal + date, with
+      // audit's category floor as a second route: a magic box is ONE local
+      // order_item spanning several parcels, so the moment audit settles ANY
+      // of its categories the parent must be able to open the picker for that
+      // category's pieces. The picker gates the still-in-transit ones.
+      delivered = orderLevelDelivered || anyCategoryDelivered || anyParcelDelivered;
       deliveredAt = delivered ? orderDeliveredAt : null;
     }
     out.set(l.id, {
       delivered,
       deliveredAt,
-      expired: !hasMagicBox && delivered && isExpired(deliveredAt),
     });
   }
   return out;
@@ -541,6 +678,29 @@ export async function getBookkitParcelDelivered(
   orderNo: string,
 ): Promise<boolean | null> {
   if (!orderNo) return null;
+  // Audit's per-category floor wins over the raw parcel rows — the SAME signal
+  // the order-page badge uses (`derived_delivery_by_category`, see
+  // erp-customer-orders.ts `coarseCatStatus`). A box's books ship as a single
+  // blank-item_code parcel, so `outward_shipments` can carry a stale/superseded
+  // bookkit row (a cancelled DTDC parcel, or a later reship still "dispatched")
+  // long after audit has settled the category as Delivered. Without this, the
+  // gate disagreed with the badge and greyed out books the order page shows as
+  // delivered — 452 orders on prod (2026-07-28), incl. SAL-ORD-2026-27372.
+  const catRows = rows<{ s: string | null }>(
+    await db.execute(sql`
+      SELECT raw->'derived_delivery_by_category'->>'bookkit' AS s
+        FROM erp.sales_orders
+       WHERE erp_name = ${orderNo}
+       LIMIT 1
+    `),
+  );
+  const cat = (catRows[0]?.s ?? "").toLowerCase();
+  if (cat) {
+    if (cat.includes("out for delivery") || cat.includes("ofd")) return false;
+    if (cat.includes("not") && cat.includes("deliver")) return false;
+    if (cat.includes("deliver")) return true;
+    // Anything else (unrecognised wording) → fall through to the parcel rows.
+  }
   const r = rows<{ n: number; delivered: number }>(
     await db.execute(sql`
       SELECT count(*)::int AS n,
@@ -743,11 +903,13 @@ export async function getPendingComponentVariantIds(
   // cannot leak onto its children.
   const packingRows = rows<{ item_code: string }>(
     await db.execute(sql`
-      SELECT DISTINCT lower(item_code) AS item_code
-        FROM erp.sales_order_items
-       WHERE order_erp_name = ${orderNo}
-         AND packing_state IS NOT NULL
-         AND item_code IS NOT NULL AND item_code <> ''
+      SELECT DISTINCT lower(i.item_code) AS item_code
+        FROM erp.sales_order_items i
+        JOIN erp.sales_orders so ON so.erp_name = i.order_erp_name
+       WHERE i.order_erp_name = ${orderNo}
+         AND i.packing_state IS NOT NULL
+         AND i.item_code IS NOT NULL AND i.item_code <> ''
+         AND NOT (${SETTLED_CATEGORY_SQL})
     `),
   );
   const packingHeldCodes = new Set(packingRows.map((r) => r.item_code));
@@ -771,6 +933,37 @@ export async function getPendingComponentVariantIds(
        GROUP BY lower(item_code), description
     `),
   );
+  // Audit's per-category delivery floor — the SAME signal the order-page badge
+  // applies (see erp-customer-orders.ts: `own !== null` → catDelivered ?
+  // "delivered" : "pending"). A magic box's uniform parcel routinely keeps its
+  // per-item `outward_shipments` rows at `dispatched` forever: the courier
+  // never posts a per-line delivered scan, and audit settles the CATEGORY
+  // instead (`derived_delivery_by_category.uniform = "Delivered"`). Without
+  // this floor the picker read every one of those pieces as pending while the
+  // order page badged them Delivered, and — because the badge-parity pass
+  // (2026-07-27) is a UNION that can only hide more — the badge could not
+  // rescue them, so the parent could not exchange a single uniform piece
+  // (e.g. SAL-ORD-2026-22600: 9 of 11 uniforms blocked).
+  const uniformCatRows = rows<{ s: string | null }>(
+    await db.execute(sql`
+      SELECT raw->'derived_delivery_by_category'->>'uniform' AS s
+        FROM erp.sales_orders
+       WHERE erp_name = ${orderNo}
+       LIMIT 1
+    `),
+  );
+  const uniformCat = (uniformCatRows[0]?.s ?? "").toLowerCase();
+  // Coarse-map exactly as coarseCatStatus does: "out for delivery" / "not
+  // delivered" are NOT a delivered floor; anything else containing "deliver"
+  // ("Delivered", "Delivered · 1 pending" — the held-back pieces are pinned
+  // separately by packing_state) is.
+  const uniformCatDelivered =
+    !!uniformCat &&
+    !uniformCat.includes("out for delivery") &&
+    !uniformCat.includes("ofd") &&
+    !(uniformCat.includes("not") && uniformCat.includes("deliver")) &&
+    uniformCat.includes("deliver");
+
   const allCodes = new Set<string>();
   const deliveredCodes = new Set<string>();
   const allNames = new Set<string>();
@@ -795,16 +988,30 @@ export async function getPendingComponentVariantIds(
   for (const c of compRows) {
     // The packing pin is authoritative on its own and does NOT depend on the
     // order being per-component tracked — a box that ships as one parcel still
-    // gets accurate packing_state from audit.
-    if (packingHeldCodes.has(c.sku)) {
+    // gets accurate packing_state from audit. It is NOT authoritative once the
+    // component's own parcel is recorded delivered, though: `packing_state` is
+    // a packing-time snapshot audit never clears when a piece pinned 'oos' is
+    // found and shipped anyway (SAL-ORD-2026-34839 on the plain-line side).
+    // Same guard as the order-page component badge, so the picker and the
+    // badge stay in lockstep.
+    const pinDeliveredRow =
+      deliveredCodes.has(c.sku) || deliveredNames.has(baseName(c.name));
+    if (packingHeldCodes.has(c.sku) && !pinDeliveredRow) {
       pending.add(c.variant_id);
       continue;
     }
     if (!tracked) continue; // one-parcel box, no packing pin → no per-component signal
     if (c.kind !== "uniform" && c.kind !== "accessory") continue; // books/kits → bookkit gate
-    const delivered =
+    const hasRow = allCodes.has(c.sku) || allNames.has(baseName(c.name));
+    const deliveredRow =
       deliveredCodes.has(c.sku) || deliveredNames.has(baseName(c.name));
-    if (!delivered) pending.add(c.variant_id); // pending → held back (e.g. the Hoodie)
+    // Matches the order-page badge: a piece with its OWN shipment row is
+    // delivered when that row says so, OR when audit has settled the whole
+    // uniform category as delivered (a stale per-line `dispatched` row). A
+    // piece with NO row at all in a line-tracked box is genuinely held back
+    // (e.g. the Hoodie on …-14804) and stays pending regardless of the floor.
+    const delivered = deliveredRow || (hasRow && uniformCatDelivered);
+    if (!delivered) pending.add(c.variant_id);
   }
   return pending;
 }

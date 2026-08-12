@@ -258,6 +258,22 @@ export async function pollOpenOrders(
     ...shipmentsR_affectedNames,
     ...packingR_affectedNames,
   ]);
+  // Re-read the item mirror for shipment/packing-only movement BEFORE status
+  // derivation, so a pin audit has cleared stops showing "pending" (and stops
+  // blocking exchange/missing) on the very same tick the parcel moves.
+  try {
+    const itemsRefreshed = await refreshItemMirrors(new Set(ordersR_affectedNames));
+    if (itemsRefreshed > 0) {
+      console.log(
+        `[erp-poll/item-refresh] refreshed ${itemsRefreshed} order(s), ${itemRefreshQueue.length} queued`
+      );
+    }
+  } catch (e) {
+    console.warn(
+      "[erp-poll/item-refresh] failed:",
+      e instanceof Error ? e.message.slice(0, 200) : e
+    );
+  }
   // Clear module-scope buckets so the next tick starts fresh.
   ordersR_affectedNames.length = 0;
   shipmentsR_affectedNames.length = 0;
@@ -297,6 +313,86 @@ export async function pollOpenOrders(
 const ordersR_affectedNames: string[] = [];
 const shipmentsR_affectedNames: string[] = [];
 const packingR_affectedNames: string[] = [];
+
+// Orders whose ITEM mirror needs a re-read because a shipment / packing-unit
+// changed while the order header itself did not.
+//
+// Audit only bumps `sales_orders.modified` when the header changes, so the
+// orders delta poll — the only place that calls upsertItemsMirror — never
+// revisits an order once it stops being edited. But two per-ITEM facts keep
+// moving after that: `packing_state` (audit's held-back pin: 'oos' / 'packed'
+// / 'pending', cleared to NULL when the line is finally found and dispatched)
+// and the header's `derived_delivery_by_category` floor. When audit resolved
+// an out-of-stock line and shipped it, inventre kept the stale pin forever:
+// the storefront badged a delivered item "pending" and — because the same pin
+// is the exchange/missing gate (lib/return-line-eligibility.ts) — the parent
+// could not raise a request on an item they were holding. Measured on prod
+// 2026-08-12: 309 lines / 235 orders pinned in the mirror that audit had
+// already cleared, 259 of those orders reading "Delivered".
+//
+// A shipment or packing-unit row for the order IS the signal that the pin may
+// have moved, so those two pollers now queue the order for a detail re-read.
+// The queue is module-scope and survives across ticks: a tick drains at most
+// ITEM_REFRESH_MAX_PER_TICK (audit 502s under load), the rest carry over.
+const itemRefreshQueue: string[] = [];
+const ITEM_REFRESH_MAX_PER_TICK =
+  Number(process.env.ERP_ITEM_REFRESH_MAX_PER_TICK) || 60;
+
+const ITEM_REFRESH_QUEUE_MAX = 3000;
+
+function queueItemRefresh(name: string): void {
+  if (!name) return;
+  if (itemRefreshQueue.includes(name)) return;
+  itemRefreshQueue.push(name);
+  // Backstop for a bulk shipment replay that outruns the per-tick budget:
+  // drop the oldest rather than grow without bound. Anything dropped is
+  // re-queued by the order's next shipment/packing event.
+  if (itemRefreshQueue.length > ITEM_REFRESH_QUEUE_MAX) itemRefreshQueue.shift();
+}
+
+/**
+ * Re-read `/api/orders/{name}` for orders that only moved on the shipment /
+ * packing side and refresh both mirrors from that one payload: the header
+ * (custom_display_status + raw.derived_delivery_by_category) and the items
+ * (packing_state). Orders the orders-delta poll already refreshed this tick
+ * are skipped — their detail was fetched minutes ago.
+ *
+ * Best-effort: a failed fetch stays in the queue for the next tick.
+ */
+async function refreshItemMirrors(alreadyFresh: Set<string>): Promise<number> {
+  let refreshed = 0;
+  let budget = ITEM_REFRESH_MAX_PER_TICK;
+  while (budget > 0 && itemRefreshQueue.length > 0) {
+    const name = itemRefreshQueue[0];
+    if (alreadyFresh.has(name)) {
+      itemRefreshQueue.shift();
+      continue;
+    }
+    budget--;
+    try {
+      const detail = await erpAuthedGet<ErpOrderDetailResp>(
+        `/api/orders/${encodeURIComponent(name)}`
+      );
+      if (detail?.header?.name) {
+        await upsertOrderMirror(detail.header);
+        if (Array.isArray(detail.items)) {
+          await upsertItemsMirror(detail.header.name, detail.items);
+        }
+        refreshed++;
+      }
+      itemRefreshQueue.shift();
+    } catch (e) {
+      // Drop it rather than block the queue head forever; the next shipment
+      // or packing event for the order re-queues it.
+      itemRefreshQueue.shift();
+      console.warn(
+        `[erp-poll/item-refresh] detail fetch failed for ${name}:`,
+        e instanceof Error ? e.message.slice(0, 200) : e
+      );
+    }
+  }
+  return refreshed;
+}
 
 // ─── /api/orders delta ────────────────────────────────────────────────
 
@@ -413,7 +509,10 @@ async function pollShipmentsDelta(
         if (typeof sh?.id !== "number") continue;
         try {
           await upsertShipmentMirror(sh);
-          if (sh.order_erp_name) shipmentsR_affectedNames.push(sh.order_erp_name);
+          if (sh.order_erp_name) {
+            shipmentsR_affectedNames.push(sh.order_erp_name);
+            queueItemRefresh(sh.order_erp_name);
+          }
           rows++;
           if (sh.updated_at) advancedTo = maxIso(advancedTo, sh.updated_at);
         } catch (e) {
@@ -474,7 +573,10 @@ async function pollPackingUnitsDelta(
         if (typeof p?.id !== "number") continue;
         try {
           await upsertPackingUnitsMirror([p]);
-          if (p.order_erp_name) packingR_affectedNames.push(p.order_erp_name);
+          if (p.order_erp_name) {
+            packingR_affectedNames.push(p.order_erp_name);
+            queueItemRefresh(p.order_erp_name);
+          }
           rows++;
           if (p.updated_at) advancedTo = maxIso(advancedTo, p.updated_at);
         } catch (e) {
@@ -1384,7 +1486,8 @@ export async function upsertItemsMirror(
         INSERT INTO erp.sales_order_items (
           erp_name, order_erp_name, item_code, item_name,
           qty, rate, amount, uom, warehouse,
-          delivered_qty, picked_qty, returned_qty, gst_hsn_code, category
+          delivered_qty, picked_qty, returned_qty, gst_hsn_code, category,
+          packing_state
         )
         VALUES (
           ${lineName},
@@ -1400,7 +1503,12 @@ export async function upsertItemsMirror(
           ${get<number>("picked_qty")},
           ${get<number>("returned_qty")},
           ${get<string>("gst_hsn_code")},
-          ${get<string>("category")}
+          ${get<string>("category")},
+          -- Per-line held-back signal audit computes on the order detail
+          -- payload ('oos' / 'packed' / 'pending' / null). A non-null value
+          -- means the line is NOT delivered even when its category rolled up
+          -- to "Delivered · N pending"; the storefront order page honours it.
+          ${get<string>("packing_state")}
         )
         ON CONFLICT (erp_name) DO UPDATE SET
           order_erp_name = EXCLUDED.order_erp_name,
@@ -1415,7 +1523,8 @@ export async function upsertItemsMirror(
           picked_qty     = EXCLUDED.picked_qty,
           returned_qty   = EXCLUDED.returned_qty,
           gst_hsn_code   = EXCLUDED.gst_hsn_code,
-          category       = EXCLUDED.category
+          category       = EXCLUDED.category,
+          packing_state  = EXCLUDED.packing_state
       `)
       .catch((e) => {
         console.warn(
