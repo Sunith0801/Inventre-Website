@@ -1,0 +1,180 @@
+# Inventre-specific SAST rules.
+#
+# Generic rulesets (p/security-audit, p/owasp-top-ten) found 3 issues across
+# 165k lines. That is not because the codebase is clean — it is because this
+# system's real risks are authorization and business-logic flaws, which
+# generic rules cannot see. These rules encode the findings from the
+# 2026-09-09 audit so they become CI-enforceable and cannot regrow.
+#
+# Run: semgrep --config docs/security/SAST-20260909/02-static-analysis/inventre-rules.yaml
+
+rules:
+  # ── F-02 ────────────────────────────────────────────────────────────
+  - id: inventre-client-ip-from-xff
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: >-
+      Client IP read from the leftmost X-Forwarded-For entry. nginx uses
+      $proxy_add_x_forwarded_for, which APPENDS the real address, so the
+      leftmost hop is attacker-controlled. Any rate limit keyed on this is
+      bypassable by sending the header. Use the shared clientIp() helper,
+      which prefers the trusted x-real-ip that nginx also sets.
+    metadata:
+      finding: F-02
+      cwe: "CWE-348: Use of Less Trusted Source"
+      confidence: HIGH
+    patterns:
+      - pattern-either:
+          - pattern: $R.headers.get("x-forwarded-for")
+          - pattern: $R.headers.get("X-Forwarded-For")
+      - pattern-not-inside: |
+          function clientIp(...) { ... }
+
+  # ── F-05 ────────────────────────────────────────────────────────────
+  - id: inventre-sql-regex-single-backslash
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: >-
+      Single-backslash regex class inside a template literal. JavaScript cooks
+      '\D' to 'D', so Postgres receives regexp_replace(x, 'D', ...) and strips
+      the letter D instead of non-digits. Use the tested last10Sql() helper,
+      or double the backslash ('\\D').
+    metadata:
+      finding: F-05
+      cwe: "CWE-116: Improper Encoding or Escaping of Output"
+      confidence: HIGH
+    pattern-regex: |-
+      regexp_replace\([\s\S]{0,200}?'(?<!\\)\\[dDsSwW]'
+
+  # ── F-01 ────────────────────────────────────────────────────────────
+  - id: inventre-otp-bypass-without-production-guard
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: >-
+      OTP bypass code reachable without a NODE_ENV production guard. A fixed
+      OTP must be impossible in production, not merely switched off by an
+      admin toggle.
+    metadata:
+      finding: F-01
+      cwe: "CWE-798: Use of Hard-coded Credentials"
+      confidence: HIGH
+    patterns:
+      - pattern: getBypassOtp(...)
+      - pattern-not-inside: |
+          if (process.env.NODE_ENV !== "production") { ... }
+      - pattern-not-inside: |
+          function getBypassOtp(...) { ... }
+
+  # ── layering ────────────────────────────────────────────────────────
+  - id: inventre-db-access-in-page-component
+    languages: [typescript, javascript]
+    severity: WARNING
+    message: >-
+      Direct database access inside a page component. Business logic and SQL
+      in the presentation layer cannot be tested without a live Postgres.
+      Move the query into lib/repos/ and call it from the page.
+    metadata:
+      finding: F-08
+      confidence: MEDIUM
+    paths:
+      include: ["**/page.tsx", "**/layout.tsx"]
+    pattern-either:
+      - pattern: db.execute(...)
+      - pattern: db.select(...)
+      - pattern: dbCron.execute(...)
+
+  # ── injection surface ───────────────────────────────────────────────
+  - id: inventre-sql-raw-non-literal
+    languages: [typescript, javascript]
+    severity: WARNING
+    message: >-
+      sql.raw() with a non-literal argument. Everything inside sql.raw() is
+      interpolated into SQL unescaped. Current call sites are guarded by
+      isUuid() filters or allowlists, but the pattern is one refactor away
+      from injection. Prefer sql.join() with bound parameters.
+    metadata:
+      cwe: "CWE-89: SQL Injection"
+      confidence: MEDIUM
+    patterns:
+      - pattern: sql.raw($X)
+      - pattern-not: sql.raw("...")
+
+  # ── error handling ──────────────────────────────────────────────────
+  - id: inventre-silent-error-swallow
+    languages: [typescript, javascript]
+    severity: WARNING
+    message: >-
+      Empty catch block silently discards an error. If the failure is
+      genuinely safe to ignore, say why in a comment and log at debug level.
+    metadata:
+      confidence: HIGH
+    pattern-either:
+      - pattern: try { ... } catch { }
+      - pattern: try { ... } catch ($E) { }
+
+  # ── secrets / config ────────────────────────────────────────────────
+  - id: inventre-hardcoded-postgres-dsn
+    languages: [typescript, javascript, bash]
+    severity: ERROR
+    message: >-
+      Hard-coded PostgreSQL connection string with inline credentials.
+      Read it from validated configuration instead.
+    metadata:
+      cwe: "CWE-798: Use of Hard-coded Credentials"
+      confidence: HIGH
+    pattern-regex: |-
+      postgres(ql)?://[A-Za-z0-9_]+:[^@\s"']{4,}@
+
+  - id: inventre-sensitive-value-logged
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: >-
+      Potentially sensitive value passed to console logging. Never log OTPs,
+      passwords, tokens, session cookies or payment secrets.
+    metadata:
+      cwe: "CWE-532: Insertion of Sensitive Information into Log File"
+      confidence: MEDIUM
+    patterns:
+      - pattern-either:
+          - pattern: console.log(..., $X, ...)
+          - pattern: console.error(..., $X, ...)
+          - pattern: console.warn(..., $X, ...)
+      - metavariable-regex:
+          metavariable: $X
+          # Must be an identifier/member path (not a string literal or a bare
+          # error object) AND mention a secret. Without the identifier anchor
+          # this rule flagged 22 log MESSAGES that merely named a secret.
+          regex: ^(?=.*(?i:otp|password|passwd|secret|token|apikey|api_key|working_key|encresp|jwt))[A-Za-z_$][A-Za-z0-9_$.\[\]]*$
+
+  # ── transport security ──────────────────────────────────────────────
+  - id: inventre-tls-verification-disabled
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: >-
+      TLS certificate verification disabled — traffic is exposed to
+      machine-in-the-middle interception. Never do this in app/ or lib/.
+    metadata:
+      cwe: "CWE-295: Improper Certificate Validation"
+      confidence: HIGH
+    pattern-either:
+      - pattern: "rejectUnauthorized: false"
+      - pattern-regex: NODE_TLS_REJECT_UNAUTHORIZED\s*=\s*['"]?0
+
+  # ── authz ───────────────────────────────────────────────────────────
+  - id: inventre-non-constant-time-secret-compare
+    languages: [typescript, javascript]
+    severity: WARNING
+    message: >-
+      Shared secret compared with === / !==, which short-circuits on the first
+      differing byte. Use crypto.timingSafeEqual after a length check, as the
+      ERP webhook routes already do.
+    metadata:
+      cwe: "CWE-208: Observable Timing Discrepancy"
+      confidence: MEDIUM
+    patterns:
+      - pattern-either:
+          - pattern: $A !== $B
+          - pattern: $A === $B
+      - metavariable-regex:
+          metavariable: $B
+          regex: (?i).*(secret|token|cron_|apikey|api_key|expected).*
