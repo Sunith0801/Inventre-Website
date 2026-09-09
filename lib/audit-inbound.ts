@@ -3,9 +3,7 @@ import { and, eq, or } from "drizzle-orm";
 import { db } from "@/db/client";
 import {
   orders,
-  orderItems,
   productVariants,
-  products,
   returns,
   returnItems,
   missingItemClaims,
@@ -14,6 +12,12 @@ import {
 import { allocReturnNumber, allocClaimNumber } from "@/lib/numbering";
 import { firstPickupSaturday, toDbDate } from "@/lib/date";
 import { isExchangeStatus } from "@/lib/exchange-shared";
+import { getHeldBackOrderItemIds } from "@/lib/return-line-eligibility";
+import {
+  buildOrderMatchIndex,
+  matchAuditItem,
+  type ComponentPath,
+} from "@/lib/audit-item-match";
 
 /**
  * Inbound "create" path for exchanges / missing-item claims that ORIGINATE
@@ -52,62 +56,6 @@ const computePickup = (): string => toDbDate(firstPickupSaturday(new Date()));
  */
 function inventreMintsNumbers(): boolean {
   return process.env.RETURNS_NUMBER_SINGLE_SOURCE === "true";
-}
-
-// Mirror of lib/erp-bridge.ts resolveItemCode — keep in sync.
-function resolveItemCode(
-  v: { id: string; erpName: string | null; sku: string | null },
-  p: { erpName: string | null; itemCode: string | null }
-): string {
-  return v.erpName ?? v.sku ?? p.erpName ?? p.itemCode ?? v.id;
-}
-
-interface OrderLine {
-  orderItemId: string;
-  variantId: string;
-  size: string | null;
-}
-
-/** Build code → [lines] for an order, skipping ERP-orphan lines (no variant). */
-async function loadOrderItemMap(orderId: string): Promise<Map<string, OrderLine[]>> {
-  const rows = await db
-    .select({
-      orderItemId: orderItems.id,
-      size: orderItems.size,
-      variantId: orderItems.variantId,
-      vErpName: productVariants.erpName,
-      vSku: productVariants.sku,
-      pErpName: products.erpName,
-      pItemCode: products.itemCode,
-    })
-    .from(orderItems)
-    .leftJoin(productVariants, eq(orderItems.variantId, productVariants.id))
-    .leftJoin(products, eq(productVariants.productId, products.id))
-    .where(eq(orderItems.orderId, orderId));
-
-  const byCode = new Map<string, OrderLine[]>();
-  for (const r of rows) {
-    if (!r.variantId) continue; // ERP-imported orphan — can't link a return item
-    const code = resolveItemCode(
-      { id: r.variantId, erpName: r.vErpName, sku: r.vSku },
-      { erpName: r.pErpName, itemCode: r.pItemCode }
-    );
-    const arr = byCode.get(code) ?? [];
-    arr.push({ orderItemId: r.orderItemId, variantId: r.variantId, size: r.size });
-    byCode.set(code, arr);
-  }
-  return byCode;
-}
-
-/** Pick a line for an audit item, disambiguating by delivered_size when present. */
-function pickLine(cands: OrderLine[], deliveredSize?: string | null): OrderLine {
-  if (deliveredSize) {
-    const m = cands.find(
-      (c) => (c.size ?? "").toLowerCase() === deliveredSize.toLowerCase()
-    );
-    if (m) return m;
-  }
-  return cands[0];
 }
 
 async function variantIdByCode(code?: string | null): Promise<string | null> {
@@ -155,6 +103,11 @@ export interface AuditExchangeCreate {
   pickup_date?: string;
   items?: Array<{
     item_code?: string;
+    // Clean product name (e.g. "SMS Sports Polo"). Sent by the backfill and
+    // newer audit builds; lets the matcher link a magic-box COMPONENT to the
+    // box parent's bundle_selections. Falls back to prefix-matching item_code
+    // when absent (older webhook payloads). See lib/audit-item-match.ts.
+    item_name?: string;
     delivered_size?: string;
     qty?: number;
     replacement_mode?: string;
@@ -171,7 +124,13 @@ export interface AuditMissingCreate {
   so_erp_name?: string;
   status?: string;
   notes?: string;
-  items?: Array<{ item_code?: string; qty_short?: number; line_notes?: string }>;
+  items?: Array<{
+    item_code?: string;
+    item_name?: string;
+    delivered_size?: string;
+    qty_short?: number;
+    line_notes?: string;
+  }>;
 }
 
 export interface InboundResult {
@@ -179,8 +138,18 @@ export interface InboundResult {
   body: Record<string, unknown>;
 }
 
+export interface AuditCreateOpts {
+  /** Skip the held-back (not-yet-delivered per our shipment mirror) filter.
+   *  Used by the one-off backfill of already-approved Customer-Care requests,
+   *  whose delivery is a settled fact in audit and whose inventre shipment
+   *  mirror is often stale/incomplete. The live webhook leaves it OFF so a
+   *  genuinely-new manual entry still can't attach an undelivered line. */
+  skipHeldBack?: boolean;
+}
+
 export async function createExchangeFromAudit(
-  p: AuditExchangeCreate
+  p: AuditExchangeCreate,
+  opts?: AuditCreateOpts
 ): Promise<InboundResult> {
   const ord = await resolveOrder(p.so_erp_name);
   if (!ord.ok) return { status: ord.status, body: { error: ord.error } };
@@ -198,38 +167,55 @@ export async function createExchangeFromAudit(
       body: { ok: true, id: live.id, returnNumber: live.returnNumber, deduped: true },
     };
 
-  const byCode = await loadOrderItemMap(ord.id);
+  const idx = await buildOrderMatchIndex(ord.id);
   const matched: Array<{
     orderItemId: string;
     variantId: string;
     qty: number;
     replacementMode: string | null;
     requestedVariantId: string | null;
+    requestedComponentPath: ComponentPath | null;
     notes: string | null;
   }> = [];
   const unmatched: string[] = [];
   for (const it of p.items ?? []) {
     const code = it.item_code?.trim();
-    if (!code) continue;
-    const cands = byCode.get(code);
-    if (!cands || cands.length === 0) {
-      unmatched.push(code);
+    const line = matchAuditItem(idx, it);
+    if (!line) {
+      if (code) unmatched.push(code);
       continue;
     }
-    const line = pickLine(cands, it.delivered_size);
     matched.push({
       orderItemId: line.orderItemId,
       variantId: line.variantId,
       qty: Math.max(1, Number(it.qty ?? 1)),
       replacementMode: it.replacement_mode ?? null,
       requestedVariantId: await variantIdByCode(it.requested_variant_item_code),
+      requestedComponentPath: line.componentPath,
       notes: it.line_notes ?? null,
     });
+  }
+  // Held-back lines (out of stock / not yet delivered per our own shipment
+  // mirror) can't be exchanged — drop them even when audit sent them, so a
+  // manual audit entry can't attach a line the customer hasn't received.
+  const heldSkipped: string[] = [];
+  if (!opts?.skipHeldBack) {
+    const heldBack = await getHeldBackOrderItemIds(ord.id, p.so_erp_name ?? "");
+    for (let i = matched.length - 1; i >= 0; i--) {
+      if (heldBack.has(matched[i].orderItemId)) {
+        heldSkipped.push(matched[i].orderItemId);
+        matched.splice(i, 1);
+      }
+    }
   }
   if (matched.length === 0)
     return {
       status: 422,
-      body: { error: "No order items matched the audit item codes", unmatched },
+      body: {
+        error: "No eligible order items matched the audit item codes",
+        unmatched,
+        heldBack: heldSkipped,
+      },
     };
 
   const status = isExchangeStatus(p.status) ? p.status : "requested";
@@ -250,6 +236,9 @@ export async function createExchangeFromAudit(
         parentId: ord.parentId,
         returnNumber,
         kind: "exchange",
+        // Raised by Customer Care in Audit → drives the storefront
+        // "…by the Customer Care Team" duplicate popup (Condition 4).
+        source: "care_team",
         pickupDate,
         reason: p.reason ?? null,
         subReason: p.sub_reason ?? null,
@@ -257,6 +246,7 @@ export async function createExchangeFromAudit(
         status,
         itemIds: matched.map((m) => m.orderItemId),
         requestedVariantId: primary.requestedVariantId,
+        requestedComponentPath: primary.requestedComponentPath,
         replacementMode: primary.replacementMode,
       })
       .returning();
@@ -269,17 +259,25 @@ export async function createExchangeFromAudit(
         reason: p.reason ?? null,
         replacementMode: m.replacementMode,
         requestedVariantId: m.requestedVariantId,
+        // Per-component identity for magic-box lines so the storefront labels
+        // each part correctly (mirrors the customer-raised flow). Null for
+        // standalone lines.
+        requestedComponentPath: m.requestedComponentPath,
         notes: m.notes,
       }))
     );
     return created;
   });
 
-  return { status: 200, body: { ok: true, id: ret.id, returnNumber, unmatched } };
+  return {
+    status: 200,
+    body: { ok: true, id: ret.id, returnNumber, unmatched, heldBack: heldSkipped },
+  };
 }
 
 export async function createMissingFromAudit(
-  p: AuditMissingCreate
+  p: AuditMissingCreate,
+  opts?: AuditCreateOpts
 ): Promise<InboundResult> {
   const ord = await resolveOrder(p.so_erp_name);
   if (!ord.ok) return { status: ord.status, body: { error: ord.error } };
@@ -295,27 +293,49 @@ export async function createMissingFromAudit(
       body: { ok: true, id: live.id, claimNumber: live.claimNumber, deduped: true },
     };
 
-  const byCode = await loadOrderItemMap(ord.id);
-  const matched: Array<{ orderItemId: string; qtyShort: number; notes: string | null }> = [];
+  const idx = await buildOrderMatchIndex(ord.id);
+  const matched: Array<{
+    orderItemId: string;
+    qtyShort: number;
+    missingComponentPath: ComponentPath | null;
+    notes: string | null;
+  }> = [];
   const unmatched: string[] = [];
   for (const it of p.items ?? []) {
     const code = it.item_code?.trim();
-    if (!code) continue;
-    const cands = byCode.get(code);
-    if (!cands || cands.length === 0) {
-      unmatched.push(code);
+    const line = matchAuditItem(idx, it);
+    if (!line) {
+      if (code) unmatched.push(code);
       continue;
     }
     matched.push({
-      orderItemId: cands[0].orderItemId,
+      orderItemId: line.orderItemId,
       qtyShort: Math.max(1, Number(it.qty_short ?? 1)),
+      missingComponentPath: line.componentPath,
       notes: it.line_notes ?? null,
     });
+  }
+  // Held-back lines (out of stock / not yet delivered) aren't "missing" —
+  // we already know and will ship them later — so drop them even when a
+  // manual audit entry references them.
+  const heldSkipped: string[] = [];
+  if (!opts?.skipHeldBack) {
+    const heldBack = await getHeldBackOrderItemIds(ord.id, p.so_erp_name ?? "");
+    for (let i = matched.length - 1; i >= 0; i--) {
+      if (heldBack.has(matched[i].orderItemId)) {
+        heldSkipped.push(matched[i].orderItemId);
+        matched.splice(i, 1);
+      }
+    }
   }
   if (matched.length === 0)
     return {
       status: 422,
-      body: { error: "No order items matched the audit item codes", unmatched },
+      body: {
+        error: "No eligible order items matched the audit item codes",
+        unmatched,
+        heldBack: heldSkipped,
+      },
     };
 
   const VALID = ["requested", "approved", "rejected", "received_at_school", "delivered"];
@@ -336,6 +356,8 @@ export async function createMissingFromAudit(
         parentId: ord.parentId,
         claimNumber,
         status,
+        // Raised by Customer Care in Audit (Condition 4).
+        source: "care_team",
         notes: p.notes ?? null,
         pickupDate,
       })
@@ -345,11 +367,16 @@ export async function createMissingFromAudit(
         claimId: created.id,
         orderItemId: m.orderItemId,
         qtyShort: m.qtyShort,
+        // Per-component identity for magic-box lines (null for standalone).
+        missingComponentPath: m.missingComponentPath,
         notes: m.notes,
       }))
     );
     return created;
   });
 
-  return { status: 200, body: { ok: true, id: head.id, claimNumber, unmatched } };
+  return {
+    status: 200,
+    body: { ok: true, id: head.id, claimNumber, unmatched, heldBack: heldSkipped },
+  };
 }

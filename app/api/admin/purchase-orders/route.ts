@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { parseBody } from "@/lib/parse-body";
 import { z } from "zod";
 import { isResponse, requirePermission } from "@/lib/admin-guard";
+import { logAdminActivity } from "@/lib/activity";
 import {
   createPurchaseOrder,
   listPurchaseOrders,
@@ -39,5 +40,12 @@ export async function POST(req: Request) {
   if (parsed instanceof NextResponse) return parsed;
   const body = parsed;
   const po = await createPurchaseOrder({ ...body, createdBy: guard.id });
+  void logAdminActivity(guard, {
+    action: "purchase_order.create",
+    entityType: "purchase_order",
+    entityId: po.id,
+    summary: `Created purchase order ${po.poNumber}`,
+    req,
+  });
   return NextResponse.json({ id: po.id, poNumber: po.poNumber });
 }

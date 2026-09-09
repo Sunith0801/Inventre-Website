@@ -97,6 +97,24 @@ export async function POST(req: Request) {
         },
       });
     }
+
+    // Safety net: never place an order for a magic_box line that lost its
+    // component picks (Redis/Postgres cart desync). The add-to-cart guard +
+    // durable write ordering should make this unreachable, but if a line ever
+    // reaches checkout with no selections we refuse rather than create a paid
+    // order with no record of what the student chose (the exact failure that
+    // stranded ~1,687 historical orders). The parent is asked to re-configure.
+    if (
+      line.productKind === "magic_box" &&
+      (!line.bundleSelections || line.bundleSelections.length === 0)
+    ) {
+      return failJson({
+        parentId: me.id, req, status: 409,
+        message: `Your ${line.productName} needs to be configured again before checkout — please re-open it and pick sizes & colours.`,
+        kind: "rule.block",
+        details: { rule: "magicbox_no_selection", variantId: line.variantId, product: line.productName },
+      });
+    }
   }
 
   // Gate: CCAvenue's hosted page rejects malformed billing_email with

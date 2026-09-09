@@ -4,6 +4,7 @@ import { z } from "zod";
 import { sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { isResponse, requirePermission } from "@/lib/admin-guard";
+import { logAdminActivity } from "@/lib/activity";
 import { parseJson } from "@/lib/api-handler";
 
 /**
@@ -168,6 +169,14 @@ export async function POST(req: Request) {
 
   revalidatePath("/admin/guardians");
   revalidatePath("/admin/students");
+
+  void logAdminActivity(guard, {
+    action: "guardian.merge",
+    entityType: "guardian",
+    entityId: canonical.id,
+    summary: `Merged ${losers.length} guardian row(s) for phone ${phone} → ${canonical.erp_name}; rewired ${linksRewired} student link(s)`,
+    req,
+  });
 
   return NextResponse.json({
     ok: true,

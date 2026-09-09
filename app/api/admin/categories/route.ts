@@ -6,6 +6,7 @@ import { db } from "@/db/client";
 import { categories } from "@/db/schema";
 import { isResponse, requirePermission } from "@/lib/admin-guard";
 import { invalidate } from "@/lib/cache";
+import { logAdminActivity } from "@/lib/activity";
 
 const Body = z.object({
   slug: z.string().min(1),
@@ -42,5 +43,14 @@ export async function POST(req: Request) {
     })
     .returning();
   await invalidate("categories:tree");
+
+  void logAdminActivity(guard, {
+    action: "category.create",
+    entityType: "category",
+    entityId: created.id,
+    summary: `Created category ${created.name}`,
+    req,
+  });
+
   return NextResponse.json({ category: created });
 }

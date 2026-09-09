@@ -131,6 +131,39 @@ export type ExchangePhoto = {
   caption?: string;
 };
 
+// ─── Duplicate-guard messages ──────────────────────────────────────
+//
+// Client-safe so both the server (409 bodies, form-page guards) and the
+// client order page share ONE source of truth for the wording the
+// customer sees.
+//
+// NOTE (2026-07-23): the post-delivery time window was fully removed —
+// a delivered item is eligible for Exchange / Missing forever. Eligibility
+// now depends only on delivery + the one-active-request-per-item lock.
+
+/** Indefinite article for a request-kind label ("An Exchange" / "A Missing"). */
+function articleFor(kind: "exchange" | "missing"): string {
+  return kind === "exchange" ? "An Exchange" : "A Missing";
+}
+
+/**
+ * Popup shown when a request already exists for this Sales Order
+ * (Conditions 2 & 4). `existingKind` is the kind that already exists (the
+ * lock is per SALE ORDER, so an open Exchange blocks a new Missing too and
+ * the message names the existing one). `origin` is where that existing
+ * request came from — a `care_team` request was raised by Customer Care in
+ * the Audit portal and synced here, so we say so explicitly.
+ */
+export function alreadyRaisedMessage(
+  existingKind: "exchange" | "missing",
+  origin: "customer" | "care_team"
+): string {
+  const head = `${articleFor(existingKind)} request has already been raised for this Sales Order`;
+  return origin === "care_team"
+    ? `${head} by the Customer Care Team.`
+    : `${head}.`;
+}
+
 // ─── Status machine ────────────────────────────────────────────────
 
 export const EXCHANGE_STATUSES = [
@@ -195,4 +228,71 @@ export function formatPickupLabel(d: Date | string): string {
   const month = date.toLocaleDateString("en-IN", { month: "long" });
   const year = date.getFullYear();
   return `${weekday}, ${day} ${month} ${year}`;
+}
+
+// ─── Customer self-cancellation ────────────────────────────────────
+//
+// A customer can cancel their own exchange / missing request while it is
+// still early — before the warehouse has packed / dispatched the
+// replacement. The ERP is the final authority on whether it's too late
+// (see the cancel API routes + the ERP's 409 response); the storefront's
+// status gate below is only the optimistic client-side hint.
+//
+// The cancellation reuses the EXISTING `rejected` terminal state rather
+// than adding a new enum value: when the ERP confirms the cancel it fires
+// the normal `exchange.rejected` / `missing.rejected` webhook with a
+// `rejection_reason` that begins with `CANCELLED_REASON_PREFIX`. The
+// storefront then labels that row "Cancelled" (not "Rejected"). Keeping
+// this literal in one client-safe place means the server (which writes the
+// prefix), the webhook (which reads it), and the status pages (which detect
+// it) can never drift.
+
+/** Human-readable "not yet dispatched" statuses at which a customer may
+ *  still cancel. Shared by both flows (exchange + missing). `approved`
+ *  means accepted-but-not-yet-at-school; once the replacement has arrived
+ *  at school / been dispatched the request is no longer here. */
+export const CANCELLABLE_REQUEST_STATUSES: ReadonlySet<string> = new Set([
+  "requested",
+  "approved",
+]);
+
+/** True when the request is at a stage the customer may still cancel from
+ *  the storefront. `replacementArrived` promotes `approved` past the
+ *  cancellable window (the replacement is already at school / dispatched). */
+export function isCancellableRequestStatus(
+  status: string | null | undefined,
+  replacementArrived: boolean = false,
+): boolean {
+  if (replacementArrived) return false;
+  return !!status && CANCELLABLE_REQUEST_STATUSES.has(status);
+}
+
+/** Prefix the ERP prepends to `rejection_reason` when a rejection is
+ *  actually a customer/staff cancellation. Em dash per the ERP contract. */
+export const CANCELLED_REASON_PREFIX = "Cancelled — ";
+
+/** Does this rejection reason denote a cancellation (vs a genuine reject)?
+ *  Tolerant of case and of an em-dash OR a plain hyphen so a slightly
+ *  different ERP build still reads as "cancelled". */
+export function isCancelledReason(reason: string | null | undefined): boolean {
+  return !!reason && /^\s*cancelled\s*[—–-]/i.test(reason);
+}
+
+/** Strip the "Cancelled — " prefix so the customer's own reason can be
+ *  shown plainly. Returns null when nothing meaningful remains. */
+export function stripCancelledPrefix(reason: string | null | undefined): string | null {
+  if (!reason) return null;
+  const out = reason.replace(/^\s*cancelled\s*[—–-]\s*/i, "").trim();
+  return out.length > 0 ? out : null;
+}
+
+/** Normalize a raw customer reason into the ERP's canonical
+ *  "Cancelled — <reason>" form (idempotent — won't double-prefix). Clamped
+ *  to a safe length for the reason column. */
+export function toCancelledReason(rawReason: string): string {
+  const trimmed = rawReason.trim();
+  const full = isCancelledReason(trimmed)
+    ? trimmed
+    : `${CANCELLED_REASON_PREFIX}${trimmed}`;
+  return full.slice(0, 600);
 }

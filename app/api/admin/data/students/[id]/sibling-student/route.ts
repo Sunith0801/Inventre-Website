@@ -21,6 +21,7 @@ import { z } from "zod";
 import { eq, sql } from "drizzle-orm";
 import { db, schema } from "@/db/client";
 import { isResponse, requirePermission } from "@/lib/admin-guard";
+import { logAdminActivity } from "@/lib/activity";
 import { parseJson } from "@/lib/api-handler";
 import { upsertGuardianLink } from "@/lib/repos/guardians";
 
@@ -144,6 +145,14 @@ export async function POST(
       });
     }
   }
+
+  void logAdminActivity(guard, {
+    action: "student.sibling.add",
+    entityType: "student",
+    entityId: sourceStudentId,
+    summary: `Added sibling ${trimmed}`,
+    req,
+  });
 
   return NextResponse.json({ id: created.id });
 }

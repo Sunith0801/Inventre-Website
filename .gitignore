@@ -112,3 +112,11 @@ stranded_*_orders_*.csv
 tsus-magicbox-remap-rollback-*.csv
 unpriced_skus_*.csv
 Screenshot *.png
+
+# --- presentation artifacts (do not commit) ---
+# Platform overview deck + its generator. Built from live prod numbers on
+# demand; regenerate with inventre_deck_builder.py rather than committing.
+# NB: deliberately NOT a blanket *.pdf — docs/guides/*.pdf are tracked.
+Inventre_Platform_Overview.pptx
+Inventre_Platform_Overview.pdf
+inventre_deck_builder.py

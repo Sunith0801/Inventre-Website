@@ -34,6 +34,10 @@ const OPTIONAL_HEADERS = [
   "dateOfBirth",
   "guardianEmail",
   "guardianRelation",
+  "guardianName2",
+  "guardianMobile2",
+  "guardianEmail2",
+  "guardianRelation2",
 ] as const;
 
 const ALL_HEADERS = [...REQUIRED_HEADERS, ...OPTIONAL_HEADERS];
@@ -144,7 +148,8 @@ export function BulkImport() {
                 )}
                 {h === "schoolCode" && <span className="ml-2 text-ink-500">— e.g. SMSAW, KLINK, SAMYU</span>}
                 {h === "grade" && <span className="ml-2 text-ink-500">— type the actual grade (Nursery, LKG, UKG, Grade 1 – Grade 12). No conversion is applied; the cell is stored verbatim.</span>}
-                {h === "guardianMobile" && <span className="ml-2 text-ink-500">— 10 digits, spaces / +91 / dashes are stripped</span>}
+                {h === "guardianMobile" && <span className="ml-2 text-ink-500">— primary guardian (e.g. Father). 10 digits, spaces / +91 / dashes are stripped</span>}
+                {h === "guardianMobile2" && <span className="ml-2 text-ink-500">— optional second guardian (e.g. Mother). When filled, this number also gets login access to the student</span>}
               </li>
             ))}
           </ul>

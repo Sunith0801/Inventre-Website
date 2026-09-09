@@ -453,7 +453,18 @@ export function StudentEditor({
       )}
 
       <div className="flex gap-4">
-        <label className="flex items-center gap-2"><input type="checkbox" checked={form.enabled} onChange={(e) => set("enabled", e.target.checked)} className="h-4 w-4 rounded border-ink-300" /><span className="text-[13px]">Enabled</span></label>
+        {/* Same `students.enabled` field as before, relabelled: "Enabled"
+            gave no hint that unticking it puts the closed screen in front
+            of the parent for THIS child while siblings shop on. */}
+        <label className="flex items-center gap-2" title="Off ⇒ this student shows as “Closed” on the storefront and the parent sees the closure screen. Siblings are unaffected.">
+          <input type="checkbox" checked={form.enabled} onChange={(e) => set("enabled", e.target.checked)} className="h-4 w-4 rounded border-ink-300" />
+          <span className="text-[13px]">
+            Website access{" "}
+            <span className={form.enabled ? "text-emerald-700 font-semibold" : "text-brand-700 font-semibold"}>
+              {form.enabled ? "On" : "Off — parent sees the closed screen"}
+            </span>
+          </span>
+        </label>
         <label className="flex items-center gap-2"><input type="checkbox" checked={form.isNewStudent} onChange={(e) => set("isNewStudent", e.target.checked)} className="h-4 w-4 rounded border-ink-300" /><span className="text-[13px]">Is new student</span></label>
         <label className="flex items-center gap-2"><input type="checkbox" checked={form.isVerified} onChange={(e) => set("isVerified", e.target.checked)} className="h-4 w-4 rounded border-ink-300" /><span className="text-[13px]">Is verified</span></label>
       </div>

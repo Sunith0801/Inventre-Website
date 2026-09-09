@@ -26,7 +26,10 @@ export default function AdminLoginPage() {
         const d = await res.json().catch(() => ({}));
         throw new Error(d.error ?? "Login failed");
       }
-      router.push("/admin/dashboard");
+      // Land via /admin so the server routes restricted roles (who may lack
+      // dashboard access) to their first permitted page instead of the
+      // dashboard, which would bounce them back in a redirect loop.
+      router.push("/admin");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
       setSubmitting(false);

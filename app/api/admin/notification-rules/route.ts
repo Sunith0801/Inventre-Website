@@ -4,6 +4,7 @@ import { z } from "zod";
 import { db } from "@/db/client";
 import { notificationRules } from "@/db/schema";
 import { isResponse, requirePermission } from "@/lib/admin-guard";
+import { logAdminActivity } from "@/lib/activity";
 import { validateTemplate, EVENT_VARS } from "@/lib/notification-template";
 import { desc } from "drizzle-orm";
 
@@ -60,5 +61,12 @@ export async function POST(req: Request) {
       enabled: body.enabled,
     })
     .returning();
+  void logAdminActivity(guard, {
+    action: "notification_rule.create",
+    entityType: "notification_rule",
+    entityId: created.id,
+    summary: `Created notification rule ${created.name}`,
+    req,
+  });
   return NextResponse.json({ rule: created });
 }

@@ -12,6 +12,9 @@ type Variant = {
   sku: string;
   stockQty: number;
   colorValueId: string | null;
+  /** Customer-facing visibility. Off = hidden from the storefront picker
+   *  (the variant + its history stay intact and can be turned back On). */
+  isActive: boolean;
   /** Per-variant selling price in paise (editable; saved to item_prices). */
   price: number | null;
   /** True once the admin has typed into the price field (or pressed Clear).
@@ -100,6 +103,7 @@ export function ProductVariantsEditor({
         stockQty: 0,
         colorValueId: null,
         price: null,
+        isActive: true,
       },
     ]);
     dirty();
@@ -136,6 +140,7 @@ export function ProductVariantsEditor({
         sku: v.sku,
         stockQty: v.stockQty,
         colorValueId: v.colorValueId,
+        isActive: v.isActive,
       };
       if (!v.priceTouched) return base;
       return { ...base, price: v.priceCleared ? null : v.price };
@@ -160,7 +165,7 @@ export function ProductVariantsEditor({
     <Card>
       <CardHeader
         title="Variants"
-        description="Each row is one Colour × Size SKU. Pick the colour from the dropdown and enter just the size value (e.g. 24, S, M) — don't combine them. Stock here is the legacy column; for live bin balance use the Stock page."
+        description="Each row is one Colour × Size SKU. Pick the colour from the dropdown and enter just the size value (e.g. 24, S, M) — don't combine them. Use the On/Off switch to hide a variant from customers without deleting it (history stays intact). Stock here is the legacy column; for live bin balance use the Stock page."
         actions={
           <Button
             type="button"
@@ -185,6 +190,7 @@ export function ProductVariantsEditor({
         <table className="w-full text-[13px] min-w-[640px]">
           <thead>
             <tr className="text-left text-[10px] font-semibold tracking-wider uppercase text-ink-500">
+              <th className="py-2 pr-3">Shown</th>
               <th className="py-2 pr-3">Colour</th>
               <th className="py-2 pr-3">Size</th>
               <th className="py-2 pr-3">SKU</th>
@@ -201,7 +207,37 @@ export function ProductVariantsEditor({
               const looksPolluted =
                 /\s*[·\-–—]\s*/.test(v.size) && v.colorValueId !== null;
               return (
-                <tr key={v.id ?? `new-${i}`} className="border-t border-ink-100">
+                <tr
+                  key={v.id ?? `new-${i}`}
+                  className={
+                    "border-t border-ink-100 " +
+                    (v.isActive ? "" : "bg-ink-50/60")
+                  }
+                >
+                  <td className="py-1.5 pr-3">
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={v.isActive}
+                      title={
+                        v.isActive
+                          ? "Shown to customers — click to hide"
+                          : "Hidden from customers — click to show"
+                      }
+                      onClick={() => update(i, { isActive: !v.isActive })}
+                      className={
+                        "relative inline-flex h-5 w-9 items-center rounded-full transition-colors " +
+                        (v.isActive ? "bg-emerald-500" : "bg-ink-300")
+                      }
+                    >
+                      <span
+                        className={
+                          "inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform " +
+                          (v.isActive ? "translate-x-4" : "translate-x-0.5")
+                        }
+                      />
+                    </button>
+                  </td>
                   <td className="py-1.5 pr-3">
                     {colourOptions.length > 0 ? (
                       <select

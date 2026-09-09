@@ -3,6 +3,7 @@ import { z } from "zod";
 import { eq, sql } from "drizzle-orm";
 import { db, schema } from "@/db/client";
 import { isResponse, requirePermission } from "@/lib/admin-guard";
+import { logAdminActivity } from "@/lib/activity";
 import { parseJson } from "@/lib/api-handler";
 
 const Row = z.object({
@@ -35,5 +36,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       dateOfBirth: body.dateOfBirth ?? null,
     })
     .returning({ id: schema.studentSiblings.id });
+
+  void logAdminActivity(guard, {
+    action: "student.sibling.add",
+    entityType: "student",
+    entityId: studentId,
+    summary: `Added sibling ${body.fullName}`,
+    req,
+  });
+
   return NextResponse.json({ id: row.id });
 }

@@ -6,6 +6,7 @@ import { concerns, concernMessages, orders } from "@/db/schema";
 import { PageHeader, Card, Badge } from "@/components/admin/ui/primitives";
 import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
 import { ConcernActions } from "@/components/admin/ConcernActions";
+import { RecordHistory } from "@/components/admin/RecordHistory";
 
 export const dynamic = "force-dynamic";
 
@@ -146,6 +147,10 @@ export default async function ConcernDetailPage({ params }: { params: Promise<{ 
             />
           </Card>
         </div>
+      </div>
+
+      <div className="mt-5">
+        <RecordHistory entityType="concern" entityId={id} title="Concern history" />
       </div>
     </div>
   );

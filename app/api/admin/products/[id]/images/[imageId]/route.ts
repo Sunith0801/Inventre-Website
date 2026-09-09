@@ -6,6 +6,7 @@ import { db } from "@/db/client";
 import { productImages } from "@/db/schema";
 import { isResponse, requirePermission } from "@/lib/admin-guard";
 import { invalidateCatalog } from "@/lib/cache";
+import { logAdminActivity } from "@/lib/activity";
 
 const PatchBody = z.object({
   alt: z.string().nullable().optional(),
@@ -68,11 +69,20 @@ export async function PATCH(
     }
   });
   await invalidateCatalog();
+
+  void logAdminActivity(guard, {
+    action: "product.image.update",
+    entityType: "product",
+    entityId: productId,
+    summary: `Updated product image`,
+    req,
+  });
+
   return NextResponse.json({ ok: true });
 }
 
 export async function DELETE(
-  _: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string; imageId: string }> }
 ) {
   const guard = await requirePermission("catalog.write");
@@ -84,5 +94,14 @@ export async function DELETE(
       and(eq(productImages.id, imageId), eq(productImages.productId, productId))
     );
   await invalidateCatalog();
+
+  void logAdminActivity(guard, {
+    action: "product.image.delete",
+    entityType: "product",
+    entityId: productId,
+    summary: `Deleted product image`,
+    req,
+  });
+
   return NextResponse.json({ ok: true });
 }

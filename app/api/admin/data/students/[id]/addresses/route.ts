@@ -3,6 +3,7 @@ import { z } from "zod";
 import { eq, and, sql } from "drizzle-orm";
 import { db, schema } from "@/db/client";
 import { isResponse, requirePermission } from "@/lib/admin-guard";
+import { logAdminActivity } from "@/lib/activity";
 import { parseJson } from "@/lib/api-handler";
 import { emitAddressEvent } from "@/lib/erp-bridge";
 
@@ -49,5 +50,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     })
     .returning({ id: schema.studentAddresses.id });
   void emitAddressEvent(row.id);
+
+  void logAdminActivity(guard, {
+    action: "student.address.add",
+    entityType: "student",
+    entityId: studentId,
+    summary: `Added ${body.kind} address ${[body.addressLine1, body.city].filter(Boolean).join(", ")}`,
+    req,
+  });
+
   return NextResponse.json({ id: row.id });
 }

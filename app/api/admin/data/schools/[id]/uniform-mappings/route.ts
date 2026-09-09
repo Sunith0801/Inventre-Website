@@ -4,6 +4,7 @@ import { eq, sql } from "drizzle-orm";
 import { db, schema } from "@/db/client";
 import { isResponse, requirePermission } from "@/lib/admin-guard";
 import { parseJson } from "@/lib/api-handler";
+import { logAdminActivity } from "@/lib/activity";
 
 const Row = z.object({
   grade: z.string().min(1),
@@ -35,5 +36,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       houseName: body.houseName ?? null,
     })
     .returning({ id: schema.schoolUniformMappings.id });
+  void logAdminActivity(guard, {
+    action: "school.uniform_mapping.add",
+    entityType: "school",
+    entityId: schoolId,
+    summary: `Added uniform mapping ${body.grade}${body.houseName ? ` · ${body.houseName}` : ""}`,
+    req,
+  });
   return NextResponse.json({ id: row.id });
 }

@@ -18,6 +18,8 @@ const SCHOOLS: School[] = [
   { code: "SMSAW", name: "St Michaels Alwal",   mcbBranch: "St. MICHAELS SCHOOL[ALWAL]" },
   { code: "WMAJK", name: "Winmore Jakkur",      mcbBranch: "Winmore Academy Jakkur" },
   { code: "WMAWF", name: "Winmore Whitefield",  mcbBranch: "Winmore Academy Whitefield" },
+  { code: "CAGSM", name: "Crimson Anisha Marunji", mcbBranch: "Crimson Anisha Global School Marunji" },
+  { code: "CAGSU", name: "Crimson Anisha Undri",   mcbBranch: "Crimson Anisha Global School Undri" },
 ];
 
 // MUST match PAGE_SIZE in /api/admin/mcb/data and /admin/mcb (server page).

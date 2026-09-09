@@ -4,6 +4,7 @@ import { z } from "zod";
 import { db } from "@/db/client";
 import { warehouses } from "@/db/schema";
 import { isResponse, requirePermission } from "@/lib/admin-guard";
+import { logAdminActivity } from "@/lib/activity";
 import { eq } from "drizzle-orm";
 
 const Body = z.object({
@@ -32,5 +33,12 @@ export async function POST(req: Request) {
       .where(eq(warehouses.isDefault, true));
   }
   const [created] = await db.insert(warehouses).values(body).returning();
+  void logAdminActivity(guard, {
+    action: "warehouse.create",
+    entityType: "warehouse",
+    entityId: created.id,
+    summary: `Created warehouse ${created.name} (${created.code})`,
+    req,
+  });
   return NextResponse.json({ warehouse: created });
 }

@@ -29,7 +29,7 @@ import {
 } from "@/components/admin/ui/primitives";
 import { AutoSubmitForm } from "@/components/admin/AutoSubmitForm";
 import { redirect } from "next/navigation";
-import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
+import { canSeePage, firstAccessiblePath } from "@/lib/admin-permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -38,8 +38,25 @@ export default async function DashboardPage({
 }: {
   searchParams: Promise<{ dateRange?: string; from?: string; to?: string }>;
 }) {
-  const guard = await requireAnyPermission("dashboard.read", "dashboard.write");
-  if (isResponse(guard)) redirect("/admin/dashboard");
+  const me = await getCurrentUser();
+  if (!me || me.kind !== "admin") redirect("/admin/login");
+  // Restricted roles (ops / custom / school_admin) may not hold the
+  // dashboard permission. Send them to the first page they CAN see rather
+  // than back to /admin/dashboard, which would loop forever.
+  if (!canSeePage(me.permissions, "dashboard")) {
+    const landing = firstAccessiblePath(me.permissions);
+    if (landing) redirect(landing);
+    // Admin with no visible pages at all — show a message, never loop.
+    return (
+      <div>
+        <PageHeader
+          eyebrow="Admin"
+          title="No pages available"
+          description="Your account doesn't have access to any admin pages yet. Ask a super-admin to grant permissions on your role."
+        />
+      </div>
+    );
+  }
 
   const { dateRange, from, to } = await searchParams;
   const preset =
@@ -51,8 +68,7 @@ export default async function DashboardPage({
     from: from || null,
     to: to || null,
   });
-  const me = await getCurrentUser();
-  const role = (me?.kind === "admin" ? me.role : "ops") as "super" | "ops" | "school_admin";
+  const role = me.role as "super" | "ops" | "school_admin";
 
   // Tile labels rephrase when a range is active so "today" doesn't
   // mislead the user when they've selected, say, "This month".

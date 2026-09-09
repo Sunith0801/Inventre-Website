@@ -6,6 +6,7 @@ import { db } from "@/db/client";
 import { productGrades } from "@/db/schema";
 import { isResponse, requirePermission } from "@/lib/admin-guard";
 import { invalidateCatalog } from "@/lib/cache";
+import { logAdminActivity } from "@/lib/activity";
 
 const Body = z.object({
   grades: z.array(z.string().min(1)),
@@ -54,5 +55,17 @@ export async function PUT(
     }
   });
   await invalidateCatalog();
+
+  void logAdminActivity(guard, {
+    action: "product.grades.set",
+    entityType: "product",
+    entityId: id,
+    summary:
+      body.grades.length > 0
+        ? `Set grades: ${body.grades.join(", ")}`
+        : `Cleared all grade restrictions`,
+    req,
+  });
+
   return NextResponse.json({ ok: true, count: body.grades.length });
 }

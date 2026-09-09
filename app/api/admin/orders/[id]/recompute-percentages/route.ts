@@ -9,6 +9,7 @@ import {
   invoices,
 } from "@/db/schema";
 import { requirePermission, isResponse, assertSchoolAccess } from "@/lib/admin-guard";
+import { logAdminActivity } from "@/lib/activity";
 
 /**
  * Recompute delivered_percent + billed_percent for an order
@@ -18,7 +19,7 @@ import { requirePermission, isResponse, assertSchoolAccess } from "@/lib/admin-g
  *   billed_percent    = invoice.grandTotal / order.total * 100
  */
 export async function POST(
-  _: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const guard = await requirePermission("orders.write");
@@ -77,6 +78,14 @@ export async function POST(
     .update(orders)
     .set({ deliveredPercent, billedPercent })
     .where(eq(orders.id, id));
+
+  void logAdminActivity(guard, {
+    action: "order.recompute_percentages",
+    entityType: "order",
+    entityId: id,
+    summary: `Recomputed percentages — delivered ${deliveredPercent}%, billed ${billedPercent}%`,
+    req,
+  });
 
   return NextResponse.json({ deliveredPercent, billedPercent });
 }

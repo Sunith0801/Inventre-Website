@@ -69,11 +69,6 @@ export function ShipmentCard({
           <span className="font-bold text-ink-900 uppercase">
             {shipment.partner}
           </span>
-          {shipment.mode && (
-            <span className="rounded-full bg-ink-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-ink-600">
-              {shipment.mode}
-            </span>
-          )}
           {shipment.trackingNumber && !shipment.trackingNumber.startsWith("syn:") && (
             <span className="font-mono text-[12px] text-ink-700">
               {shipment.trackingNumber}
@@ -112,7 +107,7 @@ export function ShipmentCard({
           )}
         </div>
         <p className="mt-3 text-[11.5px] text-ink-500">
-          {shipment.partner.toUpperCase()} tracking history{" "}
+          {shipment.partner.toUpperCase()} tracking{" "}
           <span className="text-ink-400">·</span>{" "}
           {totalEvents} event{totalEvents === 1 ? "" : "s"}{" "}
           <span className="text-ink-400">·</span>{" "}
@@ -169,6 +164,9 @@ export function ShipmentCard({
                 <p className="mt-3 text-center text-[12.5px] font-semibold text-ink-900 leading-tight">
                   {ev.label}
                 </p>
+                {/* Only carrier scans carry a `source` now, and it's the scan
+                    LOCATION. System events send null — staff/integration
+                    handles are stripped server-side. */}
                 {ev.source && (
                   <p className="mt-1 text-center text-[11px] text-ink-500 leading-snug truncate" title={ev.source}>
                     {ev.source}
@@ -176,20 +174,6 @@ export function ShipmentCard({
                 )}
                 <p className="mt-1.5 text-center text-[10.5px] text-ink-500 tabular-nums">
                   {formatDateTime(ev.at)}
-                </p>
-                <p className="mt-1 flex justify-center">
-                  <span
-                    className={
-                      "rounded-full px-1.5 py-0.5 font-semibold text-[9.5px] uppercase tracking-wider " +
-                      (ev.badge === "Carrier scan"
-                        ? "bg-indigo-50 text-indigo-700"
-                        : ev.badge === "Auto-poll"
-                          ? "bg-emerald-50 text-emerald-700"
-                          : "bg-ink-50 text-ink-600")
-                    }
-                  >
-                    {ev.badge}
-                  </span>
                 </p>
               </li>
             ))}

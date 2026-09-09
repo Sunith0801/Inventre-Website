@@ -6,6 +6,7 @@ import { db } from "@/db/client";
 import { categories } from "@/db/schema";
 import { isResponse, requirePermission } from "@/lib/admin-guard";
 import { invalidateCatalog } from "@/lib/cache";
+import { logAdminActivity, diffFields } from "@/lib/activity";
 
 const Body = z.object({
   slug: z.string().min(1).optional(),
@@ -118,22 +119,55 @@ export async function PATCH(
     }
   }
 
+  const [beforeRow] = await db
+    .select()
+    .from(categories)
+    .where(eq(categories.id, id))
+    .limit(1);
   await db.update(categories).set(update).where(eq(categories.id, id));
   await rebuildDescendantPaths(id);
   // categoryPath is embedded inside cached product DTOs, so a rename or
   // re-parent has to bust the product caches too — not just the categories
   // tree/map. Otherwise shoppers see the old breadcrumb until TTL expires.
   await invalidateCatalog();
+
+  const changes = diffFields(
+    (beforeRow ?? {}) as unknown as Record<string, unknown>,
+    update,
+    {
+      slug: "Slug",
+      name: "Name",
+      parentId: "Parent",
+      sortOrder: "Sort Order",
+      path: "Path",
+    }
+  );
+  if (changes.length > 0) {
+    void logAdminActivity(guard, {
+      action: "category.update",
+      entityType: "category",
+      entityId: id,
+      summary: `Updated ${changes.map((c) => c.label ?? c.field).join(", ")}`,
+      changes,
+      req,
+    });
+  }
+
   return NextResponse.json({ ok: true });
 }
 
 export async function DELETE(
-  _: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const guard = await requirePermission("catalog.write");
   if (isResponse(guard)) return guard;
   const { id } = await params;
+  const [beforeDelete] = await db
+    .select({ name: categories.name })
+    .from(categories)
+    .where(eq(categories.id, id))
+    .limit(1);
   // detach children to top-level instead of cascading deletes silently
   await db
     .update(categories)
@@ -141,5 +175,14 @@ export async function DELETE(
     .where(eq(categories.parentId, id));
   await db.delete(categories).where(eq(categories.id, id));
   await invalidateCatalog();
+
+  void logAdminActivity(guard, {
+    action: "category.delete",
+    entityType: "category",
+    entityId: id,
+    summary: `Deleted category ${beforeDelete?.name ?? id}`,
+    req,
+  });
+
   return NextResponse.json({ ok: true });
 }

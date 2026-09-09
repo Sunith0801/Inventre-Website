@@ -2,9 +2,10 @@ import { NextResponse } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { db, schema } from "@/db/client";
 import { isResponse, requirePermission } from "@/lib/admin-guard";
+import { logAdminActivity } from "@/lib/activity";
 
 export async function DELETE(
-  _: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string; rowId: string }> }
 ) {
   const guard = await requirePermission("schools.write");
@@ -23,7 +24,7 @@ export async function DELETE(
         eq(schema.schoolGradeMappings.schoolId, schoolId)
       )
     )
-    .returning({ id: schema.schoolGradeMappings.id });
+    .returning({ id: schema.schoolGradeMappings.id, grade: schema.schoolGradeMappings.grade });
 
   if (deleted.length === 0) {
     return NextResponse.json(
@@ -31,5 +32,12 @@ export async function DELETE(
       { status: 404 }
     );
   }
+  void logAdminActivity(guard, {
+    action: "school.grade_mapping.delete",
+    entityType: "school",
+    entityId: schoolId,
+    summary: `Removed grade mapping ${deleted[0]?.grade ?? rowId}`,
+    req,
+  });
   return NextResponse.json({ ok: true });
 }

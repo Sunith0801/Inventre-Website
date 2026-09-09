@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { parseBody } from "@/lib/parse-body";
 import { z } from "zod";
-import { eq } from "drizzle-orm";
+import { eq, and, ne } from "drizzle-orm";
 import { db } from "@/db/client";
 import {
   orders,
@@ -15,6 +15,7 @@ import {
   erpOutboundQueue,
 } from "@/db/schema";
 import { requirePermission, isResponse, assertSchoolAccess } from "@/lib/admin-guard";
+import { logAdminActivity, diffFields } from "@/lib/activity";
 import { notifyOrderStatus } from "@/lib/notifications";
 import {
   reserveOrder,
@@ -56,6 +57,15 @@ const PatchBody = z.object({
   billingAddress: AddressShape.optional(),
   tags: z.array(z.string().min(1).max(40)).optional(),
   displayStatus: z.string().max(60).nullable().optional(),
+  // Customer account (login) mobile — lives on `parents.phone`, shared
+  // across all the customer's orders and used for OTP login. Editing it
+  // here is a deliberate ops affordance (customer moved / gave a new
+  // number); validated to a bare 10-digit Indian mobile and checked for
+  // collisions against other accounts before it's written.
+  accountPhone: z
+    .string()
+    .regex(/^\d{10}$/, "Enter a 10-digit mobile number")
+    .optional(),
 });
 
 export async function GET(
@@ -142,12 +152,57 @@ export async function PATCH(
   // Other editable fields — present-only update so a PATCH that omits
   // them doesn't clobber the existing values.
   if (body.notes !== undefined) update.notes = body.notes;
-  if (body.shippingAddress !== undefined) update.shippingAddress = body.shippingAddress;
+  if (body.shippingAddress !== undefined) {
+    update.shippingAddress = body.shippingAddress;
+    // Re-derive place_of_supply from the edited state — an out-of-state
+    // move (e.g. Chennai → Hyderabad) flips the GST place of supply, which
+    // downstream e-invoice / e-way-bill / GSTR reads rely on. `…FromState`
+    // preserves the real state code instead of collapsing to "99-Other".
+    const { placeOfSupplyFromState } = await import("@/lib/tax");
+    update.placeOfSupply = placeOfSupplyFromState(
+      body.shippingAddress.state,
+      body.shippingAddress.pincode
+    );
+  }
   if (body.billingAddress !== undefined) update.billingAddress = body.billingAddress;
   if (body.tags !== undefined) update.tags = body.tags;
   if (body.displayStatus !== undefined) update.displayStatus = body.displayStatus;
 
-  if (Object.keys(update).length === 0) {
+  // Account (login) mobile change — validate collision, then update the
+  // parent row. Kept separate from `update` (which targets the orders row).
+  let phoneChanged = false;
+  let parentBeforePhone: string | null = null;
+  if (body.accountPhone !== undefined) {
+    const [parent] = await db
+      .select({ id: parents.id, phone: parents.phone })
+      .from(parents)
+      .where(eq(parents.id, before.parentId))
+      .limit(1);
+    if (parent && parent.phone !== body.accountPhone) {
+      // `parents.phone` is unique-indexed and is the OTP login identity;
+      // refuse if another account already owns the target number.
+      const [clash] = await db
+        .select({ id: parents.id })
+        .from(parents)
+        .where(
+          and(eq(parents.phone, body.accountPhone), ne(parents.id, parent.id))
+        )
+        .limit(1);
+      if (clash) {
+        return NextResponse.json(
+          {
+            error:
+              "That mobile number is already used by another customer account.",
+          },
+          { status: 409 }
+        );
+      }
+      parentBeforePhone = parent.phone;
+      phoneChanged = true;
+    }
+  }
+
+  if (Object.keys(update).length === 0 && !phoneChanged) {
     return NextResponse.json({ ok: true, noop: true });
   }
 
@@ -214,7 +269,79 @@ export async function PATCH(
     );
   }
 
-  await db.update(orders).set(update).where(eq(orders.id, id));
+  if (Object.keys(update).length > 0) {
+    await db.update(orders).set(update).where(eq(orders.id, id));
+  }
+
+  // Apply the account (login) mobile change on the parent row. Done after
+  // the collision check above so we only ever write a free number.
+  if (phoneChanged && body.accountPhone !== undefined) {
+    await db
+      .update(parents)
+      .set({ phone: body.accountPhone })
+      .where(eq(parents.id, before.parentId));
+  }
+
+  // ── Audit trail ─────────────────────────────────────────────────
+  // Record exactly what this admin changed (per-field Old → New), who
+  // they are, and why (cancellation reason → remarks). Best-effort;
+  // never blocks the update.
+  {
+    const after: Record<string, unknown> = {};
+    if (body.status !== undefined) after.status = body.status;
+    if (body.notes !== undefined) after.notes = body.notes;
+    if (body.tags !== undefined) after.tags = body.tags;
+    if (body.displayStatus !== undefined) after.displayStatus = body.displayStatus;
+    if (body.shippingAddress !== undefined) after.shippingAddress = body.shippingAddress;
+    if (body.billingAddress !== undefined) after.billingAddress = body.billingAddress;
+    // Account-phone change is diffed off its own before/after pair since it
+    // lives on the parent row, not `before` (the orders row).
+    const beforeForDiff: Record<string, unknown> = {
+      ...(before as unknown as Record<string, unknown>),
+    };
+    if (phoneChanged) {
+      beforeForDiff.accountPhone = parentBeforePhone;
+      after.accountPhone = body.accountPhone;
+    }
+    const changes = diffFields(beforeForDiff, after, {
+      status: "Delivery Status",
+      notes: "Notes",
+      tags: "Tags",
+      displayStatus: "Display Status",
+      shippingAddress: "Shipping Address",
+      billingAddress: "Billing Address",
+      accountPhone: "Account Mobile",
+    });
+    if (changes.length > 0) {
+      const statusChanged = body.status !== undefined && before.status !== body.status;
+      const action =
+        body.status === "cancelled"
+          ? "order.cancel"
+          : statusChanged
+            ? "order.status"
+            : "order.update";
+      const summary = statusChanged
+        ? `Status: ${before.status} → ${body.status}`
+        : `Updated ${changes.map((c) => c.label ?? c.field).join(", ")}`;
+      void logAdminActivity(guard, {
+        action,
+        entityType: "order",
+        entityId: id,
+        summary,
+        changes,
+        remarks:
+          body.status === "cancelled"
+            ? body.cancellationReason ?? "Admin cancelled"
+            : null,
+        req,
+      });
+    }
+  }
+
+  // Whether we've already queued an event that carries the full, current
+  // order payload to audit this request — so a combined status+address edit
+  // doesn't double-enqueue.
+  let enqueuedToAudit = false;
 
   // Status-transition side effects only fire when the PATCH actually
   // changed the status. Inline-edit calls (notes / address only) skip
@@ -233,6 +360,7 @@ export async function PATCH(
     if (body.status === "cancelled") {
       const { enqueueOrderEvent } = await import("@/lib/erp-bridge");
       void enqueueOrderEvent(id, "order.cancelled");
+      enqueuedToAudit = true;
     } else if (
       body.status === "confirmed" ||
       body.status === "packed" ||
@@ -247,6 +375,7 @@ export async function PATCH(
       // Buffered queue, best-effort — never throws.
       const { enqueueOrderEvent } = await import("@/lib/erp-bridge");
       void enqueueOrderEvent(id, "order.updated");
+      enqueuedToAudit = true;
     }
     if (body.status === "delivered") {
       const { awardForOrder } = await import("@/lib/repos/loyalty");
@@ -256,6 +385,20 @@ export async function PATCH(
         orderSubtotalPaise: before.subtotal,
       });
     }
+  }
+
+  // Contact-info edits (shipping/billing address or account mobile) must
+  // also reach audit so the Sales Order's delivery address / contact stays
+  // in sync. The buffered payload is rebuilt fresh at drain time and carries
+  // the new address + parent phone. Only enqueue if a status transition
+  // above didn't already push the current payload.
+  const contactChanged =
+    body.shippingAddress !== undefined ||
+    body.billingAddress !== undefined ||
+    phoneChanged;
+  if (contactChanged && !enqueuedToAudit) {
+    const { enqueueOrderEvent } = await import("@/lib/erp-bridge");
+    void enqueueOrderEvent(id, "order.updated");
   }
 
   return NextResponse.json({ ok: true });
@@ -313,6 +456,14 @@ export async function DELETE(
     await tx.delete(shipments).where(eq(shipments.orderId, id));
     await tx.delete(payments).where(eq(payments.orderId, id));
     await tx.delete(orders).where(eq(orders.id, id));
+  });
+
+  void logAdminActivity(guard, {
+    action: "order.delete",
+    entityType: "order",
+    entityId: id,
+    summary: `Deleted order ${before.orderNumber}`,
+    req: _req,
   });
 
   return NextResponse.json({

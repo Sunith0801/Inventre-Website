@@ -4,6 +4,7 @@ import { eq, sql } from "drizzle-orm";
 import { db, schema } from "@/db/client";
 import { isResponse, requirePermission } from "@/lib/admin-guard";
 import { parseJson } from "@/lib/api-handler";
+import { logAdminActivity } from "@/lib/activity";
 
 /**
  * Bulk grade-mapping insert. The single-row sibling endpoint stays untouched
@@ -75,6 +76,15 @@ export async function POST(
       return { inserted: fresh.length, skipped: body.rows.length - fresh.length };
     });
 
+    if (result.inserted > 0) {
+      void logAdminActivity(guard, {
+        action: "school.grade_mapping.bulk",
+        entityType: "school",
+        entityId: schoolId,
+        summary: `Bulk added ${result.inserted} grade mapping${result.inserted === 1 ? "" : "s"}${result.skipped ? ` (${result.skipped} skipped)` : ""}`,
+        req,
+      });
+    }
     return NextResponse.json(result);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

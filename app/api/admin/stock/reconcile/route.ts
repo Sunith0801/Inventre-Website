@@ -5,6 +5,7 @@ import { eq, and } from "drizzle-orm";
 import { db } from "@/db/client";
 import { bins } from "@/db/schema";
 import { isResponse, requirePermission } from "@/lib/admin-guard";
+import { logAdminActivity } from "@/lib/activity";
 import {
   applyStockChange,
   getDefaultWarehouseId,
@@ -87,6 +88,15 @@ export async function POST(req: Request) {
       { status: 400 }
     );
   }
+
+  const changed = results.filter((r) => r.delta !== 0).length;
+  void logAdminActivity(guard, {
+    action: "stock.reconcile",
+    entityType: "stock",
+    entityId: wh,
+    summary: `Reconciled ${results.length} line(s) @ warehouse ${wh}, ${changed} adjusted: ${body.notes}`,
+    req,
+  });
 
   return NextResponse.json({
     ok: true,

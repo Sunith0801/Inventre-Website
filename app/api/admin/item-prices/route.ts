@@ -4,6 +4,7 @@ import { z } from "zod";
 import { db } from "@/db/client";
 import { itemPrices, productVariants, products } from "@/db/schema";
 import { isResponse, requirePermission } from "@/lib/admin-guard";
+import { logAdminActivity } from "@/lib/activity";
 import {
   setVariantPrice,
   bulkUpdatePricesByMarkup,
@@ -33,6 +34,15 @@ export async function POST(req: Request) {
     validFrom: body.validFrom ? new Date(body.validFrom) : null,
     validUntil: body.validUntil ? new Date(body.validUntil) : null,
   });
+
+  void logAdminActivity(guard, {
+    action: "item_price.create",
+    entityType: "item_price",
+    entityId: body.variantId,
+    summary: `Set variant price to ${body.price} paise`,
+    req,
+  });
+
   return NextResponse.json({ ok: true });
 }
 
@@ -55,5 +65,14 @@ export async function PATCH(req: Request) {
     priceListId: body.priceListId,
     schoolId: body.schoolId ?? null,
   });
+
+  void logAdminActivity(guard, {
+    action: "item_price.update",
+    entityType: "item_price",
+    entityId: null,
+    summary: `Applied ${body.markupPercent}% markup across ${body.productIds.length} product(s)`,
+    req,
+  });
+
   return NextResponse.json(result);
 }

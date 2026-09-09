@@ -6,6 +6,7 @@ import { requirePermission, isResponse } from "@/lib/admin-guard";
 import { searchCustomers } from "@/lib/repos/customers";
 import { db } from "@/db/client";
 import { parents } from "@/db/schema";
+import { logAdminActivity } from "@/lib/activity";
 
 export async function GET(req: Request) {
   const guard = await requirePermission("customers.read");
@@ -58,5 +59,12 @@ export async function POST(req: Request) {
       notes: body.notes ?? null,
     })
     .returning();
+  void logAdminActivity(guard, {
+    action: "customer.create",
+    entityType: "customer",
+    entityId: created.id,
+    summary: `Created customer ${created.name ?? created.phone}`,
+    req,
+  });
   return NextResponse.json({ id: created.id });
 }

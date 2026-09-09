@@ -14,6 +14,7 @@ import { requirePermission, isResponse } from "@/lib/admin-guard";
 import { returnToStock, getDefaultWarehouseId } from "@/lib/repos/inventory";
 import { generateCreditNote } from "@/lib/repos/invoices";
 import { allocOrderNumber } from "@/lib/numbering";
+import { logAdminActivity } from "@/lib/activity";
 
 const Body = z.object({
   action: z.enum(["approve", "reject", "receive", "refund", "create_replacement"]),
@@ -56,6 +57,14 @@ export async function POST(
         updatedAt: new Date(),
       })
       .where(eq(returns.id, id));
+    void logAdminActivity(guard, {
+      action: "return.status",
+      entityType: "return",
+      entityId: id,
+      summary: `Status: ${ret.status} → approved`,
+      remarks: body.notes ?? null,
+      req,
+    });
     return NextResponse.json({ ok: true });
   }
 
@@ -70,6 +79,14 @@ export async function POST(
         updatedAt: new Date(),
       })
       .where(eq(returns.id, id));
+    void logAdminActivity(guard, {
+      action: "return.status",
+      entityType: "return",
+      entityId: id,
+      summary: `Status: ${ret.status} → rejected`,
+      remarks: body.notes ?? null,
+      req,
+    });
     return NextResponse.json({ ok: true });
   }
 
@@ -96,6 +113,13 @@ export async function POST(
         updatedAt: new Date(),
       })
       .where(eq(returns.id, id));
+    void logAdminActivity(guard, {
+      action: "return.status",
+      entityType: "return",
+      entityId: id,
+      summary: `Status: ${ret.status} → received (${stockable.length} restocked, ${items.length - stockable.length} held)`,
+      req,
+    });
     return NextResponse.json({
       ok: true,
       restocked: stockable.length,
@@ -145,6 +169,13 @@ export async function POST(
       })
       .where(eq(returns.id, id));
 
+    void logAdminActivity(guard, {
+      action: "return.status",
+      entityType: "return",
+      entityId: id,
+      summary: `Status: ${ret.status} → refunded${creditNoteNumber ? ` (credit note ${creditNoteNumber})` : ""}`,
+      req,
+    });
     return NextResponse.json({
       ok: true,
       creditNoteId,
@@ -233,6 +264,13 @@ export async function POST(
       return draft;
     });
 
+    void logAdminActivity(guard, {
+      action: "return.replacement",
+      entityType: "return",
+      entityId: id,
+      summary: `Created replacement order ${replacementNumber} for ${original.orderNumber}`,
+      req,
+    });
     return NextResponse.json({
       ok: true,
       orderId: created.id,

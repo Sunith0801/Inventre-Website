@@ -4,6 +4,7 @@ import { productAttributes, productAttributeValues, schools } from "@/db/schema"
 import { eq } from "drizzle-orm";
 import { PageHeader, Card, Badge } from "@/components/admin/ui/primitives";
 import { AttributeEditor } from "@/components/admin/AttributeEditor";
+import { RecordHistory } from "@/components/admin/RecordHistory";
 
 export const dynamic = "force-dynamic";
 
@@ -89,6 +90,10 @@ export default async function AttributeDetailPage({
           }))}
         />
       </Card>
+
+      <div className="mt-5">
+        <RecordHistory entityType="attribute" entityId={id} title="Attribute history" />
+      </div>
     </div>
   );
 }

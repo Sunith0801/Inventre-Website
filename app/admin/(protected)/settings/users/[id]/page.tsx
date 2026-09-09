@@ -6,6 +6,7 @@ import { db } from "@/db/client";
 import { requirePermission, isResponse } from "@/lib/admin-guard";
 import { ADMIN_PAGES, ADMIN_PERMISSION_GROUPS } from "@/lib/admin-permissions";
 import { UserPermissionsEditor } from "@/components/admin/UserPermissionsEditor";
+import { RecordHistory } from "@/components/admin/RecordHistory";
 
 export const dynamic = "force-dynamic";
 
@@ -88,6 +89,10 @@ export default async function EditUserPage({
         rolePerms={rolePerms.map((r) => r.permission)}
         overrides={overrides.map((o) => ({ permission: o.permission, granted: o.granted }))}
       />
+
+      <div className="mt-5">
+        <RecordHistory entityType="user" entityId={id} title="User history" />
+      </div>
     </div>
   );
 }

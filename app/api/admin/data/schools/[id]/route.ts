@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { db, schema } from "@/db/client";
 import { isResponse, requirePermission } from "@/lib/admin-guard";
 import { parseJson } from "@/lib/api-handler";
+import { logAdminActivity, diffFields } from "@/lib/activity";
 
 const Patch = z.object({
   schoolCode: z.string().min(1).max(40).optional(),
@@ -40,14 +41,57 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   // Keep storefront `name` in sync with `schoolName` on every write.
   if (body.schoolName !== undefined) update.name = body.schoolName;
 
+  const [before] = await db.select().from(schema.schools).where(eq(schema.schools.id, id)).limit(1);
   await db.update(schema.schools).set(update).where(eq(schema.schools.id, id));
+  if (before) {
+    const changes = diffFields(
+      before as unknown as Record<string, unknown>,
+      update,
+      {
+        schoolCode: "School code",
+        schoolName: "School name",
+        name: "Name",
+        branchName: "Branch",
+        websiteUrl: "Website",
+        status: "Status",
+        schoolLogoUrl: "Logo URL",
+        street: "Street",
+        city: "City",
+        state: "State",
+        country: "Country",
+        pincode: "Pincode",
+        uniformDetailsCheckbox: "Uniform details",
+        booksDetailsCheckbox: "Books details",
+      }
+    );
+    // syncedAt is always set; ignore it as a meaningful change.
+    const meaningful = changes.filter((c) => c.field !== "syncedAt");
+    if (meaningful.length > 0) {
+      void logAdminActivity(guard, {
+        action: "school.update",
+        entityType: "school",
+        entityId: id,
+        summary: `Updated ${meaningful.map((c) => c.label ?? c.field).join(", ")}`,
+        changes: meaningful,
+        req,
+      });
+    }
+  }
   return NextResponse.json({ ok: true });
 }
 
-export async function DELETE(_: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const guard = await requirePermission("schools.write");
   if (isResponse(guard)) return guard;
   const { id } = await params;
+  const [before] = await db.select().from(schema.schools).where(eq(schema.schools.id, id)).limit(1);
   await db.delete(schema.schools).where(eq(schema.schools.id, id));
+  void logAdminActivity(guard, {
+    action: "school.delete",
+    entityType: "school",
+    entityId: id,
+    summary: `Deleted school ${before?.schoolName ?? before?.name ?? id}`,
+    req,
+  });
   return NextResponse.json({ ok: true });
 }

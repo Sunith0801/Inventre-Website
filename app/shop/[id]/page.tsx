@@ -54,6 +54,7 @@ function dtoToProduct(d: ProductDetailDto): Product {
     specs: d.specs ?? undefined,
     sizeTable: d.sizeTable ?? undefined,
     sizeChartUrl: d.sizeChartUrl ?? null,
+    imageNote: d.imageNote ?? null,
     rating: d.rating ?? undefined,
     // Full per-variant rows — required so BuyBox can look up the exact
     // pricePaise of the resolved Colour × Size variant via
@@ -389,6 +390,9 @@ export default function ProductPage() {
   const [refreshTick, setRefreshTick] = useState(0);
   const { add: addToCart, addByVariantId, lines: cartLines } = useCart();
   const [addError, setAddError] = useState<string | null>(null);
+  // When a bookkit add is blocked because it's already placed for the
+  // student, this carries the existing order to link to ("view").
+  const [addOrderLink, setAddOrderLink] = useState<string | null>(null);
   const [addBusy, setAddBusy] = useState(false);
 
   // Per-product draft persistence. Survives navigation away (in-app or
@@ -960,8 +964,8 @@ export default function ProductPage() {
                                     ? await addByVariantId(kitFallbackVariantId, 1)
                                     : await addToCart(product, product.sizes[0] ?? "");
                               setAddBusy(false);
-                              if (!r.ok && r.error) setAddError(r.error);
-                              else setAddError(null);
+                              if (!r.ok && r.error) { setAddError(r.error); setAddOrderLink(r.orderNumber ?? null); }
+                              else { setAddError(null); setAddOrderLink(null); }
                             }}
                             className="w-full rounded-full bg-ink-900 px-6 py-3.5 text-[15px] font-bold text-white hover:bg-brand transition-colors shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
                           >
@@ -971,7 +975,14 @@ export default function ProductPage() {
                             <p className="mt-2 text-[14px] font-semibold text-amber-700 text-center leading-snug">Complimentary bookkit already in your cart</p>
                           )}
                           {addError && (
-                            <p className="mt-2 text-[15px] font-semibold text-red-600 text-center leading-snug">{addError}</p>
+                            <div className="mt-2 text-center leading-snug">
+                              <p className="text-[15px] font-semibold text-red-600">{addError}</p>
+                              {addOrderLink && (
+                                <a href={`/shop/orders/${encodeURIComponent(addOrderLink)}`} className="mt-1 inline-block text-[14px] font-bold text-amber-800 underline underline-offset-2 hover:text-brand">
+                                  Order already placed — click here to view
+                                </a>
+                              )}
+                            </div>
                           )}
                         </div>
                       )}
@@ -1031,8 +1042,8 @@ export default function ProductPage() {
                               setAddBusy(true);
                               const r = await addByVariantId(selectedTemplateLang.variantId);
                               setAddBusy(false);
-                              if (!r.ok && r.error) setAddError(r.error);
-                              else setAddError(null);
+                              if (!r.ok && r.error) { setAddError(r.error); setAddOrderLink(r.orderNumber ?? null); }
+                              else { setAddError(null); setAddOrderLink(null); }
                             }}
                             className="w-full rounded-full bg-ink-900 px-6 py-3 text-[14px] font-semibold text-white hover:bg-brand transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                           >
@@ -1042,7 +1053,14 @@ export default function ProductPage() {
                             <p className="mt-2 text-[14px] font-semibold text-amber-700 text-center leading-snug">Complimentary bookkit already in your cart</p>
                           )}
                           {addError && (
-                            <p className="mt-2 text-[15px] font-semibold text-red-600 text-center leading-snug">{addError}</p>
+                            <div className="mt-2 text-center leading-snug">
+                              <p className="text-[15px] font-semibold text-red-600">{addError}</p>
+                              {addOrderLink && (
+                                <a href={`/shop/orders/${encodeURIComponent(addOrderLink)}`} className="mt-1 inline-block text-[14px] font-bold text-amber-800 underline underline-offset-2 hover:text-brand">
+                                  Order already placed — click here to view
+                                </a>
+                              )}
+                            </div>
                           )}
                         </div>
                       )}
@@ -1143,8 +1161,10 @@ export default function ProductPage() {
                             setAddBusy(false);
                             if (!r.ok && r.error) {
                               setAddError(r.error);
+                              setAddOrderLink(r.orderNumber ?? null);
                             } else {
                               setAddError(null);
+                              setAddOrderLink(null);
                               // Drop the draft once committed — re-visiting
                               // the same product after Add-to-Cart shouldn't
                               // restore the now-stale picker state.
@@ -1167,9 +1187,14 @@ export default function ProductPage() {
                           </p>
                         )}
                         {addError && (
-                          <p className="mt-2 text-[15px] font-semibold text-red-600 text-center leading-snug">
-                            {addError}
-                          </p>
+                          <div className="mt-2 text-center leading-snug">
+                            <p className="text-[15px] font-semibold text-red-600">{addError}</p>
+                            {addOrderLink && (
+                              <a href={`/shop/orders/${encodeURIComponent(addOrderLink)}`} className="mt-1 inline-block text-[14px] font-bold text-amber-800 underline underline-offset-2 hover:text-brand">
+                                Order already placed — click here to view
+                              </a>
+                            )}
+                          </div>
                         )}
                       </div>
                     </div>
@@ -1202,8 +1227,8 @@ export default function ProductPage() {
                               ? await addByVariantId(kitFallbackVariantId, 1)
                               : await addToCart(product, product.sizes[0] ?? "");
                             setAddBusy(false);
-                            if (!r.ok && r.error) setAddError(r.error);
-                            else setAddError(null);
+                            if (!r.ok && r.error) { setAddError(r.error); setAddOrderLink(r.orderNumber ?? null); }
+                            else { setAddError(null); setAddOrderLink(null); }
                           }}
                           className="w-full rounded-full bg-ink-900 px-6 py-3.5 text-[15px] font-bold text-white hover:bg-brand transition-colors shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
                         >
@@ -1230,7 +1255,21 @@ export default function ProductPage() {
                 selected colour's images surface first. */}
             <PdpSelectionProvider>
               <div className="grid lg:grid-cols-[380px_1fr] gap-10 lg:gap-16 items-start">
-                <Gallery product={product} />
+                {/* Left column: image + optional admin-authored note beneath it. */}
+                <div>
+                  <Gallery product={product} />
+                  {product.imageNote ? (
+                    <div className="mt-5 space-y-3 text-[14px] leading-relaxed text-ink-700">
+                      {product.imageNote
+                        .split(/\n\s*\n|\n/)
+                        .map((line) => line.trim())
+                        .filter(Boolean)
+                        .map((line, i) => (
+                          <p key={i}>{line}</p>
+                        ))}
+                    </div>
+                  ) : null}
+                </div>
                 {/* key by product.id so navigating to a different product
                     remounts BuyBox with fresh size/qty/attribute defaults —
                     otherwise its selection state persists across products and

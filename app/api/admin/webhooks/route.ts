@@ -6,6 +6,7 @@ import { desc } from "drizzle-orm";
 import { db } from "@/db/client";
 import { webhookEndpoints } from "@/db/schema";
 import { isResponse, requirePermission } from "@/lib/admin-guard";
+import { logAdminActivity } from "@/lib/activity";
 
 export async function GET() {
   const guard = await requirePermission("settings-erp-bridge.read");
@@ -42,5 +43,12 @@ export async function POST(req: Request) {
       enabled: body.enabled,
     })
     .returning();
+  void logAdminActivity(guard, {
+    action: "webhook.create",
+    entityType: "webhook",
+    entityId: created.id,
+    summary: `Created webhook ${created.name}`,
+    req,
+  });
   return NextResponse.json({ endpoint: created, secret });
 }

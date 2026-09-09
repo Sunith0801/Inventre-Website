@@ -25,6 +25,8 @@ import {
 } from "@/lib/return-line-eligibility";
 import {
   fallbackBundleComponents,
+  loadBookkitCategoryTreeUnion,
+  recoverMissingBookkitSelections,
   emptyContainerProductIds,
   loadBookkitCategoryTree,
   kindCategoryFor,
@@ -153,6 +155,17 @@ export default async function NewExchangePage({
     )
     .map((it) => it.id);
   const fallbackByItem = await fallbackBundleComponents(emptyBundleItemIds);
+  // A PARTIAL bundle_selections is the other half of the same problem: a box
+  // whose uniforms were recorded but whose bookkit never was, so the parent
+  // could exchange every uniform and not one book. Recover the book side from
+  // the box definition. See recoverMissingBookkitSelections.
+  const recoveredByItem = await recoverMissingBookkitSelections(
+    items.map((it) => ({
+      id: it.id,
+      variantId: it.variantId ?? null,
+      bundleSelections: it.bundleSelections,
+    })),
+  );
   const fallbackProductIds = new Set<string>();
   for (const comps of fallbackByItem.values())
     for (const c of comps) fallbackProductIds.add(c.productId);
@@ -624,9 +637,28 @@ export default async function NewExchangePage({
         const productId = vid ? productByVariant.get(vid) ?? null : null;
         const allVariants = productId ? variantsByProduct.get(productId) ?? [] : [];
         const siblings = vid ? allVariants.filter((v) => v.id !== vid) : [];
-        const compAttrs = Array.isArray(c.attributes)
+        // Component axes (Colour / Size). `bundle_selections.attributes` is the
+        // snapshot taken at checkout — but it is EMPTY on every box whose
+        // composition was recovered by the audit backfill (2026-07-03: 1,642
+        // boxes, `backfilledFromAudit: true`), which stored only
+        // variantId/name/size. The form derives the colour AXIS from the
+        // siblings when `attributes` is empty, but the ordered variant's own
+        // colour then stayed "" while every sibling carried a real value, so
+        // resolveVariantByAxes matched NOTHING and any size change fell back to
+        // "That colour/size combination isn't available" — for sizes that are
+        // active and in stock (SAL-ORD-2026-22600). Fall back to the same
+        // catalog axes the siblings come from (exactly what the plain-item
+        // branch below already does, and what the order page renders).
+        const storedAttrs = Array.isArray(c.attributes)
           ? (c.attributes as { name: string; value: string }[])
           : [];
+        const compAttrs =
+          storedAttrs.length > 0
+            ? storedAttrs
+            : (allVariants.find((v) => v.id === vid)?.axes ?? []).map((a) => ({
+                name: a.attributeName,
+                value: a.value,
+              }));
         const compSize = typeof c.size === "string" ? c.size : "";
         const compKind = effectiveKind(vid ? kindByVariant.get(vid) ?? null : null, compName);
         // Real sub-bundle category first (Text Books / Notebooks / …), then
@@ -658,6 +690,78 @@ export default async function NewExchangePage({
           categoryName: compCat?.name,
           bookkitKey: compBooks?.key,
           bookkitName: compBooks?.name,
+          locked: lockedByOrderItem.has(it.id),
+          lockReturnNumber: lockedByOrderItem.get(it.id) ?? null,
+        });
+      }
+
+      // The box's BOOK half, when the stored selections captured only the
+      // uniforms (SAL-ORD-2026-33270). Same leaf shape as the nested-bookkit
+      // branch above; `rec:` keeps the unitKey namespace distinct from the
+      // `comp:${ci}:` keys minted off stored selections.
+      for (const rec of recoveredByItem.get(it.id) ?? []) {
+        const recCats = await loadBookkitCategoryTreeUnion(
+          rec.variantIds,
+          order.schoolId ?? null,
+        );
+        if (recCats.length > 0) {
+          for (const cat of recCats) {
+            for (const leaf of cat.items) {
+              units.push({
+                unitKey: `rec:${it.id}:${leaf.componentIndex}`,
+                orderItemId: it.id,
+                parentName: it.name,
+                parentImage: it.image ?? null,
+                parentHeadLabel: parentHead,
+                isKitComponent: true,
+                isKitParent: false,
+                name: leaf.name,
+                size: "",
+                qty: leaf.qty,
+                variantId: "",
+                imageUrl: null,
+                kind: effectiveKind(leaf.kind, leaf.name),
+                attributes: [],
+                hasSiblings: false,
+                siblings: [],
+                currentUnknown: false,
+                categoryKey: cat.categoryKey,
+                categoryName: cat.categoryName,
+                bookkitKey: `rec:${rec.componentProductId}`,
+                bookkitName: rec.name,
+                locked: lockedByOrderItem.has(it.id),
+                lockReturnNumber: lockedByOrderItem.get(it.id) ?? null,
+              });
+            }
+          }
+          continue;
+        }
+        // No resolvable tree — offer the kit itself so the parent can still
+        // raise a request against their books.
+        const recKind = effectiveKind(null, rec.name);
+        const recCat = kindCategoryFor(recKind, rec.name);
+        units.push({
+          unitKey: `rec:${it.id}:kit`,
+          orderItemId: it.id,
+          parentName: it.name,
+          parentImage: it.image ?? null,
+          parentHeadLabel: parentHead,
+          isKitComponent: true,
+          isKitParent: false,
+          name: rec.name,
+          size: "",
+          qty: rec.qty,
+          variantId: "",
+          imageUrl: null,
+          kind: recKind,
+          attributes: [],
+          hasSiblings: false,
+          siblings: [],
+          currentUnknown: true,
+          categoryKey: recCat?.key,
+          categoryName: recCat?.name,
+          bookkitKey: BOOKS_GROUP.key,
+          bookkitName: BOOKS_GROUP.name,
           locked: lockedByOrderItem.has(it.id),
           lockReturnNumber: lockedByOrderItem.get(it.id) ?? null,
         });
@@ -723,8 +827,15 @@ export default async function NewExchangePage({
   // parcel is delivered (they become selectable automatically once it lands).
   // null = no bookkit parcel info → don't gate.
   const bookkitDelivered = await getBookkitParcelDelivered(order.orderNumber);
+  // A BOOK unit is one that nests under the "Books" header (`bookkitKey`) or is
+  // kind='book'. NOT `categoryKey != null`: since the 3-level grouping work
+  // (2026-07-20) EVERY component carries a categoryKey — uniform pieces get the
+  // "Uniforms" bucket from `kindCategoryFor` — so the old test made the bookkit
+  // gate grey out the uniforms too, leaving nothing selectable on any order
+  // whose bookkit parcel wasn't delivered (e.g. SAL-ORD-2026-27372).
+  // `bookkitKey` is set exactly for the non-uniform categories (line ~638).
   const isBookUnit = (u: (typeof units)[number]) =>
-    u.isKitComponent && (u.categoryKey != null || u.kind === "book");
+    u.isKitComponent && (u.bookkitKey != null || u.kind === "book");
   const undeliveredBookkit = bookkitDelivered === false;
   if (undeliveredBookkit) {
     for (const u of units) if (isBookUnit(u)) u.notDelivered = true;

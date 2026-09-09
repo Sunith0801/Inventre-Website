@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { jwtVerify } from "jose";
-import { SESSION_COOKIE, ADMIN_SESSION_COOKIE } from "@/lib/jwt";
+import { SESSION_COOKIE, ADMIN_SESSION_COOKIE, FEES_SESSION_COOKIE } from "@/lib/jwt";
 
 const SUPPORT_VIEW_COOKIE = "inv_support_view";
 const SUPPORT_VIEW_HEADER = "x-inv-support-view";
@@ -79,10 +79,14 @@ function key() {
  */
 async function readSession(
   req: NextRequest,
-  area: "admin" | "parent"
+  area: "admin" | "parent" | "fees"
 ): Promise<Mini | null> {
   const cookieName =
-    area === "admin" ? ADMIN_SESSION_COOKIE : SESSION_COOKIE;
+    area === "admin"
+      ? ADMIN_SESSION_COOKIE
+      : area === "fees"
+        ? FEES_SESSION_COOKIE
+        : SESSION_COOKIE;
   const tok = req.cookies.get(cookieName)?.value;
   if (!tok) return null;
   try {
@@ -128,6 +132,7 @@ const ADMIN_API_PREFIX = "/api/admin";
  */
 const CSRF_API_PREFIXES = [
   "/api/admin/",
+  "/api/fees/",
   "/api/auth/",
   "/api/cart",
   "/api/orders",
@@ -144,6 +149,12 @@ const CSRF_EXCLUDE_PREFIXES = [
   // verified by AES decryption inside the route, not by Origin/Referer.
   "/api/checkout/ccavenue/callback",
 ];
+/** Endpoints the fee ledger calls, reachable with a fee-ledger session. */
+const FEES_API_PREFIXES = [
+  "/api/admin/mcb/fees",
+  "/api/admin/fees/",
+];
+
 function isMutation(method: string): boolean {
   return method === "POST" || method === "PUT" || method === "PATCH" || method === "DELETE";
 }
@@ -180,6 +191,22 @@ export async function middleware(req: NextRequest) {
   // by a support agent impersonating a parent for READ-ONLY diagnosis.
   // Block every mutation; let GET/HEAD/OPTIONS through with a request header
   // that downstream server code reads via lib/support-view.ts.
+  // Strip any client-supplied copy of the internal support-view header up front.
+  // App code (lib/support-view.ts) no longer trusts this header — it verifies
+  // the signed cookie instead — but we still refuse to let an inbound value
+  // survive, so nothing downstream can ever be fooled by a forged header.
+  // Headers.has/delete are case-insensitive (Fetch spec), so this catches any
+  // casing a client might send.
+  let cleanHeaders: Headers | null = null;
+  if (req.headers.has(SUPPORT_VIEW_HEADER)) {
+    cleanHeaders = new Headers(req.headers);
+    cleanHeaders.delete(SUPPORT_VIEW_HEADER);
+  }
+  const forward = () =>
+    cleanHeaders
+      ? NextResponse.next({ request: { headers: cleanHeaders } })
+      : NextResponse.next();
+
   const supportView = await readSupportView(req);
   if (supportView) {
     const method = req.method.toUpperCase();
@@ -189,12 +216,7 @@ export async function middleware(req: NextRequest) {
         { status: 403 },
       );
     }
-    const headerVal = Buffer.from(JSON.stringify(supportView)).toString(
-      "base64url",
-    );
-    const fwd = new Headers(req.headers);
-    fwd.set(SUPPORT_VIEW_HEADER, headerVal);
-    return NextResponse.next({ request: { headers: fwd } });
+    return forward();
   }
 
   if (path.startsWith("/api/") && !checkCsrf(req)) {
@@ -213,6 +235,18 @@ export async function middleware(req: NextRequest) {
     const me = await readSession(req, "parent");
     if (!me) return deny(req, "page", "/login");
     return NextResponse.next();
+  }
+
+  // Fee-ledger API. These endpoints live under /api/admin/ for historical
+  // reasons but are served to fee-desk accounts, whose session is NOT an
+  // admin one — so the admin gate below would reject them. Presence of
+  // either session is enough here; the route handlers do the real
+  // permission check via getFeesViewer().
+  if (FEES_API_PREFIXES.some((p) => path.startsWith(p))) {
+    const admin = await readSession(req, "admin");
+    const fees = admin ? null : await readSession(req, "fees");
+    if (!admin && !fees) return deny(req, "api");
+    return forward();
   }
 
   // Admin API
@@ -246,6 +280,7 @@ export const config = {
     // route handler then fails with "Failed to parse body as FormData."
     // Auth is still enforced inside the route via requireAdmin().
     "/api/admin/((?!upload).*)",
+    "/api/fees/:path*",
     "/api/orders/:path*",
     "/api/orders",
     // Skip /api/returns/upload — exchange photo uploads are multipart bodies

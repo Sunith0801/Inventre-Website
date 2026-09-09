@@ -4,6 +4,7 @@ import { z } from "zod";
 import { db } from "@/db/client";
 import { suppliers } from "@/db/schema";
 import { isResponse, requirePermission } from "@/lib/admin-guard";
+import { logAdminActivity } from "@/lib/activity";
 import { listSuppliers, nextSupplierCode } from "@/lib/repos/suppliers";
 
 export async function GET(req: Request) {
@@ -48,5 +49,12 @@ export async function POST(req: Request) {
       address: body.address ?? null,
     })
     .returning();
+  void logAdminActivity(guard, {
+    action: "supplier.create",
+    entityType: "supplier",
+    entityId: created.id,
+    summary: `Created supplier ${created.name} (${supplierCode})`,
+    req,
+  });
   return NextResponse.json({ id: created.id, supplierCode });
 }

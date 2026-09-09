@@ -10,6 +10,7 @@ import {
   students,
 } from "@/db/schema";
 import { isResponse, requirePermission } from "@/lib/admin-guard";
+import { logAdminActivity } from "@/lib/activity";
 
 const Body = z.object({
   couponCode: z.string().min(2).max(64),
@@ -141,6 +142,13 @@ export async function POST(req: Request) {
       maximumDiscountAmount: body.maximumDiscountAmount,
     })
     .returning();
+  void logAdminActivity(guard, {
+    action: "coupon.create",
+    entityType: "coupon",
+    entityId: created.id,
+    summary: `Created coupon ${created.couponCode}`,
+    req,
+  });
   return NextResponse.json({ coupon: created });
 }
 

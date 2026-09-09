@@ -89,6 +89,86 @@ export function placeOfSupply(pincode: string): string {
 }
 
 /**
+ * India GST state codes, keyed by normalized (lower-cased, trimmed) state
+ * name plus common aliases. Used to build a proper `place_of_supply`
+ * ("<code>-<Canonical Name>", e.g. "33-Tamil Nadu") when an admin edits an
+ * order's shipping address to another state — the pincode-only heuristic in
+ * `placeOfSupply` collapses everything outside Telangana to "99-Other",
+ * which would silently degrade GST data for genuine out-of-state orders.
+ */
+const GST_STATE_CODES: Record<string, { code: string; name: string }> = {
+  "jammu and kashmir": { code: "01", name: "Jammu and Kashmir" },
+  "himachal pradesh": { code: "02", name: "Himachal Pradesh" },
+  punjab: { code: "03", name: "Punjab" },
+  chandigarh: { code: "04", name: "Chandigarh" },
+  uttarakhand: { code: "05", name: "Uttarakhand" },
+  uttaranchal: { code: "05", name: "Uttarakhand" },
+  haryana: { code: "06", name: "Haryana" },
+  delhi: { code: "07", name: "Delhi" },
+  "new delhi": { code: "07", name: "Delhi" },
+  rajasthan: { code: "08", name: "Rajasthan" },
+  "uttar pradesh": { code: "09", name: "Uttar Pradesh" },
+  bihar: { code: "10", name: "Bihar" },
+  sikkim: { code: "11", name: "Sikkim" },
+  "arunachal pradesh": { code: "12", name: "Arunachal Pradesh" },
+  nagaland: { code: "13", name: "Nagaland" },
+  manipur: { code: "14", name: "Manipur" },
+  mizoram: { code: "15", name: "Mizoram" },
+  tripura: { code: "16", name: "Tripura" },
+  meghalaya: { code: "17", name: "Meghalaya" },
+  assam: { code: "18", name: "Assam" },
+  "west bengal": { code: "19", name: "West Bengal" },
+  jharkhand: { code: "20", name: "Jharkhand" },
+  odisha: { code: "21", name: "Odisha" },
+  orissa: { code: "21", name: "Odisha" },
+  chhattisgarh: { code: "22", name: "Chhattisgarh" },
+  chattisgarh: { code: "22", name: "Chhattisgarh" },
+  "madhya pradesh": { code: "23", name: "Madhya Pradesh" },
+  gujarat: { code: "24", name: "Gujarat" },
+  "dadra and nagar haveli and daman and diu": {
+    code: "26",
+    name: "Dadra and Nagar Haveli and Daman and Diu",
+  },
+  maharashtra: { code: "27", name: "Maharashtra" },
+  karnataka: { code: "29", name: "Karnataka" },
+  goa: { code: "30", name: "Goa" },
+  lakshadweep: { code: "31", name: "Lakshadweep" },
+  kerala: { code: "32", name: "Kerala" },
+  "tamil nadu": { code: "33", name: "Tamil Nadu" },
+  tamilnadu: { code: "33", name: "Tamil Nadu" },
+  puducherry: { code: "34", name: "Puducherry" },
+  pondicherry: { code: "34", name: "Puducherry" },
+  "andaman and nicobar islands": {
+    code: "35",
+    name: "Andaman and Nicobar Islands",
+  },
+  telangana: { code: "36", name: "Telangana" },
+  "andhra pradesh": { code: "37", name: "Andhra Pradesh" },
+  ladakh: { code: "38", name: "Ladakh" },
+};
+
+/** Canonical list of Indian states/UTs for admin dropdowns (name only). */
+export const INDIAN_STATES: string[] = Array.from(
+  new Set(Object.values(GST_STATE_CODES).map((s) => s.name))
+).sort();
+
+/**
+ * Build `place_of_supply` from a state name, falling back to the pincode
+ * heuristic when the name is unrecognized. Prefer this over `placeOfSupply`
+ * whenever the caller has an explicit state (e.g. an edited shipping
+ * address) — it preserves the real state code for out-of-state orders.
+ */
+export function placeOfSupplyFromState(
+  state: string | null | undefined,
+  pincode: string
+): string {
+  const key = (state ?? "").trim().toLowerCase();
+  const hit = GST_STATE_CODES[key];
+  if (hit) return `${hit.code}-${hit.name}`;
+  return placeOfSupply(pincode);
+}
+
+/**
  * Compute tax for a single line.
  * - Nil-Rated / Exempt / Zero-Rated / Non-GST → all rates = 0.
  * - Taxable + in-state  → CGST + SGST split.

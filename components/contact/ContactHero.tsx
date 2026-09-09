@@ -25,8 +25,8 @@ export function ContactHero({ media }: { media?: Partial<ContactHeroMedia> } = {
   const m = { ...DEFAULT_MEDIA, ...(media ?? {}) };
   const doors: Door[] = [
     { kind: "parent",   icon: Users,      label: "I'm a parent",   helper: "Order, sizing, returns, delivery — quick answers, real humans.",      image: m.parent,   phone: "+91 90599 90804" },
-    { kind: "school",   icon: School,     label: "I'm a school",   helper: "Partnership, brand consultation, term-onboarding — design to delivery.", image: m.school,   phone: "+91 81212 58383" },
-    { kind: "business", icon: Building2,  label: "I'm a business", helper: "Wholesale, manufacturing, B2B — let's see if we're a fit.",            image: m.business, phone: "+91 81212 58383" },
+    { kind: "school",   icon: School,     label: "I'm a school",   helper: "Partnership, brand consultation, term-onboarding — design to delivery.", image: m.school,   phone: "+91 90599 90804" },
+    { kind: "business", icon: Building2,  label: "I'm a business", helper: "Wholesale, manufacturing, B2B — let's see if we're a fit.",            image: m.business, phone: "+91 90599 90804" },
   ];
   return (
     <section className="relative overflow-hidden">

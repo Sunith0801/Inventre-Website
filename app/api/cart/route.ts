@@ -22,6 +22,10 @@ import { getCurrentParent, type CurrentParent } from "@/lib/session";
 import { readCart, addToCart, setCartQty, clearCart } from "@/lib/repos/cart";
 import { failJson } from "@/lib/observability/fail-json";
 import { parseJson } from "@/lib/api-handler";
+import {
+  isCatalogDisabledSchool,
+  catalogDisabledMessage,
+} from "@/lib/school-catalog-gate";
 
 async function requireParent() {
   const me = await getCurrentParent();
@@ -124,12 +128,17 @@ function pendingPaymentHasMoneyInPlay(
   );
 }
 
+// Result of a one-per-student limit check. `orderNumber` is the existing
+// order the customer should be pointed at ("already placed — view"); null when
+// the block is from an in-cart item (no order to link yet) or a qty cap.
+type LimitBlock = { message: string; orderNumber: string | null };
+
 async function checkMagicBoxLimit(
   parentId: string,
   studentId: string | null,
   variantId: string,
   qty: number,
-): Promise<string | null> {
+): Promise<LimitBlock | null> {
   if (!studentId) return null;
 
   const [variantRow] = await db
@@ -141,7 +150,7 @@ async function checkMagicBoxLimit(
   if (variantRow?.kind !== "magic_box") return null;
 
   if (qty > 1) {
-    return "Only 1 Magic Box can be added per student.";
+    return { message: "Only 1 Magic Box can be added per student.", orderNumber: null };
   }
 
   // Cart side: any OTHER magic_box variant already tagged to this
@@ -169,7 +178,11 @@ async function checkMagicBoxLimit(
       )
       .limit(1);
     if (cartMagicBoxes.length > 0) {
-      return "A Magic Box is already in your cart for this student. Only 1 Magic Box per student is allowed.";
+      return {
+        message:
+          "A Magic Box is already in your cart for this student. Only 1 Magic Box per student is allowed.",
+        orderNumber: null,
+      };
     }
   }
 
@@ -181,6 +194,7 @@ async function checkMagicBoxLimit(
   const priorRows = await db
     .select({
       orderId: orders.id,
+      orderNumber: orders.orderNumber,
       paymentStatus: orders.paymentStatus,
       orderCreatedAt: orders.createdAt,
       payCreatedAt: payments.createdAt,
@@ -212,7 +226,7 @@ async function checkMagicBoxLimit(
   }
 
   const now = Date.now();
-  const blocks = Array.from(latestByOrder.values()).some((r) => {
+  const blockingOrders = Array.from(latestByOrder.values()).filter((r) => {
     // failed/cancelled are filtered out above → non-pending here is paid or
     // refunded, both of which block.
     if (r.paymentStatus !== "pending") return true;
@@ -220,8 +234,17 @@ async function checkMagicBoxLimit(
     const fresh = created > 0 && now - created < FRESH_PENDING_MS;
     return fresh || pendingPaymentHasMoneyInPlay(r.payMessage, r.payRaw);
   });
-  if (blocks) {
-    return "A Magic Box has already been placed for this student. Only 1 Magic Box per student is allowed.";
+  if (blockingOrders.length > 0) {
+    // Point the customer at the REAL order — prefer a paid/refunded
+    // (non-pending) one over a still-settling pending block.
+    const best =
+      blockingOrders.find((r) => r.paymentStatus !== "pending") ??
+      blockingOrders[0];
+    return {
+      message:
+        "A Magic Box has already been placed for this student. Only 1 Magic Box per student is allowed.",
+      orderNumber: best.orderNumber ?? null,
+    };
   }
 
   return null;
@@ -254,14 +277,21 @@ async function resolvePrice(productId: string, schoolId: string | undefined): Pr
  * Check if adding a bookkit to the cart is allowed.
  * Returns an error string if blocked, null if allowed.
  */
+// `capToOne` is true whenever the variant is a restricted free bookkit
+// (one-per-student, always ₹0) — even when it is allowed (block === null).
+// The route passes it to addToCart so the line is pinned to qty 1 and can
+// never accumulate via repeated "Add" clicks (the SAL-ORD-2026-37803 bug).
+type BookkitLimit = { block: LimitBlock | null; capToOne: boolean };
+const NOT_RESTRICTED: BookkitLimit = { block: null, capToOne: false };
+
 async function checkBookkitLimit(
   parentId: string,
   studentId: string | null,
   schoolId: string | undefined,
   variantId: string,
   qty: number
-): Promise<string | null> {
-  if (!schoolId) return null;
+): Promise<BookkitLimit> {
+  if (!schoolId) return NOT_RESTRICTED;
 
   // Run school check + variant lookup + cart + order lookups in parallel.
   // The prior-orders lookup is scoped to (parentId, studentId) so siblings
@@ -294,7 +324,7 @@ async function checkBookkitLimit(
       .limit(1),
     db.select({ id: carts.id }).from(carts).where(eq(carts.parentId, parentId)).limit(1),
     studentId
-      ? db.select({ id: orders.id }).from(orders).where(and(
+      ? db.select({ id: orders.id, orderNumber: orders.orderNumber }).from(orders).where(and(
           eq(orders.parentId, parentId),
           eq(orders.studentId, studentId),
           or(
@@ -302,14 +332,14 @@ async function checkBookkitLimit(
             inArray(orders.status, redeemedStatuses),
           ),
         ))
-      : Promise.resolve([] as { id: string }[]),
+      : Promise.resolve([] as { id: string; orderNumber: string }[]),
   ]);
 
-  if (!FREE_BOOKKIT_RESTRICTED_SCHOOL_CODES.includes(schoolRow[0]?.schoolCode ?? "")) return null;
+  if (!FREE_BOOKKIT_RESTRICTED_SCHOOL_CODES.includes(schoolRow[0]?.schoolCode ?? "")) return NOT_RESTRICTED;
 
   const variant = variantRow[0];
   const isBookkit = /bookkit|bookset/i.test(variant?.productName ?? "");
-  if (!isBookkit) return null;
+  if (!isBookkit) return NOT_RESTRICTED;
 
   // Resolve price (school override takes priority)
   let price = variant.basePrice ?? 0;
@@ -321,9 +351,17 @@ async function checkBookkitLimit(
   if (schoolOverride?.overridePrice !== null && schoolOverride?.overridePrice !== undefined) {
     price = schoolOverride.overridePrice;
   }
-  if (price !== 0) return null; // only restrict free bookkits
+  if (price !== 0) return NOT_RESTRICTED; // only restrict free bookkits
 
-  if (qty > 1) return "Only 1 complimentary bookkit can be added — it is a free item.";
+  // From here on this IS a restricted free bookkit → always cap the line to 1.
+  if (qty > 1)
+    return {
+      block: {
+        message: "Only 1 complimentary bookkit can be added — it is a free item.",
+        orderNumber: null,
+      },
+      capToOne: true,
+    };
 
   // Cart check + order history check in parallel
   const cart = cartRow[0];
@@ -339,14 +377,17 @@ async function checkBookkitLimit(
           .where(
             and(
               eq(cartItems.cartId, cart.id),
-              or(ilike(products.name, "%bookkit%"), ilike(products.name, "%bookset%")),
-              ne(cartItems.variantId, variantId)
+              or(ilike(products.name, "%bookkit%"), ilike(products.name, "%bookset%"))
+              // NB: we intentionally do NOT exclude the same variantId here.
+              // A bookkit already in the cart — including this exact one —
+              // means the single allowed slot is taken, so re-adding must be
+              // refused instead of silently incrementing (SAL-ORD-2026-37803).
             )
           )
       : Promise.resolve([]),
     orderIds.length > 0
       ? db
-          .select({ id: orderItems.id })
+          .select({ orderId: orderItems.orderId })
           .from(orderItems)
           .innerJoin(productVariants, eq(productVariants.id, orderItems.variantId))
           .innerJoin(products, eq(products.id, productVariants.productId))
@@ -358,17 +399,34 @@ async function checkBookkitLimit(
             )
           )
           .limit(1)
-      : Promise.resolve([]),
+      : Promise.resolve([] as { orderId: string }[]),
   ]);
 
   if (cartBookkits.length > 0) {
-    return "A complimentary bookkit is already in your cart. Only 1 is allowed per order.";
+    return {
+      block: {
+        message: "A complimentary bookkit is already in your cart. Only 1 is allowed per order.",
+        orderNumber: null,
+      },
+      capToOne: true,
+    };
   }
   if (bookkitInOrders.length > 0) {
-    return "You have already received a complimentary bookkit in a previous order. Only 1 is allowed per student.";
+    // Link to the order that already carries the complimentary bookkit.
+    const blockingId = bookkitInOrders[0].orderId;
+    const orderNumber =
+      priorOrders.find((o) => o.id === blockingId)?.orderNumber ?? null;
+    return {
+      block: {
+        message:
+          "You have already received a complimentary bookkit in a previous order. Only 1 is allowed per student.",
+        orderNumber,
+      },
+      capToOne: true,
+    };
   }
 
-  return null;
+  return { block: null, capToOne: true };
 }
 
 /** Union of every school any of this parent's children attends. Used by
@@ -426,12 +484,23 @@ export async function POST(req: Request) {
   const active = guard.student;
   const schoolId = active.school.id;
 
-  const bookkitError = await checkBookkitLimit(me.id, active.id, schoolId, body.variantId, body.qty);
-  if (bookkitError) {
+  // Offline-only schools have no storefront catalog — nothing may enter the
+  // cart, even via a direct PDP link or a stale tab.
+  if (isCatalogDisabledSchool(active.school)) {
     return failJson({
       parentId: me.id, studentId: active.id, req, status: 409,
-      message: bookkitError, kind: "rule.block",
-      details: { rule: "bookkit_limit", variantId: body.variantId, qty: body.qty },
+      message: catalogDisabledMessage(active.school.name),
+      kind: "rule.block",
+      details: { rule: "school_catalog_disabled", schoolId, variantId: body.variantId },
+    });
+  }
+
+  const bookkit = await checkBookkitLimit(me.id, active.id, schoolId, body.variantId, body.qty);
+  if (bookkit.block) {
+    return failJson({
+      parentId: me.id, studentId: active.id, req, status: 409,
+      message: bookkit.block.message, kind: "rule.block",
+      details: { rule: "bookkit_limit", variantId: body.variantId, qty: body.qty, orderNumber: bookkit.block.orderNumber },
     });
   }
 
@@ -439,9 +508,36 @@ export async function POST(req: Request) {
   if (magicBoxError) {
     return failJson({
       parentId: me.id, studentId: active.id, req, status: 409,
-      message: magicBoxError, kind: "rule.block",
-      details: { rule: "magicbox_limit", variantId: body.variantId, qty: body.qty },
+      message: magicBoxError.message, kind: "rule.block",
+      details: { rule: "magicbox_limit", variantId: body.variantId, qty: body.qty, orderNumber: magicBoxError.orderNumber },
     });
+  }
+
+  // Magic Box integrity guard. A magic_box is a configured line — the parent
+  // MUST have picked its per-component sizes/colours before it can enter the
+  // cart. Without them the box would still check out at its fixed price with
+  // NO record of what was selected (the root cause of ~1,687 historical orders
+  // whose order_items.bundle_selections was null). Reject the add outright so
+  // an empty-selection magic box can never reach the cart — nor an order.
+  {
+    const [mb] = await db
+      .select({ kind: products.kind })
+      .from(productVariants)
+      .innerJoin(products, eq(products.id, productVariants.productId))
+      .where(eq(productVariants.id, body.variantId))
+      .limit(1);
+    if (
+      mb?.kind === "magic_box" &&
+      (!body.bundleSelections || body.bundleSelections.length === 0)
+    ) {
+      return failJson({
+        parentId: me.id, studentId: active.id, req, status: 400,
+        message:
+          "Please configure your Magic Box (sizes & colours) before adding it to the cart.",
+        kind: "rule.block",
+        details: { rule: "magicbox_no_selection", variantId: body.variantId },
+      });
+    }
   }
 
   // Grade-mismatch guard. The cart's grade-mismatch sweep is non-destructive
@@ -488,7 +584,8 @@ export async function POST(req: Request) {
     body.variantId,
     body.qty,
     body.bundleSelections,
-    active.id
+    active.id,
+    bookkit.capToOne
   );
   const cart = await readCart(
     me.id,
@@ -526,20 +623,20 @@ export async function PATCH(req: Request) {
       });
     }
     active = guard.student;
-    const bookkitError = await checkBookkitLimit(me.id, active.id, active.school.id, body.variantId, body.qty);
-    if (bookkitError) {
+    const bookkit = await checkBookkitLimit(me.id, active.id, active.school.id, body.variantId, body.qty);
+    if (bookkit.block) {
       return failJson({
         parentId: me.id, studentId: active.id, req, status: 409,
-        message: bookkitError, kind: "rule.block",
-        details: { rule: "bookkit_limit", variantId: body.variantId, qty: body.qty, op: "patch" },
+        message: bookkit.block.message, kind: "rule.block",
+        details: { rule: "bookkit_limit", variantId: body.variantId, qty: body.qty, op: "patch", orderNumber: bookkit.block.orderNumber },
       });
     }
     const magicBoxError = await checkMagicBoxLimit(me.id, active.id, body.variantId, body.qty);
     if (magicBoxError) {
       return failJson({
         parentId: me.id, studentId: active.id, req, status: 409,
-        message: magicBoxError, kind: "rule.block",
-        details: { rule: "magicbox_limit", variantId: body.variantId, qty: body.qty, op: "patch" },
+        message: magicBoxError.message, kind: "rule.block",
+        details: { rule: "magicbox_limit", variantId: body.variantId, qty: body.qty, op: "patch", orderNumber: magicBoxError.orderNumber },
       });
     }
   } else {

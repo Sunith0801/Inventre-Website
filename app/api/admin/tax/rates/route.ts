@@ -4,6 +4,7 @@ import { z } from "zod";
 import { db } from "@/db/client";
 import { taxRates } from "@/db/schema";
 import { isResponse, requirePermission } from "@/lib/admin-guard";
+import { logAdminActivity } from "@/lib/activity";
 import { eq } from "drizzle-orm";
 
 const Body = z.object({
@@ -46,5 +47,12 @@ export async function POST(req: Request) {
       isDefault: body.isDefault,
     })
     .returning();
+  void logAdminActivity(guard, {
+    action: "tax_rate.set",
+    entityType: "tax_rate",
+    entityId: created.id,
+    summary: `Set tax rate ${created.name}`,
+    req,
+  });
   return NextResponse.json({ rate: created });
 }

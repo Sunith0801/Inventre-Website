@@ -11,6 +11,12 @@ import { requirePermission, isResponse } from "@/lib/admin-guard";
  * UKG, or "Grade 1" through "Grade 12". The import route stores the cell
  * verbatim (no ERP→Real -3 shift). One non-numeric example below to make
  * that obvious.
+ *
+ * Guardians: `guardianMobile` is the primary contact (required, defaults to
+ * relation "Father"). `guardianMobile2` is an optional SECOND number (e.g.
+ * the mother) — when supplied it gets its own guardian link so that number
+ * can also sign in and see the student. The first example row fills both;
+ * the second leaves the guardian2 columns blank (single guardian).
  */
 
 const HEADERS = [
@@ -29,6 +35,12 @@ const HEADERS = [
   "guardianMobile",
   "guardianEmail",
   "guardianRelation",
+  // Optional second guardian (e.g. Mother). Fill guardianMobile2 to give a
+  // second number login access to the same student. Leave blank for one.
+  "guardianName2",
+  "guardianMobile2",
+  "guardianEmail2",
+  "guardianRelation2",
 ] as const;
 
 const EXAMPLES: Record<(typeof HEADERS)[number], string>[] = [
@@ -48,6 +60,11 @@ const EXAMPLES: Record<(typeof HEADERS)[number], string>[] = [
     guardianMobile: "9876543210",
     guardianEmail: "ravi.sharma@example.com",
     guardianRelation: "Father",
+    // Second guardian — this number also gets login access to Aanya.
+    guardianName2: "Priya Sharma",
+    guardianMobile2: "9876500000",
+    guardianEmail2: "",
+    guardianRelation2: "Mother",
   },
   {
     schoolCode: "KLINK",
@@ -66,6 +83,11 @@ const EXAMPLES: Record<(typeof HEADERS)[number], string>[] = [
     guardianMobile: "9123456780",
     guardianEmail: "",
     guardianRelation: "Mother",
+    // Single-guardian row — second guardian columns left blank.
+    guardianName2: "",
+    guardianMobile2: "",
+    guardianEmail2: "",
+    guardianRelation2: "",
   },
 ];
 

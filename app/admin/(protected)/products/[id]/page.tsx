@@ -1,4 +1,4 @@
-import { and, eq, asc, inArray, sql } from "drizzle-orm";
+import { and, eq, asc, desc, inArray, sql } from "drizzle-orm";
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import {
@@ -41,6 +41,7 @@ import { ProductContentEditor } from "@/components/admin/ProductContentEditor";
 import { ProductVariantsEditor } from "@/components/admin/ProductVariantsEditor";
 import { BomEditor } from "@/components/admin/BomEditor";
 import { ProductLogisticsPanel } from "@/components/admin/ProductLogisticsPanel";
+import { RecordHistory } from "@/components/admin/RecordHistory";
 
 export const dynamic = "force-dynamic";
 
@@ -121,16 +122,13 @@ export default async function EditProductPage({
       .where(eq(productImages.productId, id))
       .orderBy(asc(productImages.sortOrder)),
     db.select().from(productGrades).where(eq(productGrades.productId, id)),
+    // All variants (active + soft-off) so the editor's On/Off toggle is
+    // round-trippable; active rows sort first.
     db
       .select()
       .from(productVariants)
-      .where(
-        and(
-          eq(productVariants.productId, id),
-          eq(productVariants.isActive, true)
-        )
-      )
-      .orderBy(asc(productVariants.size)),
+      .where(eq(productVariants.productId, id))
+      .orderBy(desc(productVariants.isActive), asc(productVariants.size)),
     db
       .select({
         ps: productSchool,
@@ -141,7 +139,9 @@ export default async function EditProductPage({
       .where(eq(productSchool.productId, id)),
   ]);
 
-  const variantCount = variants.length;
+  // Count only customer-visible variants — the header/label meaning is
+  // unchanged even though we now also load soft-off rows for the editor.
+  const variantCount = variants.filter((v) => v.isActive).length;
 
   // Variant decode (colour) + price + colour options — for the inline
   // variants editor shown for uniforms / non-bundle items.
@@ -287,6 +287,7 @@ export default async function EditProductPage({
         stockQty: v.stockQty,
         colorValueId: colourByVariant.get(v.id) ?? null,
         price: priceByVariant.get(v.id) ?? null,
+        isActive: v.isActive,
       }))}
     />
   );
@@ -434,6 +435,7 @@ export default async function EditProductPage({
                 | null) ?? null
             }
             initialSizeChartUrl={product.sizeChartUrl ?? null}
+            initialImageNote={product.imageNote ?? null}
           />
 
           {/* Logistics, identifiers, UOMs, barcodes */}
@@ -461,6 +463,10 @@ export default async function EditProductPage({
             allGrades={allGrades}
           />
         </div>
+      </div>
+
+      <div className="mt-5">
+        <RecordHistory entityType="product" entityId={id} title="Product history" />
       </div>
     </div>
   );

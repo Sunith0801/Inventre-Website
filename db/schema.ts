@@ -314,6 +314,10 @@ export const students = pgTable(
     status: accountStatusEnum("status").notNull().default("active"),
     // ─── ERP-rich fields (merged from former erp_students) ────────
     enabled: boolean("enabled").notNull().default(true),
+    // Set by the site-wide closure switch on the rows IT disabled, so
+    // re-opening restores exactly those and leaves individually-disabled
+    // students alone. See lib/site-access.ts.
+    disabledByClosure: boolean("disabled_by_closure").notNull().default(false),
     isNewStudent: boolean("is_new_student").notNull().default(false),
     isVerified: boolean("is_verified").notNull().default(false),
     // Stamped when is_verified flips true. Backfilled best-effort from
@@ -454,6 +458,9 @@ export const products = pgTable(
     gstTreatment: gstTreatmentEnum("gst_treatment").notNull().default("taxable"),
     taxRateId: uuid("tax_rate_id"),
     sizeChartUrl: text("size_chart_url"),
+    /** Free-text note shown directly under the product image on the PDP.
+     *  Optional; edited in admin → product → Content tab. See migration 0068. */
+    imageNote: text("image_note"),
     brand: text("brand"),
     weightGrams: integer("weight_grams"),
     dimensions: jsonb("dimensions"), // {l, w, h} cm
@@ -1242,6 +1249,11 @@ export const returns = pgTable(
     // `kind` distinguishes refund rows from exchange rows so admin code
     // and storefront queries can branch without scanning reason text.
     kind: text("kind").notNull().default("refund"),
+    // Who raised this request (migration 0070): "customer" (storefront) or
+    // "care_team" (raised in the Audit portal by Customer Care, synced in
+    // via createExchangeFromAudit). Drives the "…by the Customer Care Team"
+    // wording on the storefront duplicate-guard popup (Condition 4).
+    source: text("source").notNull().default("customer"),
     // `pickup_date` is set only on exchange rows; refund rows leave it
     // NULL. See lib/date.ts → firstPickupSaturday for the rule.
     pickupDate: date("pickup_date"),
@@ -1279,6 +1291,15 @@ export const returns = pgTable(
     // page renders an intermediate "arrived at school" callout when
     // status='approved' and this is set.
     replacementArrivedAt: timestamp("replacement_arrived_at", { withTimezone: true }),
+    // ─── 0069 (2026-07-08): duplicate-of provenance for rejections ──
+    // When audit rejects an exchange as a duplicate, it names the other
+    // request(s) already covering this item and who raised each. Shape:
+    //   [{ return_number: "RTN-2026-01337", status, raised_by:
+    //      "team" | "customer" }]
+    // Persisted so the customer's status page can point them at the RTN
+    // that already exists instead of just "duplicate request". NULL/empty
+    // on rejections that aren't duplicates and on rows predating this col.
+    duplicateOf: jsonb("duplicate_of"),
     // ──────────────────────────────────────────────────────────────
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
@@ -1334,6 +1355,9 @@ export const missingItemClaims = pgTable(
       .references(() => parents.id),
     // requested | approved | rejected | received_at_school | delivered
     status: text("status").notNull().default("requested"),
+    // "customer" (storefront) or "care_team" (raised in Audit by Customer
+    // Care and synced via createMissingFromAudit). Migration 0070.
+    source: text("source").notNull().default("customer"),
     notes: text("notes"),
     rejectionReason: text("rejection_reason"),
     replacementArrivedAt: timestamp("replacement_arrived_at", { withTimezone: true }),
@@ -2706,11 +2730,18 @@ export const activityLog = pgTable(
     id: bigserial("id", { mode: "number" }).primaryKey(),
     actorId: uuid("actor_id"),
     actorEmail: text("actor_email"),
+    actorName: text("actor_name"),
+    actorRole: text("actor_role"),
     action: text("action").notNull(), // 'product.update' | 'order.confirm' | ...
     entityType: text("entity_type").notNull(), // 'product' | 'order' | ...
     entityId: text("entity_id"),
     summary: text("summary"),
+    // Structured per-field changes: [{ field, label?, old, new }]. Drives the
+    // Old → New audit table. `diff` stays for free-form snapshot payloads.
+    changes: jsonb("changes"),
     diff: jsonb("diff"),
+    remarks: text("remarks"),
+    ip: text("ip"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

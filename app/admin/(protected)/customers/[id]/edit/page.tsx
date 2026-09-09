@@ -4,6 +4,7 @@ import { db } from "@/db/client";
 import { parents } from "@/db/schema";
 import { PageHeader, Card } from "@/components/admin/ui/primitives";
 import { EditCustomerForm } from "@/components/admin/EditCustomerForm";
+import { RecordHistory } from "@/components/admin/RecordHistory";
 
 export const dynamic = "force-dynamic";
 
@@ -39,6 +40,10 @@ export default async function EditCustomerPage({
           }}
         />
       </Card>
+
+      <div className="mt-5">
+        <RecordHistory entityType="customer" entityId={id} title="Customer history" />
+      </div>
     </div>
   );
 }

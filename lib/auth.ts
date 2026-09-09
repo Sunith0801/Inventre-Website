@@ -38,6 +38,16 @@ export type Me =
           schoolLogoUrl: string | null;
         };
       }[];
+      /** Students on this family's phone graph whose website access is
+       *  switched off. Never shoppable — carried only so the picker can
+       *  show them as Closed instead of silently dropping them. */
+      closedStudents?: {
+        id: string;
+        name: string;
+        grade: string | null;
+        section: string | null;
+        enrollmentNumber: string | null;
+      }[];
     }
   | {
       kind: "admin";

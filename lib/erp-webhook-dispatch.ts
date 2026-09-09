@@ -32,6 +32,7 @@ import {
   type ErpPackingUnitResp,
 } from "@/lib/erp-poll";
 import { isErpInboundEnabled } from "@/lib/erp-inbound-guard";
+import { refreshOrderHeaderMirror } from "@/lib/erp-order-header-refresh";
 
 export interface WebhookEnvelope {
   event_id: string;
@@ -122,16 +123,45 @@ export async function dispatchWebhookEvents(
 ): Promise<Map<string, string | null>> {
   const results = new Map<string, string | null>();
   const affectedOrders = new Set<string>();
+  // Orders touched by a shipment / packing event only. Audit's SO row is
+  // NOT modified by those, so neither the delta poll nor an order.updated
+  // event will ever re-snapshot the header — yet the header is where the
+  // customer-visible `derived_delivery_by_category` pill lives, and audit
+  // recomputes that pill from exactly these shipments. Re-pull it below.
+  // See lib/erp-order-header-refresh.ts for the full why.
+  const headerStale = new Set<string>();
 
   for (const env of events) {
     try {
       const ern = await applyMirrorUpsert(env);
-      if (ern) affectedOrders.add(ern);
+      if (ern) {
+        affectedOrders.add(ern);
+        if (
+          env.event_type.startsWith("shipment.") ||
+          env.event_type.startsWith("packing_unit.")
+        ) {
+          headerStale.add(ern);
+        }
+      }
       results.set(env.event_id, null);
     } catch (e) {
       const msg = e instanceof Error ? e.message.slice(0, 500) : String(e);
       results.set(env.event_id, msg);
     }
+  }
+
+  // An order.updated event in the same batch already wrote a fresh header.
+  for (const env of events) {
+    if (env.event_type === "order.updated" || env.event_type === "order.status_changed") {
+      const n = (env.payload as ErpOrderDetailResp | undefined)?.header?.name;
+      if (n) headerStale.delete(n);
+    }
+  }
+  // One GET per affected order, after the shipment rows are in so audit
+  // derives from the same state we just mirrored. Failures are logged
+  // inside and leave the previous snapshot standing.
+  for (const ern of headerStale) {
+    await refreshOrderHeaderMirror(ern);
   }
 
   // Single derive per affected order, after all mirror upserts are in.

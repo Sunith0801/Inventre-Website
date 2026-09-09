@@ -39,6 +39,9 @@ export type CartLine = {
   productId: string;
   productSlug: string;
   productName: string;
+  /** products.kind — lets checkout enforce that a magic_box line always
+   *  carries its component picks before an order is placed. */
+  productKind: string | null;
   size: string;
   qty: number;
   unitPrice: number;
@@ -523,6 +526,7 @@ export async function readCart(
       productId: product.id,
       productSlug: product.slug,
       productName: product.name,
+      productKind: product.kind ?? null,
       studentId: studentByVariant.get(v.id) ?? null,
       // Strip single-letter ERPNext prefix marker (e.g. "VXL"→"XL") only on
       // short size codes without spaces. Long descriptive labels like
@@ -670,17 +674,38 @@ export async function addToCart(
   /** The sibling this line is for. Persists on cart_items.student_id so
    *  the cart UI can group by kid and checkout can split into per-student
    *  orders. Pass the active student from the storefront context. */
-  studentId?: string | null
+  studentId?: string | null,
+  /** Single-quantity items (e.g. a restricted free bookkit — one per
+   *  student, always ₹0). When true we SET the line to exactly 1 instead
+   *  of incrementing, so repeated "Add" clicks can never accumulate a
+   *  qty>1. The route decides this via checkBookkitLimit. */
+  capToOne = false
 ) {
   const k = cartKey(parentId);
 
   // Configurable Magic Box line: one fixed-price line. Set qty (don't
   // increment) and persist the component picks. Re-adding re-configures.
+  //
+  // ORDER MATTERS: the component picks live ONLY in the Postgres mirror
+  // (cart_items.bundle_selections); the Redis hash carries qty alone. Commit
+  // the durable selection FIRST, then expose the qty in Redis. If the mirror
+  // write throws, Redis never gets the qty, so the box simply isn't in the
+  // cart — instead of a phantom qty-only line that would check out with no
+  // record of what was selected (root cause of the null-bundle_selections
+  // orders).
   if (bundleSelections !== undefined) {
     const canonical = await canonicalizeBundleSizes(bundleSelections);
+    await mirrorWriteToDb(parentId, variantId, qty, canonical, studentId);
     await redis.hset(k, variantId, qty);
     await redis.expire(k, CART_TTL);
-    await mirrorWriteToDb(parentId, variantId, qty, canonical, studentId);
+    return;
+  }
+
+  // Single-quantity item: pin to 1, never increment.
+  if (capToOne) {
+    await redis.hset(k, variantId, 1);
+    await redis.expire(k, CART_TTL);
+    await mirrorWriteToDb(parentId, variantId, 1, undefined, studentId);
     return;
   }
 

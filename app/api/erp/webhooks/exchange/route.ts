@@ -7,6 +7,8 @@ import { getErpConfig } from "@/lib/erp-config";
 import {
   isExchangeStatus,
   transitionExchangeStatus,
+  applyExchangeCancellation,
+  isCancelledReason,
   type ExchangeStatus,
 } from "@/lib/exchange";
 
@@ -53,6 +55,16 @@ interface Envelope {
     // on /shop/orders/[id]/exchange/[returnId]. Ignored for other
     // transitions.
     rejection_reason?: string;
+    // Sent alongside `rejection_reason` when the rejection is a duplicate:
+    // the other request(s) already covering this item and who raised each
+    // ("team" = our support on the customer's behalf, "customer" = the
+    // parent). Persisted to returns.duplicate_of so the customer's status
+    // page can point them at the existing RTN. Absent/empty = not a dup.
+    duplicate_of?: {
+      return_number?: string;
+      status?: string | null;
+      raised_by?: "team" | "customer" | null;
+    }[];
     // Sent with the `exchange.replacement_arrived` sub-state event when
     // the warehouse → school dispatch leg lands. Doesn't change the
     // exchange status; just stamps the timestamp so the customer page
@@ -172,10 +184,41 @@ export async function POST(req: Request) {
     );
   }
 
+  // Cancellation confirmation: a `rejected` whose reason begins "Cancelled — "
+  // is a customer/staff cancellation, not a decline. Route it through the
+  // cancellation path so it can land from `approved` too (the monotonic
+  // machine forbids approved→rejected) and stays idempotent with the
+  // storefront's optimistic write. See lib/exchange-shared.ts §"Customer
+  // self-cancellation".
+  if (status === "rejected" && isCancelledReason(ex.rejection_reason)) {
+    const res = await applyExchangeCancellation(localId, ex.rejection_reason ?? "");
+    if (!res.ok) {
+      return NextResponse.json({ error: res.error }, { status: res.status });
+    }
+    return NextResponse.json({ ok: true, id: localId, cancelled: true });
+  }
+
+  // Normalize duplicate_of to the persisted shape; only entries with a
+  // real return_number survive. Left null when audit didn't send one.
+  const duplicateOf =
+    Array.isArray(ex.duplicate_of) && ex.duplicate_of.length > 0
+      ? ex.duplicate_of
+          .filter(
+            (d): d is { return_number: string; status?: string | null; raised_by?: "team" | "customer" | null } =>
+              !!d && typeof d.return_number === "string" && d.return_number.trim() !== ""
+          )
+          .map((d) => ({
+            return_number: d.return_number.trim(),
+            status: typeof d.status === "string" ? d.status : null,
+            raised_by: d.raised_by === "team" || d.raised_by === "customer" ? d.raised_by : null,
+          }))
+      : null;
+
   const result = await transitionExchangeStatus(
     localId,
     status as ExchangeStatus,
-    ex.rejection_reason ?? null
+    ex.rejection_reason ?? null,
+    duplicateOf && duplicateOf.length > 0 ? duplicateOf : null
   );
   if (!result.ok) {
     return NextResponse.json(

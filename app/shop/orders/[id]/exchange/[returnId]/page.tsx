@@ -54,37 +54,35 @@ const STATUS_COPY: Record<
   },
   approved: {
     title: "Approved",
-    body: ({ pickupLabel, atStore }) =>
+    body: ({ atStore }) =>
       atStore ? (
         <>
-          Visit the{" "}
+          Your exchange is on its way to the{" "}
           <span className="font-semibold">
             Inventre Experience Store, Ashoka Mall, Kukatpally
-          </span>{" "}
-          on {pickupLabel ?? "the scheduled day"} to collect the exchange. Please
-          show this order at the store to confirm.
+          </span>
+          . The store team will inform you once it has been received, and you
+          can collect it then.
         </>
       ) : (
-        `Visit your school on ${pickupLabel ?? "the scheduled Saturday"} to collect the exchange. Please show this order to the school office to confirm.`
+        "Your exchange is on its way to your school. The school will inform you once it has been received, and you can collect it then."
       ),
     tone: "emerald",
     Icon: CheckCircle2,
   },
   replacement_arrived: {
     title: "Replacement arrived at school",
-    body: ({ pickupLabel, atStore }) =>
+    body: ({ atStore }) =>
       atStore ? (
         <>
           Your replacement has arrived at the{" "}
           <span className="font-semibold">
             Inventre Experience Store, Ashoka Mall, Kukatpally
           </span>
-          . Come{" "}
-          {pickupLabel ? `on ${pickupLabel}` : "during the scheduled pickup window"}{" "}
-          with the original item to complete the exchange.
+          . Come by with the original item to complete the exchange.
         </>
       ) : (
-        `Your replacement has arrived at the school. Come ${pickupLabel ? `on ${pickupLabel}` : "during the scheduled pickup window"} with the original item to complete the exchange.`
+        "Your replacement has arrived at the school. Come by with the original item to complete the exchange."
       ),
     tone: "emerald",
     Icon: CheckCircle2,

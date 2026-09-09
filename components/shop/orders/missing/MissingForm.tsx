@@ -13,6 +13,14 @@
 import { useState, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { Upload, X, AlertCircle, Loader2, Phone } from "lucide-react";
+import {
+  clampRequestedQty,
+  exceedsQtyCeiling,
+  qtyCapMessage,
+} from "@/lib/return-qty";
+import { useQtyCapToast } from "@/components/shop/orders/QtyCapToast";
+import { fetchOrNetworkError, errorMessageFor } from "@/lib/client-fetch";
+import { snapshotPhoto } from "@/lib/photo-snapshot";
 
 type Unit = {
   unitKey: string;
@@ -35,19 +43,37 @@ type Unit = {
    *  bookkit header. Absent on standalone bookkit + uniforms. */
   bookkitKey?: string | null;
   bookkitName?: string | null;
-  // Item-wise: locked = already in a non-rejected exchange/missing request;
-  // expired = past this item's 10-day window. Both render greyed / disabled.
+  // Item-wise: locked = already in a non-rejected exchange/missing request →
+  // renders greyed / disabled.
   locked?: boolean;
   lockReturnNumber?: string | null;
   // Kit-parent only: some (not all) components already in a request → box stays
-  // open for the rest, but the "whole box" option is disabled.
+  // open for the rest; drives the explanatory note on the kit card.
+  // (Whole-box missing itself is retired — see kitGroupCard.)
   someComponentsLocked?: boolean;
   // Bookkit book whose parcel hasn't arrived — greyed "not delivered yet".
   notDelivered?: boolean;
-  // Kit-parent only: some components not delivered → "whole box" disabled.
+  // Kit-parent only: some components not delivered yet.
   someComponentsUndelivered?: boolean;
-  expired?: boolean;
+  /** Outstanding quantity when an earlier, non-rejected request already covers
+   *  part of a multi-qty line. Absent = the ceiling is the full ordered `qty`.
+   *  (The per-component lock currently removes such a line entirely, so the
+   *  page doesn't set this yet; the picker honours it as soon as it does.) */
+  remainingQty?: number | null;
+  /** The RTN-/MIS- number covering the rest, named in the cap toast. */
+  remainingCoveredByRef?: string | null;
 };
+
+/** Ceiling for a line's "how many were missing" box: the outstanding
+ *  remainder when known, else the ordered quantity. Never below 1. */
+function qtyCeiling(u: Unit | undefined): number {
+  if (!u) return 1;
+  const remaining =
+    typeof u.remainingQty === "number" && u.remainingQty > 0
+      ? u.remainingQty
+      : null;
+  return Math.max(1, Math.floor(remaining ?? u.qty ?? 1));
+}
 
 type StagedPhoto = {
   file: File;
@@ -108,22 +134,80 @@ export function MissingForm({
   // Per-unit qtyShort, keyed by unit index. Defaults to the unit's full
   // ordered qty (most missing claims are "all of them didn't arrive").
   const [qtyShortByIdx, setQtyShortByIdx] = useState<Record<number, number>>({});
+  // What's literally in the box, per unit index. Kept alongside the numeric
+  // state so a half-typed or momentarily EMPTY box stays on screen — a purely
+  // numeric controlled input would stamp "1" back the instant the customer
+  // cleared it, and their next digit would land as "1X".
+  const [qtyTextByIdx, setQtyTextByIdx] = useState<Record<number, string>>({});
   const [photos, setPhotos] = useState<StagedPhoto[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Explains a quantity clamp ("Only 1 of \"SMS Caps\" was ordered.").
+  const { toast: qtyToast, showQtyCapToast } = useQtyCapToast();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  /** Photos already staged by an attempt whose create call then failed, so a
+   *  retry skips straight to create instead of re-uploading. */
+  const uploadedPhotosRef = useRef<
+    { url: string; key: string; category: string }[] | null
+  >(null);
 
+  // Clamped on read as well as on write: state seeded before a unit list
+  // changed (or tampered with) can never survive into the payload.
   const qtyFor = (idx: number): number => {
+    const ceiling = qtyCeiling(units[idx]);
     const v = qtyShortByIdx[idx];
-    if (typeof v === "number") return v;
-    return units[idx]?.qty ?? 1;
+    if (typeof v === "number") return clampRequestedQty(v, ceiling);
+    return ceiling;
   };
 
   const setQtyFor = (idx: number, value: number) => {
-    const max = units[idx]?.qty ?? 1;
-    const clamped = Math.max(1, Math.min(max, value || 1));
+    const clamped = clampRequestedQty(value, qtyCeiling(units[idx]));
     setQtyShortByIdx((prev) => ({ ...prev, [idx]: clamped }));
+    setQtyTextByIdx((prev) => ({ ...prev, [idx]: String(clamped) }));
+  };
+
+  /** What the box shows: the raw text while typing, else the numeric value. */
+  const qtyTextFor = (idx: number): string =>
+    qtyTextByIdx[idx] ?? String(qtyFor(idx));
+
+  /**
+   * Single entry point for a typed / pasted / blurred quantity.
+   *
+   * `max=` on the input is advisory — browsers accept a typed 5 in a max=1
+   * box, which is how a claim for 2 of a × 1 component got raised. On top of
+   * clamping, note the forced `el.value` write: React skips re-writing
+   * `value` when the clamped number equals the state it already holds, so the
+   * typed "5" would otherwise stay on screen while state said 1. Writing the
+   * node directly keeps caret/focus, unlike a remount.
+   */
+  const applyQtyInput = (
+    el: HTMLInputElement,
+    idx: number,
+    phase: "change" | "blur",
+  ) => {
+    const u = units[idx];
+    const ceiling = qtyCeiling(u);
+    const raw = el.value;
+    const over = !!u && exceedsQtyCeiling(raw, ceiling);
+    const clamped = clampRequestedQty(raw, ceiling);
+
+    if (over) {
+      showQtyCapToast(
+        qtyCapMessage(u!.name, ceiling, u!.remainingCoveredByRef ?? null),
+      );
+    }
+    // Leave a mid-edit value (empty, "0") alone until blur; only an
+    // over-the-cap value is corrected on the spot, because that's the one the
+    // customer needs told about.
+    const shouldRewrite = over || phase === "blur";
+    if (shouldRewrite && el.value !== String(clamped)) el.value = String(clamped);
+
+    setQtyShortByIdx((prev) => ({ ...prev, [idx]: clamped }));
+    setQtyTextByIdx((prev) => ({
+      ...prev,
+      [idx]: shouldRewrite ? String(clamped) : raw,
+    }));
   };
 
   const totalSelected = useMemo(() => selectedIdxs.length, [selectedIdxs]);
@@ -165,10 +249,10 @@ export function MissingForm({
     setOpenCategories((p) => ({ ...p, [catKey]: !p[catKey] }));
 
   // A unit can't be selected/deselected when it's locked (already in a
-  // request), expired (past its window), or not yet delivered.
+  // request) or not yet delivered.
   const isUnitDisabled = (i: number): boolean => {
     const u = units[i];
-    return !!u && (!!u.locked || !!u.expired || !!u.notDelivered);
+    return !!u && (!!u.locked || !!u.notDelivered);
   };
 
   const setCategorySelected = (idxs: number[], selected: boolean) => {
@@ -185,7 +269,7 @@ export function MissingForm({
   };
 
   // ── Photo handling ────────────────────────────────────────────
-  const stageFiles = (files: FileList | null) => {
+  const stageFiles = async (files: FileList | null) => {
     if (!files) return;
     setError(null);
     const incoming: StagedPhoto[] = [];
@@ -198,12 +282,25 @@ export function MissingForm({
         setError(`"${f.name}" exceeds 8 MB.`);
         return;
       }
+      // Copy the bytes NOW — see lib/photo-snapshot.ts. Keeping the OS file
+      // handle until Submit is what made uploads die as "Failed to fetch"
+      // with nothing ever reaching the server.
+      let snapshot: File;
+      try {
+        snapshot = await snapshotPhoto(f);
+      } catch (e) {
+        setError(
+          e instanceof Error ? e.message : `We couldn't read "${f.name}".`,
+        );
+        return;
+      }
       incoming.push({
-        file: f,
+        file: snapshot,
         category: "what_arrived",
-        previewUrl: URL.createObjectURL(f),
+        previewUrl: URL.createObjectURL(snapshot),
       });
     }
+    uploadedPhotosRef.current = null; // the staged set is now stale
     setPhotos((prev) => {
       const next = [...prev, ...incoming];
       if (next.length > MAX_FILES) {
@@ -215,6 +312,7 @@ export function MissingForm({
   };
 
   const removePhoto = (idx: number) => {
+    uploadedPhotosRef.current = null; // the staged set is now stale
     setPhotos((p) => p.filter((_, i) => i !== idx));
   };
 
@@ -226,8 +324,9 @@ export function MissingForm({
       const u = units[idx];
       if (!u) continue;
       const q = qtyFor(idx);
+      const ceiling = qtyCeiling(u);
       if (q < 1) return `${u.name}: quantity must be at least 1.`;
-      if (q > u.qty) return `${u.name}: only ${u.qty} ordered, can't be more than that missing.`;
+      if (q > ceiling) return qtyCapMessage(u.name, ceiling, u.remainingCoveredByRef ?? null);
     }
     return null;
   };
@@ -239,17 +338,21 @@ export function MissingForm({
     setError(null);
     setSubmitting(true);
     try {
-      let taggedPhotos: Array<{ url: string; key: string; category: string }> = [];
-      if (photos.length > 0) {
+      // Reuse anything a previous attempt already staged — see
+      // uploadedPhotosRef. Only upload when there's nothing banked.
+      let taggedPhotos: Array<{ url: string; key: string; category: string }> =
+        uploadedPhotosRef.current ?? [];
+      if (!uploadedPhotosRef.current && photos.length > 0) {
         const form = new FormData();
         for (const p of photos) form.append("files", p.file, p.file.name);
-        const upRes = await fetch(`/api/returns/upload?orderId=${orderId}`, {
-          method: "POST",
-          body: form,
-        });
+        // Safe to repeat: each attempt stages under a fresh timestamped key.
+        const upRes = await fetchOrNetworkError(
+          `/api/returns/upload?orderId=${orderId}`,
+          { method: "POST", body: form },
+          { retries: 2 },
+        );
         if (!upRes.ok) {
-          const j = await upRes.json().catch(() => ({}));
-          throw new Error(j.error ?? `Upload failed (${upRes.status})`);
+          throw new Error(await errorMessageFor(upRes, "Upload failed"));
         }
         const j = (await upRes.json()) as { photos: { url: string; key: string }[] };
         taggedPhotos = j.photos.map((p, i) => ({
@@ -258,6 +361,7 @@ export function MissingForm({
           category: photos[i]?.category ?? "what_arrived",
         }));
       }
+      uploadedPhotosRef.current = taggedPhotos;
 
       const itemsPayload = selectedIdxs.map((idx) => {
         const u = units[idx];
@@ -273,7 +377,9 @@ export function MissingForm({
           : undefined;
         return {
           orderItemId: u.orderItemId,
-          qtyShort: qtyFor(idx),
+          // Clamped once more at payload-build time — the UI cap is only ever
+          // advisory, and the server caps it again in createMissingClaim.
+          qtyShort: clampRequestedQty(qtyFor(idx), qtyCeiling(u)),
           missingComponentPath,
           notes: undefined,
         };
@@ -286,19 +392,25 @@ export function MissingForm({
         items: itemsPayload,
       };
 
-      const res = await fetch("/api/missing", {
+      // NOT retried: this mints a MIS- claim. A silent retry after the server
+      // already committed would raise a second claim for the same order. The
+      // parent retries by tapping Submit again; staged photos are reused.
+      const res = await fetchOrNetworkError("/api/missing", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
       if (!res.ok) {
-        const j = await res.json().catch(() => ({}));
-        throw new Error(j.error ?? `Submit failed (${res.status})`);
+        throw new Error(await errorMessageFor(res, "Submit failed"));
       }
       const { id } = (await res.json()) as { id: string };
       router.push(`/shop/orders/${orderId}/missing/${id}`);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Something went wrong.");
+      setError(
+        e instanceof Error && e.message
+          ? e.message
+          : "Something went wrong. Please tap Submit again.",
+      );
       setSubmitting(false);
     }
   };
@@ -309,9 +421,8 @@ export function MissingForm({
   const unitRow = (u: Unit, idx: number) => {
     const active = selectedIdxs.includes(idx);
     const locked = !!u.locked;
-    const expired = !!u.expired;
     const notDelivered = !!u.notDelivered;
-    const disabled = locked || expired || notDelivered;
+    const disabled = locked || notDelivered;
     const toggle = () => {
       if (disabled) return;
       setSelectionConfirmed(false);
@@ -367,12 +478,7 @@ export function MissingForm({
                   {u.lockReturnNumber ? ` (${u.lockReturnNumber})` : ""}
                 </span>
               )}
-              {expired && !locked && (
-                <span className="text-amber-700">
-                  {" "}· Request period expired (10 days from delivery)
-                </span>
-              )}
-              {notDelivered && !locked && !expired && (
+              {notDelivered && !locked && (
                 <span className="text-amber-700">
                   {" "}· Pending delivery — Missing request is not available yet
                 </span>
@@ -407,8 +513,8 @@ export function MissingForm({
     // is gone.
     const scope = "items" as const;
     const compCount = g.compIdxs.length;
-    // Disabled = an active request on this box OR its 10-day window expired.
-    const disabled = !!parent.locked || !!parent.expired;
+    // Disabled = an active request already covers this box.
+    const disabled = !!parent.locked;
     return (
       <li key={`kit:${orderItemId}`}>
         <div
@@ -435,11 +541,6 @@ export function MissingForm({
                 {parent.someComponentsLocked && !parent.locked && (
                   <span className="text-amber-700">
                     {" "}· Some items already in a request — pick from the rest
-                  </span>
-                )}
-                {parent.expired && !parent.locked && (
-                  <span className="text-amber-700">
-                    {" "}· Request period expired (10 days from delivery)
                   </span>
                 )}
               </p>
@@ -472,9 +573,9 @@ export function MissingForm({
 
               const catLi = (catKey: string, cat: { name: string; idxs: number[] }) => {
                 // "Whole category" acts only on SELECTABLE books — a locked /
-                // expired / not-yet-delivered book stays untouched so the
-                // category checkbox can't sneak an ineligible item into the
-                // claim. The count still shows the full category size.
+                // not-yet-delivered book stays untouched so the category
+                // checkbox can't sneak an ineligible item into the claim. The
+                // count still shows the full category size.
                 const selectable = cat.idxs.filter((i) => !isUnitDisabled(i));
                 const allSelected =
                   selectable.length > 0 && selectable.every((i) => selectedIdxs.includes(i));
@@ -570,6 +671,7 @@ export function MissingForm({
 
   return (
     <div className="rounded-2xl border border-ink-100 bg-white p-5 lg:p-6 space-y-5">
+      {qtyToast}
       {/* Order header */}
       <div className="flex items-center justify-between pb-4 border-b border-ink-100">
         <div>
@@ -670,21 +772,30 @@ export function MissingForm({
                       {u.isKitComponent && (
                         <span className="text-ink-400"> · in {u.parentName}</span>
                       )}
-                      {u.isKitParent && (
-                        <span className="text-ink-400"> · whole box</span>
-                      )}
                     </p>
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
+                    <span className="text-[11.5px] text-ink-500">Qty</span>
                     <input
                       type="number"
                       min={1}
-                      max={u.qty}
-                      value={qtyFor(idx)}
-                      onChange={(e) => setQtyFor(idx, Number(e.target.value))}
+                      max={qtyCeiling(u)}
+                      value={qtyTextFor(idx)}
+                      aria-label={`Quantity missing for ${u.name}, at most ${qtyCeiling(u)}`}
+                      // Select-on-focus so a click-then-type REPLACES the
+                      // number instead of appending to it ("2" typed next to
+                      // an existing "2" is what produces a needless "22" →
+                      // clamp → toast). The mouseup guard keeps the browser
+                      // from collapsing that selection to a caret.
+                      onFocus={(e) => e.target.select()}
+                      onMouseUp={(e) => e.preventDefault()}
+                      onChange={(e) => applyQtyInput(e.target, idx, "change")}
+                      onBlur={(e) => applyQtyInput(e.target, idx, "blur")}
                       className="w-16 rounded-md border border-ink-200 bg-white px-2 py-1.5 text-[13px] text-right"
                     />
-                    <span className="text-[11.5px] text-ink-500">of {u.qty}</span>
+                    <span className="text-[11.5px] text-ink-500">
+                      of {qtyCeiling(u)}
+                    </span>
                   </div>
                 </li>
               );
@@ -714,7 +825,12 @@ export function MissingForm({
                 type="file"
                 accept={ALLOWED.join(",")}
                 multiple
-                onChange={(e) => stageFiles(e.target.files)}
+                onChange={(e) => {
+                  const input = e.currentTarget;
+                  void stageFiles(input.files).finally(() => {
+                    input.value = "";
+                  });
+                }}
                 className="hidden"
               />
             </button>

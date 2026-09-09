@@ -17,3 +17,8 @@ Dockerfile
 coverage
 .vscode
 .idea
+
+# Presentation artifacts — never needed at runtime, keep them out of the image.
+Inventre_Platform_Overview.pptx
+Inventre_Platform_Overview.pdf
+inventre_deck_builder.py

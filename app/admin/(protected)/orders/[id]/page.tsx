@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { eq, or, sql } from "drizzle-orm";
+import { eq, or, sql, inArray } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { db } from "@/db/client";
 import {
@@ -10,9 +10,14 @@ import {
   students,
   invoices,
   payments,
+  productVariantAttributes,
+  productAttributes,
+  productAttributeValues,
 } from "@/db/schema";
 import { OrderStatusForm } from "@/components/admin/OrderStatusForm";
+import { OrderShippingCard } from "@/components/admin/OrderShippingCard";
 import { OrderActions } from "@/components/admin/OrderActions";
+import { RecordHistory } from "@/components/admin/RecordHistory";
 import { DeleteOrderButton } from "@/components/admin/DeleteOrderButton";
 import { CancelOrderButton } from "@/components/admin/CancelOrderButton";
 import { RefreshCcaButton } from "@/components/admin/RefreshCcaButton";
@@ -95,6 +100,45 @@ export default async function AdminOrderDetailPage({
   const [existingInvoice] = invoices_;
   const [paymentRow] = payments_;
 
+  // Resolve the COLOUR attribute per line item (size already shows in its
+  // own column). order_items only stores `size`; colour lives in
+  // product_variant_attributes, so join it here and expose a
+  // variantId → "Blue" map for the item table. Any attribute whose name
+  // reads like a colour axis (e.g. "CEL T-Shirt Color", "Uniform Colour")
+  // is surfaced; size/other axes are left to the existing size column.
+  const itemVariantIds = Array.from(
+    new Set(
+      items
+        .map((it) => it.variantId)
+        .filter((v): v is string =>
+          !!v &&
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v),
+        ),
+    ),
+  );
+  const colourByVariant = new Map<string, string>();
+  if (itemVariantIds.length > 0) {
+    const attrRows = await db
+      .select({
+        variantId: productVariantAttributes.variantId,
+        attrName: productAttributes.name,
+        value: productAttributeValues.value,
+      })
+      .from(productVariantAttributes)
+      .innerJoin(
+        productAttributes,
+        eq(productAttributes.id, productVariantAttributes.attributeId),
+      )
+      .innerJoin(
+        productAttributeValues,
+        eq(productAttributeValues.id, productVariantAttributes.valueId),
+      )
+      .where(inArray(productVariantAttributes.variantId, itemVariantIds));
+    for (const r of attrRows) {
+      if (/colou?r/i.test(r.attrName)) colourByVariant.set(r.variantId, r.value);
+    }
+  }
+
   // ERP-side payment fields — fall back to these when the local
   // payments row hasn't captured a value (older orders synced before
   // we started persisting every field, or import ordering quirks).
@@ -149,6 +193,7 @@ export default async function AdminOrderDetailPage({
     qty: number;
     parent_item_code: string;
     idx?: number;
+    status?: string;
   };
   const rawSubItems = (((order.erpRaw as { salesOrder?: { custom_sub_items?: unknown } } | null)
     ?.salesOrder?.custom_sub_items) ?? []) as ErpSubItem[];
@@ -159,6 +204,26 @@ export default async function AdminOrderDetailPage({
     arr.push(s);
     subItemsByParent.set(s.parent_item_code, arr);
   }
+  // Fallback for orders not yet polled back from ERP (e.g. offline imports):
+  // expand the local `bundle_selections` jsonb into the same child shape so
+  // Magic Box / BookKit contents render even before erpRaw is populated.
+  const localBundleChildren = (it: (typeof items)[number]): ErpSubItem[] => {
+    const sels = Array.isArray(it.bundleSelections)
+      ? (it.bundleSelections as { name?: string; size?: string; qty?: number; status?: string }[])
+      : [];
+    return sels.map((s, i) => ({
+      item_code: [s?.name, s?.size].filter(Boolean).join(" · ") || "item",
+      qty: typeof s?.qty === "number" ? s.qty : 1,
+      parent_item_code: it.size,
+      idx: i,
+      status: typeof s?.status === "string" ? s.status : undefined,
+    }));
+  };
+  const childrenFor = (it: (typeof items)[number]): ErpSubItem[] => {
+    const erp = subItemsByParent.get(it.size) ?? [];
+    return erp.length > 0 ? erp : localBundleChildren(it);
+  };
+  const totalChildren = items.reduce((n, it) => n + childrenFor(it).length, 0);
 
   return (
     <div>
@@ -172,10 +237,16 @@ export default async function AdminOrderDetailPage({
           <span className="flex flex-wrap items-center gap-3 text-[13px]">
             <span className="text-ink-500">
               Placed{" "}
-              {new Date(order.createdAt).toLocaleString("en-IN", {
-                dateStyle: "medium",
-                timeStyle: "short",
-              })}
+              {new Date(order.placedAt ?? order.createdAt).toLocaleString("en-IN", {
+                timeZone: "Asia/Kolkata",
+                day: "2-digit",
+                month: "short",
+                year: "numeric",
+                hour: "2-digit",
+                minute: "2-digit",
+                hour12: true,
+              })}{" "}
+              IST
             </span>
             <Badge tone={statusTone(order.status)} dot size="sm">
               {order.status}
@@ -219,9 +290,9 @@ export default async function AdminOrderDetailPage({
           <Card padded={false}>
             <CardHeader
               title="Sub items"
-              description={`${items.length} line item${items.length === 1 ? "" : "s"} mirrored from ERPNext Sales Order${
-                rawSubItems.length > 0
-                  ? ` · ${rawSubItems.length} bundle child${rawSubItems.length === 1 ? "" : "ren"}`
+              description={`${items.length} line item${items.length === 1 ? "" : "s"}${
+                totalChildren > 0
+                  ? ` · ${totalChildren} bundle child${totalChildren === 1 ? "" : "ren"}`
                   : ""
               }`}
               className="px-5 pt-5"
@@ -242,7 +313,7 @@ export default async function AdminOrderDetailPage({
                   // Look up bundle children by the ERP item_code we
                   // snapshotted into `size` at import time. The ERPNext
                   // sub-items table joins on parent_item_code.
-                  const children = subItemsByParent.get(it.size) ?? [];
+                  const children = childrenFor(it);
                   const hasChildren = children.length > 0;
                   return (
                     <Tr key={it.id} className="align-top">
@@ -287,7 +358,22 @@ export default async function AdminOrderDetailPage({
                                       key={c.item_code + "-" + (c.idx ?? 0)}
                                       className="grid grid-cols-[minmax(0,1fr)_70px] gap-x-3 px-3 py-1.5 text-[12px]"
                                     >
-                                      <span className="font-mono text-ink-800 break-words">{c.item_code}</span>
+                                      <span className="font-mono text-ink-800 break-words">
+                                        {c.item_code}
+                                        {c.status && (
+                                          <span
+                                            className={`ml-2 inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                                              /deliver/i.test(c.status)
+                                                ? "bg-green-50 border border-green-200 text-green-700"
+                                                : /pack/i.test(c.status)
+                                                  ? "bg-blue-50 border border-blue-200 text-blue-700"
+                                                  : "bg-amber-50 border border-amber-200 text-amber-700"
+                                            }`}
+                                          >
+                                            {c.status}
+                                          </span>
+                                        )}
+                                      </span>
                                       <span className="text-right tabular-nums text-ink-700">{c.qty}</span>
                                     </li>
                                   ))}
@@ -299,6 +385,11 @@ export default async function AdminOrderDetailPage({
                             <span className="mt-1.5 inline-block h-1.5 w-1.5 rounded-full bg-ink-300" aria-hidden />
                             <span className="flex-1 min-w-0">
                               <span className="font-medium text-ink-900 break-words">{it.nameSnapshot}</span>
+                              {it.variantId && colourByVariant.get(it.variantId) && (
+                                <span className="ml-2 inline-flex items-center rounded-full bg-ink-50 border border-ink-200 px-2 py-0.5 text-[10px] font-semibold text-ink-700">
+                                  {colourByVariant.get(it.variantId)}
+                                </span>
+                              )}
                               {it.variantId === null && (
                                 <span className="ml-2 inline-flex items-center rounded-full bg-amber-50 border border-amber-200 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
                                   unmapped SKU
@@ -345,35 +436,15 @@ export default async function AdminOrderDetailPage({
             </table>
           </Card>
 
-          {/* Shipping address — name on top, phone as a copy-friendly
-              monospace chip, address block as one indented paragraph for
-              quick scanning. */}
-          <Card>
-            <CardHeader title="Shipping address" />
-            <div className="flex items-start gap-3">
-              <div className="h-9 w-9 rounded-full bg-brand-100 text-brand-700 flex items-center justify-center font-bold text-[14px] shrink-0">
-                {(addr.receiverName ?? "?").slice(0, 1).toUpperCase()}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="font-semibold text-ink-900 leading-tight">{addr.receiverName}</p>
-                {addr.receiverPhone ? (
-                  <p className="mt-0.5">
-                    <span className="inline-flex items-center gap-1 rounded-md bg-ink-50 px-2 py-0.5 text-[12px] font-mono text-ink-800">
-                      +91 {addr.receiverPhone}
-                    </span>
-                  </p>
-                ) : null}
-                <p className="mt-2 text-[13px] text-ink-700 leading-snug">
-                  {addr.line1}
-                  {addr.line2 ? `, ${addr.line2}` : ""}
-                  <br />
-                  <span className="text-ink-600">
-                    {addr.city}, {addr.state} <span className="font-mono">{addr.pincode}</span>
-                  </span>
-                </p>
-              </div>
-            </div>
-          </Card>
+          {/* Shipping address — read-only by default with an inline "Edit"
+              affordance (delivery address, delivery mobile, and the account
+              login mobile). Saving recomputes place_of_supply and re-pushes
+              the order to audit. */}
+          <OrderShippingCard
+            orderId={order.id}
+            address={addr}
+            accountPhone={parent?.phone ?? ""}
+          />
 
           {/* Payment Details — sectioned: a hero status pill at the top,
               then Transaction / Identifiers / Refund groups in a striped
@@ -515,6 +586,11 @@ export default async function AdminOrderDetailPage({
             ) : null}
           </Card>
         </div>
+      </div>
+
+      {/* Record-level audit trail — every action on THIS order. */}
+      <div className="mt-5">
+        <RecordHistory entityType="order" entityId={order.id} title="Order history" />
       </div>
     </div>
   );

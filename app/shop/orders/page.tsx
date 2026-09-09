@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowLeft, Package, ChevronRight, GraduationCap } from "lucide-react";
 import { useFocusRefetch } from "@/lib/use-focus-refetch";
-import { derivePlacement } from "@/lib/order-display";
+import { derivePlacement, describePaymentStatus } from "@/lib/order-display";
 import { Nav } from "@/components/Nav";
 import { Footer } from "@/components/Footer";
 
@@ -18,6 +18,7 @@ type OrderItem = {
   thumbUrl: string | null;
   studentName: string | null;
   enrollment: string | null;
+  paymentStatusRaw: string | null;
 };
 
 type StudentGroup = {
@@ -235,6 +236,19 @@ export default function OrdersPage() {
                                 year: "numeric",
                               })}
                             </p>
+                            {(() => {
+                              // For an abandoned checkout, surface the actual
+                              // CCAvenue status word + a short meaning so the
+                              // parent sees why it didn't go through.
+                              if (derivePlacement(o) !== "not_placed") return null;
+                              const info = describePaymentStatus(o.paymentStatusRaw);
+                              if (!info) return null;
+                              return (
+                                <p className="mt-0.5 text-[11.5px] leading-snug text-amber-700">
+                                  {info.statusWord} — {info.description}
+                                </p>
+                              );
+                            })()}
                           </div>
                           <div className="text-right">
                             <p className="font-display text-[16px] font-extrabold text-ink-900">

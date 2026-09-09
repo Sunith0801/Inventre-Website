@@ -13,6 +13,7 @@ import {
 import { StudentEditor, GuardianLinkEditor } from "@/components/admin/StudentEditor";
 import { AddressEditor, SiblingStudentEditor } from "@/components/admin/ChildTableEditors";
 import { RemoveFromFamilyButton } from "@/components/admin/RemoveFromFamilyButton";
+import { RecordHistory } from "@/components/admin/RecordHistory";
 import {
   erpSchemaReady, countStudentSalesOrders, loadStudentSalesOrders,
   type StudentSalesData, type ErpOrder, type ErpItem,
@@ -434,6 +435,10 @@ export default async function StudentDetailPage({
           </div>
         </Card>
       )}
+
+      <div className="mt-5">
+        <RecordHistory entityType="student" entityId={id} title="Student history" />
+      </div>
     </div>
   );
 }

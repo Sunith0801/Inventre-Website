@@ -15,6 +15,7 @@ import {
   statusTone,
 } from "@/components/admin/ui/primitives";
 import { ReceivePoButton } from "@/components/admin/ReceivePoButton";
+import { RecordHistory } from "@/components/admin/RecordHistory";
 
 export const dynamic = "force-dynamic";
 
@@ -153,6 +154,10 @@ export default async function PurchaseOrderDetailPage({
             </div>
           </Card>
         </div>
+      </div>
+
+      <div className="mt-5">
+        <RecordHistory entityType="purchase_order" entityId={id} title="Purchase order history" />
       </div>
     </div>
   );

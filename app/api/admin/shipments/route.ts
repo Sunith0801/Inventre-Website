@@ -6,6 +6,7 @@ import {
   createShipment,
   listShipments,
 } from "@/lib/repos/shipments";
+import { logAdminActivity } from "@/lib/activity";
 
 export async function GET(req: Request) {
   const guard = await requirePermission("shipments.read");
@@ -47,6 +48,13 @@ export async function POST(req: Request) {
   const body = parsed;
   try {
     const result = await createShipment({ ...body, createdBy: guard.id });
+    void logAdminActivity(guard, {
+      action: "shipment.create",
+      entityType: "order",
+      entityId: body.orderId,
+      summary: `Created shipment ${result.shipmentNumber}`,
+      req,
+    });
     return NextResponse.json(result);
   } catch (e) {
     return NextResponse.json(

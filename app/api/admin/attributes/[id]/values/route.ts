@@ -5,6 +5,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { productAttributeValues } from "@/db/schema";
 import { isResponse, requirePermission } from "@/lib/admin-guard";
+import { logAdminActivity } from "@/lib/activity";
 
 const Body = z.object({
   value: z.string().min(1),
@@ -51,5 +52,14 @@ export async function POST(
       sortOrder: body.sortOrder,
     })
     .returning();
+
+  void logAdminActivity(guard, {
+    action: "attribute.value.add",
+    entityType: "attribute",
+    entityId: id,
+    summary: `Added value ${created.value}`,
+    req,
+  });
+
   return NextResponse.json({ value: created });
 }

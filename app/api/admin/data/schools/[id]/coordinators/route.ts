@@ -4,6 +4,7 @@ import { eq, sql } from "drizzle-orm";
 import { db, schema } from "@/db/client";
 import { isResponse, requirePermission } from "@/lib/admin-guard";
 import { parseJson } from "@/lib/api-handler";
+import { logAdminActivity } from "@/lib/activity";
 
 const Row = z.object({
   pocName: z.string().nullable().optional(),
@@ -35,5 +36,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       role: body.role ?? null,
     })
     .returning({ id: schema.schoolCoordinators.id });
+  void logAdminActivity(guard, {
+    action: "school.coordinator.add",
+    entityType: "school",
+    entityId: schoolId,
+    summary: `Added coordinator ${body.pocName ?? body.email ?? row.id}`,
+    req,
+  });
   return NextResponse.json({ id: row.id });
 }

@@ -52,7 +52,7 @@ const STATUS_COPY: Record<
   },
   approved: {
     title: "Approved",
-    body: ({ pickupLabel, atStore }) =>
+    body: ({ atStore }) =>
       atStore ? (
         <>
           Approved. We&apos;re preparing your missing item and will keep it ready
@@ -60,29 +60,28 @@ const STATUS_COPY: Record<
           <span className="font-semibold">
             Inventre Experience Store, Ashoka Mall, Kukatpally
           </span>
-          . Visit on {pickupLabel ?? "the scheduled day"} to collect.
+          . The store team will inform you once it has been received, and you
+          can collect it then.
         </>
       ) : (
-        `Approved. We're preparing your missing item to send to school. Visit on ${pickupLabel ?? "the scheduled Saturday"} to collect.`
+        "Approved. We're preparing your missing item to send to school. The school will inform you once it has been received, and you can collect it then."
       ),
     tone: "emerald",
     Icon: CheckCircle2,
   },
   received_at_school: {
     title: "Replacement arrived at school",
-    body: ({ pickupLabel, atStore }) =>
+    body: ({ atStore }) =>
       atStore ? (
         <>
           Your missing item has arrived at the{" "}
           <span className="font-semibold">
             Inventre Experience Store, Ashoka Mall, Kukatpally
           </span>
-          . Come{" "}
-          {pickupLabel ? `on ${pickupLabel}` : "during the scheduled pickup window"}{" "}
-          to pick it up.
+          . Come by to pick it up.
         </>
       ) : (
-        `Your missing item has arrived at the school. Come ${pickupLabel ? `on ${pickupLabel}` : "during the scheduled pickup window"} to pick it up.`
+        "Your missing item has arrived at the school. Come by to pick it up."
       ),
     tone: "emerald",
     Icon: Package,

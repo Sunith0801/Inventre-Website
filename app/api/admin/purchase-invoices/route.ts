@@ -11,6 +11,7 @@ import {
   suppliers,
 } from "@/db/schema";
 import { isResponse, requirePermission } from "@/lib/admin-guard";
+import { logAdminActivity } from "@/lib/activity";
 import { nextNumber, financialYear, pad } from "@/lib/numbering";
 
 export async function GET() {
@@ -113,6 +114,14 @@ export async function POST(req: Request) {
     );
 
     return inv;
+  });
+
+  void logAdminActivity(guard, {
+    action: "purchase_invoice.create",
+    entityType: "purchase_invoice",
+    entityId: created.id,
+    summary: `Created purchase invoice ${invoiceNumber}`,
+    req,
   });
 
   return NextResponse.json({ id: created.id, invoiceNumber });

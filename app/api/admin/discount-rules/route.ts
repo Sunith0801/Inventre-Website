@@ -4,6 +4,7 @@ import { z } from "zod";
 import { db } from "@/db/client";
 import { discountRules } from "@/db/schema";
 import { isResponse, requirePermission } from "@/lib/admin-guard";
+import { logAdminActivity } from "@/lib/activity";
 import { desc } from "drizzle-orm";
 
 const Body = z.object({
@@ -68,5 +69,12 @@ export async function POST(req: Request) {
       priority: body.priority,
     })
     .returning();
+  void logAdminActivity(guard, {
+    action: "discount.create",
+    entityType: "discount",
+    entityId: created.id,
+    summary: `Created discount ${created.name}`,
+    req,
+  });
   return NextResponse.json({ rule: created });
 }

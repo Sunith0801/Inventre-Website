@@ -3,6 +3,7 @@ import { parseBody } from "@/lib/parse-body";
 import { z } from "zod";
 import { db } from "@/db/client";
 import { isResponse, requirePermission } from "@/lib/admin-guard";
+import { logAdminActivity } from "@/lib/activity";
 import { applyStockChange } from "@/lib/repos/inventory";
 
 /**
@@ -76,6 +77,14 @@ export async function POST(req: Request) {
       { status: 400 }
     );
   }
+
+  void logAdminActivity(guard, {
+    action: "stock.transfer",
+    entityType: "stock",
+    entityId: body.fromWarehouseId,
+    summary: `Transferred ${body.lines.length} line(s) from warehouse ${body.fromWarehouseId} to ${body.toWarehouseId}`,
+    req,
+  });
 
   return NextResponse.json({
     ok: true,

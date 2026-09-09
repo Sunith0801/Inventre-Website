@@ -11,6 +11,7 @@ import {
 } from "@/components/admin/ui/primitives";
 import { SchoolEditor, CoordinatorEditor } from "@/components/admin/SchoolEditor";
 import { SchoolGradeMappingEditor, UniformMappingEditor } from "@/components/admin/ChildTableEditors";
+import { RecordHistory } from "@/components/admin/RecordHistory";
 
 export const dynamic = "force-dynamic";
 
@@ -179,6 +180,10 @@ export default async function SchoolDetailPage({
           )}
         </Card>
       )}
+
+      <div className="mt-5">
+        <RecordHistory entityType="school" entityId={id} title="School history" />
+      </div>
     </div>
   );
 }

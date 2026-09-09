@@ -4,6 +4,7 @@ import { z } from "zod";
 import { db } from "@/db/client";
 import { schools } from "@/db/schema";
 import { isResponse, requirePermission } from "@/lib/admin-guard";
+import { logAdminActivity } from "@/lib/activity";
 
 const Body = z.object({
   name: z.string().min(1),
@@ -40,5 +41,12 @@ export async function POST(req: Request) {
       logoUrl: body.logoUrl || null,
     })
     .returning();
+  void logAdminActivity(guard, {
+    action: "school.create",
+    entityType: "school",
+    entityId: created.id,
+    summary: `Created school ${created.name ?? created.id}`,
+    req,
+  });
   return NextResponse.json({ school: created });
 }

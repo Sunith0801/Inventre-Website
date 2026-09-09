@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { parseBody } from "@/lib/parse-body";
 import { z } from "zod";
 import { isResponse, requirePermission } from "@/lib/admin-guard";
+import { logAdminActivity } from "@/lib/activity";
 import { adjust, getDefaultWarehouseId } from "@/lib/repos/inventory";
 
 const Body = z.object({
@@ -20,6 +21,13 @@ export async function POST(req: Request) {
   const wh = body.warehouseId ?? (await getDefaultWarehouseId());
   try {
     const result = await adjust(body.variantId, wh, body.delta, body.notes, guard.id);
+    void logAdminActivity(guard, {
+      action: "stock.adjust",
+      entityType: "stock",
+      entityId: body.variantId,
+      summary: `Adjusted stock ${body.delta >= 0 ? "+" : ""}${body.delta} for variant ${body.variantId} @ warehouse ${wh}: ${body.notes}`,
+      req,
+    });
     return NextResponse.json({ bin: result });
   } catch (e) {
     return NextResponse.json(

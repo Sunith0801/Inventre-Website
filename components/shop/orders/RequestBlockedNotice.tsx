@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { AlertCircle } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
-import { isApprovedStatus } from "@/lib/exchange-shared";
+import { alreadyRaisedMessage } from "@/lib/exchange-shared";
 
 /**
  * Popup shown when a parent opens the Exchange / Missing form for a sale
@@ -20,31 +20,25 @@ import { isApprovedStatus } from "@/lib/exchange-shared";
  * vice-versa).
  */
 export function RequestBlockedNotice({
-  flow,
   existingKind,
-  existingStatus,
+  existingSource = "customer",
   orderHref,
 }: {
   flow: "exchange" | "missing";
   existingKind: "exchange" | "missing";
   existingStatus: string;
+  existingSource?: "customer" | "care_team";
   orderHref: string;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(true);
 
   const existingLabel = existingKind === "exchange" ? "Exchange" : "Missing";
-  const approved = isApprovedStatus(existingStatus);
-  const heading = approved
-    ? `${existingLabel} request already approved`
-    : `${existingLabel} request in progress`;
-  const message = approved
-    ? `An ${existingLabel} request has already been approved for this Sales Order. You cannot raise another request for this order.`
-    : `A${
-        existingKind === "exchange" ? "n Exchange" : " Missing"
-      } request is already in progress for this Sales Order. Please wait for it to be processed before raising ${
-        flow === existingKind ? "another" : `a${flow === "exchange" ? "n exchange" : " missing"}`
-      } request.`;
+  const heading = `${existingLabel} request already raised`;
+  // Single source of truth for the wording — includes the
+  // "…by the Customer Care Team" phrasing when the existing request was
+  // raised in Audit (Condition 4).
+  const message = alreadyRaisedMessage(existingKind, existingSource);
 
   const back = () => {
     setOpen(false);

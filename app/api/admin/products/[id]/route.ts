@@ -15,6 +15,7 @@ import {
 } from "@/db/schema";
 import { isResponse, requirePermission } from "@/lib/admin-guard";
 import { invalidateCatalog } from "@/lib/cache";
+import { logAdminActivity, diffFields } from "@/lib/activity";
 import { getSizeAxisNameForProduct } from "@/lib/repos/product-attribute-groups";
 import { normalizeAttributeName } from "@/lib/normalize-attribute-name";
 
@@ -26,6 +27,10 @@ const Variant = z.object({
   colorValueId: z.string().uuid().nullable().optional(),
   /** Selling price in paise. null clears it; undefined leaves it. */
   price: z.number().int().min(0).nullable().optional(),
+  /** Customer-facing visibility. false = soft-off (hidden from the storefront
+   *  picker) while the row + its history stay intact. Undefined defaults to
+   *  true so existing callers that omit it keep the current behaviour. */
+  isActive: z.boolean().optional(),
 });
 
 const SpecRow = z.object({ label: z.string().min(1), value: z.string().min(1) });
@@ -76,6 +81,7 @@ const Body = z.object({
   specs: z.array(SpecRow).nullable().optional(),
   sizeTable: z.array(SizeRow).nullable().optional(),
   sizeChartUrl: z.string().url().nullable().optional(),
+  imageNote: z.string().nullable().optional(),
 });
 
 export async function PATCH(
@@ -132,6 +138,8 @@ export async function PATCH(
   if (body.sizeTable !== undefined) update.sizeTable = body.sizeTable;
   if (body.sizeChartUrl !== undefined)
     update.sizeChartUrl = body.sizeChartUrl || null;
+  if (body.imageNote !== undefined)
+    update.imageNote = body.imageNote?.trim() || null;
 
   // Snapshot the pre-update base price: the itemPrices propagation below
   // must fire only when the admin actually CHANGED it. The Basics/Pricing
@@ -149,8 +157,60 @@ export async function PATCH(
     priorBasePricePaise = prior?.basePrice ?? null;
   }
 
-  if (Object.keys(update).length > 0)
+  // Snapshot the full row before applying field edits so we can diff the
+  // scalar columns for the activity log.
+  let beforeRow: Record<string, unknown> | undefined;
+  if (Object.keys(update).length > 0) {
+    const [prior] = await db
+      .select()
+      .from(products)
+      .where(eq(products.id, id))
+      .limit(1);
+    beforeRow = prior as unknown as Record<string, unknown>;
     await db.update(products).set(update).where(eq(products.id, id));
+    const changes = diffFields(beforeRow ?? {}, update, {
+      name: "Name",
+      slug: "Slug",
+      tagline: "Tagline",
+      basePrice: "Base Price (paise)",
+      baseMrp: "Base MRP (paise)",
+      categoryId: "Category",
+      status: "Status",
+      itemCode: "Item Code",
+      hsnCode: "HSN Code",
+      gstTreatment: "GST Treatment",
+      gstInclusive: "GST Inclusive",
+      brand: "Brand",
+      displayPrice: "Display Price",
+      costPrice: "Cost Price",
+      organizationMrp: "Organization MRP",
+      customerDiscountPercent: "Customer Discount %",
+      weightGrams: "Weight (g)",
+      minOrderQty: "Min Order Qty",
+      isMagicBox: "Magic Box",
+      bundleLevel: "Bundle Level",
+      bundleGender: "Bundle Gender",
+      isVariantItem: "Variant Item",
+      variantOfProductId: "Variant Of",
+      variantAttribute: "Variant Attribute",
+      variantAttributeValue: "Variant Attribute Value",
+      attributeGroups: "Attribute Groups",
+      description: "Description",
+      specs: "Specs",
+      sizeTable: "Size Table",
+      sizeChartUrl: "Size Chart URL",
+    });
+    if (changes.length > 0) {
+      void logAdminActivity(guard, {
+        action: "product.update",
+        entityType: "product",
+        entityId: id,
+        summary: `Updated ${changes.map((c) => c.label ?? c.field).join(", ")}`,
+        changes,
+        req,
+      });
+    }
+  }
 
   // When basePrice changes, propagate to itemPrices for every active variant
   // on the default ("Standard Selling") price list at the global (schoolId
@@ -278,7 +338,10 @@ export async function PATCH(
               size: cleanSize,
               sku: v.sku,
               stockQty: v.stockQty,
-              isActive: true,
+              // Honour the editor's On/Off toggle. Rows still present in the
+              // list are no longer force-activated — a row can be saved OFF
+              // (hidden from customers) without being removed from the editor.
+              isActive: v.isActive ?? true,
             })
             .where(eq(productVariants.id, v.id));
         } else {
@@ -307,7 +370,7 @@ export async function PATCH(
               .set({
                 size: cleanSize,
                 stockQty: v.stockQty,
-                isActive: true,
+                isActive: v.isActive ?? true,
               })
               .where(eq(productVariants.id, resurrectable.id));
             variantId = resurrectable.id;
@@ -319,7 +382,7 @@ export async function PATCH(
                 size: cleanSize,
                 sku: v.sku,
                 stockQty: v.stockQty,
-                isActive: true,
+                isActive: v.isActive ?? true,
               })
               .returning({ id: productVariants.id });
             variantId = ins.id;
@@ -568,12 +631,17 @@ export async function PATCH(
 }
 
 export async function DELETE(
-  _: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const guard = await requirePermission("catalog.write");
   if (isResponse(guard)) return guard;
   const { id } = await params;
+  const [beforeDelete] = await db
+    .select({ name: products.name })
+    .from(products)
+    .where(eq(products.id, id))
+    .limit(1);
 
   // Refuse if any cart or order line references a variant of this product —
   // deleting would cascade-drop those rows and corrupt parent baskets /
@@ -602,5 +670,14 @@ export async function DELETE(
   // Flush product caches so the deleted product disappears from the shop
   // immediately rather than waiting for the TTL to expire.
   await invalidateCatalog();
+
+  void logAdminActivity(guard, {
+    action: "product.delete",
+    entityType: "product",
+    entityId: id,
+    summary: `Deleted product ${beforeDelete?.name ?? id}`,
+    req,
+  });
+
   return NextResponse.json({ ok: true });
 }

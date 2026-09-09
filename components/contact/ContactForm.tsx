@@ -31,8 +31,8 @@ const businessTypes = ["Distributor", "Reseller", "Manufacturer", "Other"];
 
 const channelInfo: Record<Kind, { phone: string; email: string }> = {
   parent: { phone: "+91 90599 90804", email: "support@inventre.in" },
-  school: { phone: "+91 81212 58383", email: "connect@inventre.in" },
-  business: { phone: "+91 81212 58383", email: "connect@inventre.in" },
+  school: { phone: "+91 90599 90804", email: "connect@inventre.in" },
+  business: { phone: "+91 90599 90804", email: "connect@inventre.in" },
 };
 
 export function ContactForm() {

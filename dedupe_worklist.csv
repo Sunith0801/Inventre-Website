@@ -1,0 +1,631 @@
+bucket,action,student_id,name,school,grade,gender,enrollment,orders,carts,customer_link,keep_id
+auto,KEEP,562f3cd2-c1f2-41e6-8527-44b6a62d6ff6,THATI ADHVIKA,Kidlink School,Grade 3,Female,23KDL0035,2,0,,
+auto,DISABLE,7b7d1e76-335e-47a9-8b9c-ca742dda29a3,THATI ADVIKA,Kidlink School,Grade 3,Female,26KDL313048,0,0,,562f3cd2-c1f2-41e6-8527-44b6a62d6ff6
+auto,KEEP,305e0c3d-05f1-4716-b499-e877732401eb,PALLAPU VENKATA VARNIKA,Kidlink School,UKG,Female,25KDL0096,0,0,,
+auto,DISABLE,fe5058cd-0b82-4761-a944-435177c4f021,PALLAPU VENKATA VANSHIKA,Kidlink School,UKG,Female,25KDL0097,0,0,,305e0c3d-05f1-4716-b499-e877732401eb
+auto,KEEP,6ec621fc-0e5e-4237-9ee0-c53f53e51c9f,Gangireddy PAADVIKA SAHASRA,Kidlink School,UKG,Female,24KDL0039,0,0,,
+auto,DISABLE,9d06d8cb-0bc9-426b-be23-d576f2844306,PAADVIKA SAHASRA GANGIREDDI,Kidlink School,UKG,Female,26KDL313031,0,0,,6ec621fc-0e5e-4237-9ee0-c53f53e51c9f
+auto,KEEP,7fde0cc8-113d-424a-8c71-40e6aee194ba,Dadipelly. Ashish,Kidlink School,Nursery,Male,26KLC143,0,0,,
+auto,DISABLE,3bf2ab67-0481-4357-9c57-720d09f34a75,ASHISH DADIPELLY,Kidlink School,Nursery,Male,25KLC0115,0,0,,7fde0cc8-113d-424a-8c71-40e6aee194ba
+auto,KEEP,a3435214-7d19-4bc5-96b7-7dff38a8190f,Gaddam. Krishna Devansh,Kidlink School,Nursery,Male,26KLC140,0,0,,
+auto,DISABLE,6e9fced2-7e2d-4865-8994-46412118af59,KRISHNA DEVANSH GADDAM,Kidlink School,Nursery,Male,25KLC0113,0,0,,a3435214-7d19-4bc5-96b7-7dff38a8190f
+auto,KEEP,01011ac0-97f8-4b44-aab3-8e5f84d41a3a,AMANDA TERESA GEILES,St. Andrews High School Suchitra,Grade 10,Female,BP211532,1,0,AMANDA TERESA GEILES,
+auto,DISABLE,53f678d7-53df-4990-8ca0-6d97351f8e0f,AMANDA TERESA GEILES,St. Andrews High School Suchitra,Grade 10,Female,22BP2700,0,0,,01011ac0-97f8-4b44-aab3-8e5f84d41a3a
+auto,KEEP,83c0ae64-8cbe-4eec-a27e-557fcfed7661,AANYA RATRE,St. Andrews High School Suchitra,Grade 10,Female,BP150158,2,0,AANYA RATRE,
+auto,DISABLE,f0483cbb-b164-461e-b3ea-4910f97751fb,AANYA RATRE,St. Andrews High School Suchitra,Grade 10,Female,22BP2597,0,0,,83c0ae64-8cbe-4eec-a27e-557fcfed7661
+auto,KEEP,3d35209e-0a93-4fe0-8036-f7aba34c9056,ADVAIT SHARMA,Kidlink School,Nursery,Male,25KDL0030,1,0,,
+auto,DISABLE,770ca8a9-d330-49c4-ad84-481cb71a29a2,ADVAIT SHARMA,Kidlink School,Nursery,Male,26KDL313037,0,0,,3d35209e-0a93-4fe0-8036-f7aba34c9056
+auto,KEEP,e444d1a4-4e4e-4de7-9680-b0125bd1c666,CHARUGUNDLA RITHWIK SAI,Kidlink School,Nursery,Male,26KDL313050,0,0,,
+auto,DISABLE,29ef05a8-84ab-43ec-b67d-f0dbd7075a0e,CHARUGUNDLA RITHWIK SAI,Kidlink School,Nursery,Male,25KDL0138,0,0,,e444d1a4-4e4e-4de7-9680-b0125bd1c666
+auto,KEEP,ca06c429-2ba8-479d-bfc6-1410ee656882,GANGALA CHARVITHA REDDY,Kidlink School,Nursery,Female,25KDL0025,2,0,,
+auto,DISABLE,6e4ce0a0-6d0c-469f-9f38-ab7f5e45087b,GANGALA CHARVITHA REDDY,Kidlink School,Nursery,Female,26KDL313034,0,0,,ca06c429-2ba8-479d-bfc6-1410ee656882
+auto,KEEP,95ed8a3e-8ae9-455a-9309-3bdf3ddd3064,SANKEERTHANA GOPI KRISHNAN,Kidlink School,Nursery,Female,26KDL313038,0,0,,
+auto,DISABLE,f88496c6-73cc-4487-a5bc-860490137ef4,SANKEERTHANA GOPI KRISHNAN,Kidlink School,Nursery,Female,25KDL0006,0,0,,95ed8a3e-8ae9-455a-9309-3bdf3ddd3064
+auto,KEEP,2153587a-dd14-4038-b083-92dcdf92e551,YALLABANDI NEHA ADHVITHI,Kidlink School,Nursery,Female,26KDL313035,0,0,,
+auto,DISABLE,11454483-6c03-4f66-a920-307039e03289,YALLABANDI NEHA ADHVITHI,Kidlink School,Nursery,Female,25KDL0130,0,0,,2153587a-dd14-4038-b083-92dcdf92e551
+auto,KEEP,c84f142c-9f6a-43bf-ac7c-6aae9663e022,Patthipati. Advaith Krishna,Kidlink School,Nursery,Male,26KLC134,0,0,,
+auto,DISABLE,19187d00-993e-4e3c-a516-c1a74785c2a0,ADVAITH KRISHNA PATTHIPATI,Kidlink School,Nursery,Male,25KLC0101,0,0,,c84f142c-9f6a-43bf-ac7c-6aae9663e022
+auto,KEEP,e9342d15-60e5-4814-9ccb-8a62d4ce31f8,BALA VIRAJ NARAHARI,Kidlink School,Nursery,Male,25KLC0098,0,0,,
+auto,DISABLE,00f06be3-f019-4abe-a2c8-243fa285ddcd,Narahari. Bala Viraj,Kidlink School,Nursery,Male,26KLC130,0,0,,e9342d15-60e5-4814-9ccb-8a62d4ce31f8
+auto,KEEP,b6415ae8-7da0-4dbe-a078-24065464604a,BAVISH BANDE,Kidlink School,Nursery,Male,25KLC0109,0,0,,
+auto,DISABLE,bc0212f8-0694-41a5-849d-f79694fffea9,Bande. Bavish,Kidlink School,Nursery,Male,26KLC136,0,0,,b6415ae8-7da0-4dbe-a078-24065464604a
+auto,KEEP,26b4a33e-d722-4b08-bf95-daa5e544b06f,HARIDHRAN MUPPIRISETTI,Kidlink School,Nursery,Male,25KLC0112,0,0,,
+auto,DISABLE,6420bc64-fa97-4392-a343-0390dc36ca39,Muppirisetti. Haridhran,Kidlink School,Nursery,Male,26KLC138,0,0,,26b4a33e-d722-4b08-bf95-daa5e544b06f
+auto,KEEP,882e5872-1a12-4dad-acc8-6faa43dc70a9,MIHITH AITHU,Kidlink School,Nursery,Male,25KLC0099,0,0,,
+auto,DISABLE,dfe49654-5b81-441e-8a5d-6a908fbd5d7a,Aithu . Mihith,Kidlink School,Nursery,Male,26KLC131,0,0,,882e5872-1a12-4dad-acc8-6faa43dc70a9
+auto,KEEP,d7539700-766b-46d8-aa39-a192cf9d1cb2,Vardhan Rachamalla,Kidlink School,Nursery,Male,26KLC159,0,0,,
+auto,DISABLE,ad402cab-ee4e-4385-bd9b-eb091c08d5bf,Rachamalla. Vardan,Kidlink School,Nursery,Male,26KLC144,0,0,,d7539700-766b-46d8-aa39-a192cf9d1cb2
+auto,DISABLE,a5530f3b-7581-4940-b82f-38210bced56d,Rachamalla Vardhan,Kidlink School,Nursery,Male,25KLC0116,0,0,,d7539700-766b-46d8-aa39-a192cf9d1cb2
+auto,KEEP,ba2bbae2-f942-4175-a9e1-6a543153b3fa,KAMEPALLI HARVI,Kidlink School,Grade 1,Female,25KDL0088,0,0,,
+auto,DISABLE,d97703b0-c569-41b8-88df-8c4589aa59a9,KAMEPALLI HANVI,Kidlink School,Grade 1,Female,23KDL0243,0,0,,ba2bbae2-f942-4175-a9e1-6a543153b3fa
+auto,KEEP,9c50aa32-feb5-4d3e-92ae-7cba59a3b9b9,GARSHA SAANVI,St. Andrews High School Suchitra,Grade 10,Female,BP221154,1,0,GARSHA SAANVI,
+auto,DISABLE,c7de4500-107f-4a44-93f0-ccfe42063245,GARSHA SAANVI,St. Andrews High School Suchitra,Grade 10,Female,22BP2719,0,0,,9c50aa32-feb5-4d3e-92ae-7cba59a3b9b9
+auto,KEEP,f19c6694-991f-4486-8dfa-995ba91f94bd,AADYA LOLAKAPURI,Kidlink School,Grade 1,Female,23KLC0052,2,0,,
+auto,DISABLE,b55721e0-1490-40a7-a160-a7798d20952b,AARADHYA LOLAKAPURI,Kidlink School,Grade 1,Female,23KLC0053,0,0,,f19c6694-991f-4486-8dfa-995ba91f94bd
+auto,KEEP,37c00f6d-4839-436b-9ca4-e674c7634200,Aadhya Babu,St Andrews School Keesara,Grade 10,Female,KS202023,4,0,Aadhya Babu,
+auto,DISABLE,400a85e2-fe3c-4105-9dc5-62616c3eeecd,Aadhya Babu,St Andrews School Keesara,Grade 10,Female,22KS0834,0,0,,37c00f6d-4839-436b-9ca4-e674c7634200
+auto,KEEP,a88ea577-9032-4210-9e66-c3b537e6e4d7,Eshika Gowda,Winmore Academy Whitefield,Grade 10,Female,WF210062,1,0,Eshika Gowda,
+auto,DISABLE,5b3520e0-575f-46ce-b110-eac43f51d979,Eshika Gowda,Winmore Academy Whitefield,Grade 10,Female,23WMWF0209,0,0,,a88ea577-9032-4210-9e66-c3b537e6e4d7
+auto,KEEP,eb37cfb1-4cf9-4139-b60e-d04976fc45a9,N Preetham Chandra,Winmore Academy Whitefield,Grade 10,Male,WF220146,2,0,N Preetham Chandra,
+auto,DISABLE,1b360c58-f966-4ef8-9a21-2e758fb5c993,N Preetham Chandra,Winmore Academy Whitefield,Grade 10,Male,23WMWF0307,0,0,,eb37cfb1-4cf9-4139-b60e-d04976fc45a9
+auto,KEEP,20ce372c-0619-4230-9d81-6784dd7ce124,SAMANYU KALLURI,St. Andrews High School Suchitra,Grade 10,Male,BP150540,1,0,SAMANYU KALLURI,
+auto,DISABLE,30b8d799-3f74-47f4-b369-f48158ed831d,SAMANYU KALLURI,St. Andrews High School Suchitra,Grade 10,Male,22BP2889,0,0,,20ce372c-0619-4230-9d81-6784dd7ce124
+auto,KEEP,03623a3f-95d7-440b-884a-3e1330264aef,Shriyansh Sumit Tandale,TIC TAC TOE- NIBM,LKG,Male,25CAG20604,0,0,Shriyansh Sumit Tandale,
+auto,DISABLE,5e9318be-fe13-478a-b006-825456a1308e,Shrivansh Sumit Tandale,TIC TAC TOE- NIBM,LKG,Male,25CAG20605,0,0,Shrivansh Sumit Tandale,03623a3f-95d7-440b-884a-3e1330264aef
+auto,KEEP,281c8f28-09d4-4152-b910-e6e6d1655c58,ANNAPURAJU ABHINAV,St Andrews School Keesara,Grade 10,Male,KS170776,2,0,ANNAPURAJU ABHINAV,
+auto,DISABLE,6ac71703-0ea2-4cf1-9830-686c62e30c83,ANNAPURAJU ABHINAV,St Andrews School Keesara,Grade 10,Male,22KS0859,0,0,,281c8f28-09d4-4152-b910-e6e6d1655c58
+auto,KEEP,3d9ba567-a8f4-457f-84cf-0f04ddc13020,KAKANI TARUNI SRI,Kidlink School,Nursery,Female,25KDL0131,1,0,KAKANI TARUNI SRI,
+auto,DISABLE,d8e5a936-c10a-488d-84f1-b188671719df,KAKANI TARUNI SRI,Kidlink School,Nursery,Female,26KDL313042,0,0,,3d9ba567-a8f4-457f-84cf-0f04ddc13020
+auto,KEEP,4270705c-788a-4e4f-91e7-d0ba46121c0f,Paarth Kashyap,Winmore Academy Whitefield,LKG,Male,25WMWF0117,2,0,,
+auto,DISABLE,5207147e-af3a-461c-bb73-c6fb799b8138,Paarth Kashyap,Winmore Academy Whitefield,LKG,Male,26WMWF0013,0,0,,4270705c-788a-4e4f-91e7-d0ba46121c0f
+auto,KEEP,b4afe90d-ef7c-43a6-8ef1-5db01579e4dd,DEVULAPALLY ISHAA,St Andrews School Keesara,Grade 10,Female,KS170911,2,0,DEVULAPALLY ISHAA,
+auto,DISABLE,be03a9c8-7844-42ee-a519-71103cef7946,DEVULAPALLY ISHAA,St Andrews School Keesara,Grade 10,Female,22KS0884,0,0,,b4afe90d-ef7c-43a6-8ef1-5db01579e4dd
+auto,KEEP,5488aa7e-5880-4a20-a10a-eb64436be301,Thumati Lakshmi Krishi,Winmore Academy Whitefield,Grade 5,Female,23WMWF0262,3,0,,
+auto,DISABLE,46168c55-6020-4585-b6cb-4786998882bf,Thumati Lakshmi Kriti,Winmore Academy Whitefield,Grade 5,Female,23WMWF0263,0,0,,5488aa7e-5880-4a20-a10a-eb64436be301
+auto,KEEP,796ad639-95f6-4e9c-8a3f-dd950dc15368,SAMAIRA PUSKUR,St. Andrews High School Suchitra,Grade 10,Female,BP221048,1,0,SAMAIRA PUSKUR,
+auto,DISABLE,33a8e57e-2f5b-488b-9ccb-ef8116cbd8fb,SAMAIRA PUSKUR,St. Andrews High School Suchitra,Grade 10,Female,22BP2825,0,0,,796ad639-95f6-4e9c-8a3f-dd950dc15368
+auto,KEEP,7199ff33-bc7c-45c6-935e-bd8b1712706a,Tejas N,Winmore Academy Whitefield,Grade 10,Male,WF230092,1,0,Tejas N,
+auto,DISABLE,b6843606-13cd-4c30-b035-c52db694e8c6,Tejas N,Winmore Academy Whitefield,Grade 10,Male,23WMWF0387,0,0,,7199ff33-bc7c-45c6-935e-bd8b1712706a
+auto,KEEP,0eb2426e-6451-4776-b9a0-bf423a7d519c,Tulugu Diya Shree,Quantum Leap School,Grade 5,Female,26QLS069,0,0,Tulugu Diya Shree,
+auto,DISABLE,f09d4124-eadf-46a5-8f1a-b21744b9f838,Tulugu Diya Shree,Quantum Leap School,Grade 5,Female,26QLS0069,0,0,,0eb2426e-6451-4776-b9a0-bf423a7d519c
+auto,KEEP,9322a855-84a0-4279-8c20-a54f1e0a6aef,Gunampalle Suchay Prathik Reddy,Winmore Academy Whitefield,Grade 10,Male,WF180024,2,0,Gunampalle Suchay Prathik Reddy,
+auto,DISABLE,37741325-ceb5-4876-8df7-07267605989c,Gunampalle Suchay Prathik Reddy,Winmore Academy Whitefield,Grade 10,Male,23WMWF0041,0,0,,9322a855-84a0-4279-8c20-a54f1e0a6aef
+auto,KEEP,84f2f5ae-ff19-4a23-b0c3-7c70e7df522a,SAANVI AADHYA PADAMATI,Kidlink School,LKG,Female,25KDL0083,0,0,SAANVI AADHYA PADAMATI,
+auto,DISABLE,8f81c740-a0c6-462c-bc08-9d31746fd397,SAANVI AADYA PADAMATI,Kidlink School,LKG,Female,26KDL313029,0,0,,84f2f5ae-ff19-4a23-b0c3-7c70e7df522a
+auto,KEEP,54b9791e-e409-42a9-a78b-9d6b73e26c6b,PADAMATI ADARSH,Kidlink School,Nursery,Male,25KDL0134,0,0,PADAMATI ADARSH,
+auto,DISABLE,3d103085-f2f8-4a8e-aa6a-41facac8ea89,PADAMATI ADARSH,Kidlink School,Nursery,Male,26KDL313030,0,0,,54b9791e-e409-42a9-a78b-9d6b73e26c6b
+auto,KEEP,c7fdd08c-2b6a-48ac-bafc-ce857e6874a7,Arpit Kumar,Winmore Academy Whitefield,Grade 10,Male,WF170003,1,0,Arpit Kumar,
+auto,DISABLE,a6689029-b162-4ed8-9839-60408423e20d,Arpit Kumar,Winmore Academy Whitefield,Grade 10,Male,23WMWF0001,0,0,,c7fdd08c-2b6a-48ac-bafc-ce857e6874a7
+auto,KEEP,297947b4-7ff7-435f-896e-71a336bc55be,Madduri Shreyan,Winmore Academy Whitefield,Grade 10,Male,WF190072,1,0,Madduri Shreyan,
+auto,DISABLE,3116b819-775e-4fef-8861-2c2873c407c7,Madduri Shreyan,Winmore Academy Whitefield,Grade 10,Male,23WMWF0112,0,0,,297947b4-7ff7-435f-896e-71a336bc55be
+auto,KEEP,83fe9d96-a0ea-4378-a64e-2877642b5924,A JORDAN NATHANEAL,St. Andrews High School Suchitra,Grade 10,Male,BP150118,1,0,A JORDAN NATHANEAL,
+auto,DISABLE,f9d2ec05-c1f3-435c-bf07-00ea52a09d79,A JORDAN NATHANEAL,St. Andrews High School Suchitra,Grade 10,Male,22BP2550,0,0,,83fe9d96-a0ea-4378-a64e-2877642b5924
+auto,KEEP,a176f986-4f12-46f0-8369-41694adc2251,KESHAVA RAO POTLAPALLI,St. Andrews High School Suchitra,Grade 11,Male,SC260524,1,0,KESHAVA RAO POTLAPALLI,
+auto,DISABLE,b70f3788-8fab-4ae6-95dd-6f6d6f2399b1,KESHAVA RAO POTLAPALLI,St. Andrews High School Suchitra,Grade 11,Male,26BP0524,0,0,,a176f986-4f12-46f0-8369-41694adc2251
+auto,KEEP,ea448935-0f20-4f81-ab6c-cbde21aec676,ANANYA MUTNURU,St. Andrews High School Suchitra,Grade 10,Female,BP141046,1,0,ANANYA MUTNURU,
+auto,DISABLE,2d5c0dd8-d277-47dc-acd0-d8f5d6691470,ANANYA MUTNURU,St. Andrews High School Suchitra,Grade 10,Female,22BP2792,0,0,,ea448935-0f20-4f81-ab6c-cbde21aec676
+auto,KEEP,3e3ff054-6900-43fb-838a-b461daabd40e,Adhira Sree Motati,Winmore Academy Whitefield,Nursery,Female,WF250120,3,0,Adhira Sree Motati - 1,
+auto,DISABLE,f6d4d684-7275-43c8-8cf0-e823bb1a8adc,Adhira Sree Motati,Winmore Academy Whitefield,Nursery,Female,26WMWF0005,0,0,,3e3ff054-6900-43fb-838a-b461daabd40e
+auto,KEEP,050fe14f-b3c6-4a37-98a9-29be7874e2d1,Arpita Dash,Winmore Academy Whitefield,Grade 10,Female,WF220140,1,0,Arpita Dash,
+auto,DISABLE,6da9ad19-7068-4b3e-af39-1152ff33b7ba,Arpita Dash,Winmore Academy Whitefield,Grade 10,Female,23WMWF0303,0,0,,050fe14f-b3c6-4a37-98a9-29be7874e2d1
+auto,KEEP,7b5bb9de-218e-4ed8-a574-3368e2ed5bd4,Atharva Praveen,Winmore Academy Whitefield,Grade 10,Male,WF170027,2,0,Atharva Praveen,
+auto,DISABLE,a07522a1-f5bc-45f9-9e6d-4e9e01dffeb1,Atharva Praveen,Winmore Academy Whitefield,Grade 10,Male,23WMWF0009,0,0,,7b5bb9de-218e-4ed8-a574-3368e2ed5bd4
+auto,KEEP,299e0b73-d2a6-4cef-950e-9c5b28d98fa1,Mannat Kanal,Winmore Academy Whitefield,Grade 10,Female,WF230029,0,0,Mannat Kanal,
+auto,DISABLE,ee041288-6f82-4690-875b-cbe7e5efcdca,Mannat Kanal,Winmore Academy Whitefield,Grade 10,Female,23WMWF0341,0,0,,299e0b73-d2a6-4cef-950e-9c5b28d98fa1
+auto,KEEP,275c066f-9170-4e0f-8dcb-0d05865296e5,Chirag Dubey Dubey,Winmore Academy Whitefield,Grade 1,Male,26WMWF0009,0,0,,
+auto,DISABLE,7a06c8d6-f8f9-4eab-b8f6-ea4ddf2bf477,Chirag Dubey Dubey,Winmore Academy Whitefield,Grade 1,Male,WF250124,0,0,,275c066f-9170-4e0f-8dcb-0d05865296e5
+auto,KEEP,746bf5d0-3c5f-4598-90e4-acdf4ec63b66,Hitesh S N,Winmore Academy Whitefield,Grade 10,Male,WF170094,1,0,Hitesh S N,
+auto,DISABLE,a95eb6a5-54a2-4277-a014-c7cd19f12b6b,Hitesh S N,Winmore Academy Whitefield,Grade 10,Male,23WMWF0030,0,0,,746bf5d0-3c5f-4598-90e4-acdf4ec63b66
+auto,KEEP,e242c1f2-a513-423e-b5b8-eee23a52846b,S Jayasis,Winmore Academy Whitefield,Grade 10,Male,WF170047,1,0,S Jayasis,
+auto,DISABLE,78dc555d-4b04-46fe-bf14-b73373a76a53,S Jayasis,Winmore Academy Whitefield,Grade 10,Male,23WMWF0013,0,0,,e242c1f2-a513-423e-b5b8-eee23a52846b
+auto,KEEP,fe0c5ef4-ad2f-4aeb-9f1e-34a544fc0ecc,KALYA SAI KRISHNA,St. Andrews High School Suchitra,Grade 10,Male,BP150337,1,0,KALYA SAI KRISHNA,
+auto,DISABLE,6d6f14f5-8e15-4196-a8e8-300d2f0bf724,KALYA SAI KRISHNA,St. Andrews High School Suchitra,Grade 10,Male,22BP2854,0,0,,fe0c5ef4-ad2f-4aeb-9f1e-34a544fc0ecc
+auto,KEEP,59f7c8e6-6943-46fa-8bed-8b30228447e7,RISHIKA NULU,Kidlink School,Grade 1,Female,26KDL313002,1,0,,
+auto,DISABLE,6cf0c10b-a036-4d04-9d39-413a31c1e908,RISHIKA NULU,Kidlink School,Grade 1,Female,26KDL313045,0,0,,59f7c8e6-6943-46fa-8bed-8b30228447e7
+auto,KEEP,8e6a2628-36eb-4132-a9f6-d38dfa60caeb,V.SATHVIK VENKATA CHOWDARY,Kidlink School,UKG,Male,26IKL0218,1,0,,
+auto,DISABLE,6182ed14-084b-4b99-9e85-d686cf0847bd,Y SATVIK VENKATA CHOUDARY,Kidlink School,UKG,Male,26IKL0007,0,0,,8e6a2628-36eb-4132-a9f6-d38dfa60caeb
+auto,KEEP,87c33e49-c752-4fe6-902d-cffb9987ada8,AARUSH,Kidlink School,UKG,Male,26IKL249,0,0,,
+auto,DISABLE,73d2fb5b-b61a-4300-bbc6-37a179423ff6,AARUSH,Kidlink School,UKG,Male,26IKL0249,0,0,,87c33e49-c752-4fe6-902d-cffb9987ada8
+auto,KEEP,844cde85-0016-4235-8f4a-9c79145cf298,MANVI GUNTA,Kidlink School,Nursery,Female,26KDL313040,1,0,MANVI,
+auto,DISABLE,ccf5b66f-ce08-42bf-8c63-07cc9910fbc2,MANVI GUNTA,Kidlink School,Nursery,Female,25KDL0128,0,0,MANVI GUNTA,844cde85-0016-4235-8f4a-9c79145cf298
+auto,KEEP,8d8050fa-cc7e-46dc-a1ec-1b03645ddfa7,Kushika Navuru,Kidlink School,LKG,Female,26KLS0009,0,0,Kushika - 1,
+auto,DISABLE,e16bf3f1-2179-4a76-8b37-6e518bfd7b6f,Kushika Navuru,Kidlink School,LKG,Female,26KLP0013,0,0,,8d8050fa-cc7e-46dc-a1ec-1b03645ddfa7
+auto,KEEP,72defdc1-2eb6-46fd-a3f3-42db875bbb2a,SAI TEJ DASARI,Quantum Leap School,Grade 6,Male,23QLS0428,2,0,,
+auto,DISABLE,e3866056-2750-4d05-8f93-e883116d7593,SAI TEJ DASARI,Quantum Leap School,Grade 6,Male,23QLS0248,0,0,,72defdc1-2eb6-46fd-a3f3-42db875bbb2a
+auto,KEEP,004de07f-74e3-40bc-bdf8-020776c67144,Adithi Dinesh,St. Andrews High School Suchitra,Grade 11,Female,SC260455,1,0,Adithi Dinesh,
+auto,DISABLE,d69c0096-0b3c-40be-9183-2a2e02b439a6,Adithi Dinesh,St. Andrews High School Suchitra,Grade 11,Female,26BP0455,0,0,,004de07f-74e3-40bc-bdf8-020776c67144
+auto,KEEP,867b86b6-a22e-46cd-b67e-e2eb0b1a336b,Chitrala Sahasra,St. Andrews High School Suchitra,Grade 11,Female,SC260364,1,0,Chitrala Sahasra,
+auto,DISABLE,7a7ce6ae-0f3e-497a-bb93-868afa11e058,Chitrala Sahasra,St. Andrews High School Suchitra,Grade 11,Female,26BP0364,0,0,,867b86b6-a22e-46cd-b67e-e2eb0b1a336b
+auto,KEEP,e14f0b82-9d34-45db-ab94-0534cdf72a51,Pranjal Prashant Kamtikar,St. Andrews High School Suchitra,Grade 11,Female,SC260140,1,0,Pranjal Prashant Kamtikar,
+auto,DISABLE,e46d55e1-0fa1-419d-801e-425468a6bf8e,Pranjal Prashant Kamtikar,St. Andrews High School Suchitra,Grade 11,Female,26BP0140,0,0,,e14f0b82-9d34-45db-ab94-0534cdf72a51
+auto,KEEP,55712c09-72f6-48ec-b9a8-511181274ebd,Shanaya Buddhala,St. Andrews High School Suchitra,Grade 11,Female,SC260072,1,0,Shanaya Buddhala,
+auto,DISABLE,1f4b11ac-cfd7-4463-8e6a-e49945ec5a67,Shanaya Buddhala,St. Andrews High School Suchitra,Grade 11,Female,26BP0072,0,0,,55712c09-72f6-48ec-b9a8-511181274ebd
+auto,KEEP,68902ecb-8a8d-4320-a419-33e06aa37cb8,SHANVIKA AK,The Celestiia School,Grade 5,Female,25TCS0095,0,0,,
+auto,DISABLE,015a4806-117e-4937-9805-129f2ab2a53e,ANVIKA AK,The Celestiia School,Grade 5,Female,25TCS0094,0,0,,68902ecb-8a8d-4320-a419-33e06aa37cb8
+auto,KEEP,f9f55c53-0c86-4478-a28d-cf0fc9380ff0,ABHAY RAM YADLAPALLI,Quantum Leap School,Nursery,Male,26QLS0217,1,0,,
+auto,DISABLE,4b80898f-1659-4832-9335-90d0cfa02135,ABHAYRAM YADLAPALLI,Quantum Leap School,Nursery,Male,25QLS0105,0,0,,f9f55c53-0c86-4478-a28d-cf0fc9380ff0
+auto,KEEP,81067a31-c472-4da6-8b52-7940c51d806c,KALIPAKA SHREYANSH,Quantum Leap School,Grade 4,Male,26QLS0218,2,0,,
+auto,DISABLE,69e9b8dc-1d81-4e3e-9745-e0589e49d8ca,KOLIPAKA SHREYANSH,Quantum Leap School,Grade 4,Male,26QLS0264,0,0,,81067a31-c472-4da6-8b52-7940c51d806c
+auto,KEEP,d2aea006-8d2b-4b36-9210-5a7b1805a2dd,DEVAKINANDAN MANDULA,Quantum Leap School,LKG,Male,24QLS0083,1,0,,
+auto,DISABLE,e974d783-d421-4c6b-b306-6592006962ed,MANDULA DEVAKINANDAN,Quantum Leap School,LKG,Male,26QLS0219,0,0,,d2aea006-8d2b-4b36-9210-5a7b1805a2dd
+auto,KEEP,473383d9-f779-49a2-a1cc-b1cc3364da40,M HANISHKA REDDY,Kidlink School,Nursery,Female,26IKL0010,2,0,,
+auto,DISABLE,95876985-97ef-4b9d-8563-2026fab45826,M HANISHKA REDDY,Kidlink School,Nursery,Female,26IKL0056,0,0,,473383d9-f779-49a2-a1cc-b1cc3364da40
+auto,KEEP,d7458c01-4f65-4ac1-88d0-7027d1ef3745,MIRZA FARHAN SAMI,St. Andrews High School Suchitra,Grade 10,Male,BP151123,2,0,MIRZA FARHAN SAMI,
+auto,DISABLE,cc974e74-31d7-4a28-9df2-0df03d9e324f,MIRZA FARHAN SAMI,St. Andrews High School Suchitra,Grade 10,Male,22BP2489,0,0,,d7458c01-4f65-4ac1-88d0-7027d1ef3745
+auto,KEEP,2cbe5dd8-74fb-4b77-9770-3ac301489270,ARNAV PARMAR,St. Andrews High School Suchitra,Grade 10,Male,BP140004,2,0,ARNAV PARMAR,
+auto,DISABLE,3dc2fca7-4837-4b3a-b46c-69438d839953,ARNAV PARMAR,St. Andrews High School Suchitra,Grade 10,Male,22BP2548,0,0,,2cbe5dd8-74fb-4b77-9770-3ac301489270
+auto,KEEP,16965288-a4c7-44c2-bb97-f1ced8771241,SELIVERI VIHANYA,Kidlink School,Nursery,FEMALE,26KDL00113,0,0,,
+auto,DISABLE,1e99aca0-2e1e-4de3-b86b-0cdfcae845c9,SELIVERI VIHANYA,Kidlink School,Nursery,FEMALE,26KDL00100,0,0,,16965288-a4c7-44c2-bb97-f1ced8771241
+auto,KEEP,bc5318a3-e823-4e8a-9088-0571232ece7c,PILLA BHAVAGNA SAI SRI,Quantum Leap School,Grade 2,Female,26QLS0262,0,0,,
+auto,DISABLE,9df469ba-da62-4578-9a7c-7f096ad5f87f,PILLA BHAVAGNA SAI SRI,Quantum Leap School,Grade 2,Female,26QLS0254,0,0,,bc5318a3-e823-4e8a-9088-0571232ece7c
+auto,KEEP,a8eb9bdd-c8ae-4ed2-ae2c-0f4ff6cd4ac3,AAHANA SAHOO,St. Andrews High School Suchitra,Grade 10,Female,BP150505,1,0,AAHANA SAHOO,
+auto,DISABLE,e92e35c3-de40-4d02-a222-40788c5851ee,AAHANA SAHOO,St. Andrews High School Suchitra,Grade 10,Female,22BP2877,0,0,,a8eb9bdd-c8ae-4ed2-ae2c-0f4ff6cd4ac3
+auto,KEEP,b01100b9-8265-4bf1-86b7-f842500da19d,AARAL NAJBILE,St. Andrews High School Suchitra,Grade 10,Female,BP181383,0,0,AARAL NAJBILE,
+auto,DISABLE,81256fed-67ae-4e88-aa86-cc33b4371f2e,AARAL NAJBILE,St. Andrews High School Suchitra,Grade 10,Female,22BP2495,0,0,,b01100b9-8265-4bf1-86b7-f842500da19d
+auto,KEEP,0f7c299d-b0db-4898-ba3f-69e7fe4aae76,AARAV SAI KOMATI,St. Andrews High School Suchitra,Grade 10,Male,22BP2547,0,0,,
+auto,DISABLE,38470f70-6893-4fda-8476-7a43a6b678d7,AARAV SAI KOMATI,St. Andrews High School Suchitra,Grade 10,Male,BP170981,0,0,,0f7c299d-b0db-4898-ba3f-69e7fe4aae76
+auto,KEEP,74deb29d-a7a3-48ad-b2d2-26f302e52699,AARAV SINGH MEHTA,St. Andrews High School Suchitra,Grade 10,Male,BP231134,1,0,AARAV SINGH MEHTA,
+auto,DISABLE,164d9783-8337-4cc7-ba54-2f2ff4ed8704,AARAV SINGH MEHTA,St. Andrews High School Suchitra,Grade 10,Male,24BP0752,0,0,,74deb29d-a7a3-48ad-b2d2-26f302e52699
+auto,KEEP,64c9e2e6-0203-4f1e-8858-aef12e60ac38,AARUSH REDDY CHITYALA,St. Andrews High School Suchitra,Grade 10,Male,BP171137,3,0,AARUSH REDDY CHITYALA,
+auto,DISABLE,fd12a484-ea31-455a-84a0-d232c6767fc4,AARUSH REDDY CHITYALA,St. Andrews High School Suchitra,Grade 10,Male,22BP2643,0,0,,64c9e2e6-0203-4f1e-8858-aef12e60ac38
+auto,KEEP,fcd188b7-b4ff-401d-a4ec-002e5d67a397,AASRITHA PAGIDIMARI,St. Andrews High School Suchitra,Grade 10,Female,BP171141,2,0,AASRITHA PAGIDIMARI,
+auto,DISABLE,0e1a1dde-4d9e-4781-b000-17872e456103,AASRITHA PAGIDIMARI,St. Andrews High School Suchitra,Grade 10,Female,22BP2619,0,0,,fcd188b7-b4ff-401d-a4ec-002e5d67a397
+auto,KEEP,19835829-f239-4599-9330-2ac4652bedc8,BOOMI RITANSHNA,Samyuktha School,UKG,Male,25SIS0212,1,0,,
+auto,DISABLE,4f411e78-d484-4e94-8902-0b7fe327c503,BOOMI RITASHNA,Samyuktha School,UKG,Male,25SIS0215,0,0,,19835829-f239-4599-9330-2ac4652bedc8
+auto,KEEP,3a76c0eb-8f26-478b-9719-2ab0e55cf8a6,LINGALA ALANKRITI,St Andrews School Keesara,Grade 10,Female,KS151053,4,0,LINGALA ALANKRITI,
+auto,DISABLE,2d41f63b-999d-4ee3-945f-e1bbab99a87c,LINGALA ALANKRITI,St Andrews School Keesara,Grade 10,Female,22KS0801,0,0,,3a76c0eb-8f26-478b-9719-2ab0e55cf8a6
+auto,KEEP,844901bc-70da-4703-92c9-cd305f822d4f,SHEELVANTH RITHIKA,Samyuktha School,Grade 6,Male,23SIS0831,0,0,,
+auto,DISABLE,f471b23b-d6a4-4a6f-b130-23bcafc63359,SHEELVANTH RUHIKA,Samyuktha School,Grade 6,Male,23SIS0832,0,0,,844901bc-70da-4703-92c9-cd305f822d4f
+auto,KEEP,1d534794-5a67-4a92-ab95-070386101d9a,Lakkapatla Pradyumna,St. Michaels School,Grade 11,Male,AW260641,1,0,,
+auto,DISABLE,e20c5620-97cd-4e4b-848b-0b192aada830,LAKKAPATLA PRADYUMNA,St. Michaels School,Grade 11,Male,26SMS0641,0,0,,1d534794-5a67-4a92-ab95-070386101d9a
+auto,KEEP,4bae9ea8-2ad5-424d-8b2a-b920f818c128,RIYANSH MALLELA,Kidlink School,LKG,Male,25KDL0149,1,0,RIYANSH MALLELA,
+auto,DISABLE,8ecee917-98a0-415b-bde4-fcac21ca2929,RIYANSH MALLELA,Kidlink School,LKG,Male,26KDL313026,0,0,RIYANSH - 1,4bae9ea8-2ad5-424d-8b2a-b920f818c128
+auto,KEEP,b73bd867-e427-461b-ac25-69cbfa0ec999,R.Navya Jain,TSUS Chennai,Grade 3,Female,21021,4,0,R.Navya Jain,
+auto,DISABLE,3ca75ff5-736d-4c97-b1c7-128e79a5fda0,R.Nayna Jain,TSUS Chennai,Grade 3,Female,21022,0,0,R.Nayna Jain - 2,b73bd867-e427-461b-ac25-69cbfa0ec999
+auto,KEEP,9346c411-8c12-4d1b-87f4-56e12ac0ae63,P MAHARVIN ABHTUKTH,Kidlink School,Grade 1,Male,26IKL0029,1,0,,
+auto,DISABLE,2cbeee66-9d3e-4edc-9ced-d531914d372f,P.MAHARVIN ABHYUKTH,Kidlink School,Grade 1,Male,26IKL0219,0,0,P.MAHARVIN ABHYUKTH,9346c411-8c12-4d1b-87f4-56e12ac0ae63
+auto,KEEP,5b3b07b2-bc23-47e4-aa3e-3fbe458a81b6,BHAGAM ADVAITA,Kidlink School,LKG,Female,25KDL0146,1,0,BHAGAM ADVAITA,
+auto,DISABLE,322ba119-54bd-4179-b7c1-fffe10f4b94d,BHAGAM ADVAITA,Kidlink School,LKG,Female,26KDL313047,0,0,BHAGAM,5b3b07b2-bc23-47e4-aa3e-3fbe458a81b6
+auto,KEEP,d688dc61-8391-4c9f-bac9-b9f713320172,SKANDA KARTHIKEYA,Quantum Leap School,Grade 2,Female,24QLS0311,0,0,,
+auto,DISABLE,64da0ec2-75b2-45e8-857b-86031b91ab8b,SKANDA KARTHIKEYA K,Quantum Leap School,Grade 2,Female,24QLS0406,0,0,,d688dc61-8391-4c9f-bac9-b9f713320172
+auto,KEEP,1e71e242-6bbd-4539-aceb-c8221eaddaec,T RUTHVIKA CHOWDARY,Quantum Leap School,Grade 1,Female,25QLS0117,0,0,,
+auto,DISABLE,7576739b-c40d-4d20-9884-79f549d22706,T RUDHVIKA CHOWDARY,Quantum Leap School,Grade 1,Female,25QLS0116,0,0,,1e71e242-6bbd-4539-aceb-c8221eaddaec
+auto,KEEP,86b26757-507d-46c8-a77d-1a34a205eff6,DHANVITA SRIJA GARAGABARTI,Quantum Leap School,Grade 8,Female,24QLS0152,0,0,,
+auto,DISABLE,85473f0d-fea5-4f93-8425-321a3393df86,DHANVITA SRIJA GARAGAPATI,Quantum Leap School,Grade 8,Female,24QLS0011,0,0,,86b26757-507d-46c8-a77d-1a34a205eff6
+auto,KEEP,f42473e1-4b14-4833-9b8c-8f42789b4524,Swara Rahul Ganakwar,Crimson Anisha School- NIBM CBSE,Grade 5,Female,22CAG20410,1,0,Swara Rahul Ganakwar,
+auto,DISABLE,c21209cd-4ee7-4b32-9293-d85da5ef416b,Smira Rahul Ganakwar,Crimson Anisha School- NIBM CBSE,Grade 5,Female,22CAG20409,0,0,Smira Rahul Ganakwar - 1,f42473e1-4b14-4833-9b8c-8f42789b4524
+review,KEEP?,2516c235-536e-469b-a644-91977b23fed6,VARSHITA REDDY KOLLI,Kidlink School,Grade 1,Female,24KLC0050,4,0,,
+review,REVIEW,49b0c283-a59b-4d58-b5c1-0aadc84359b5,KOLLI VARSHITHA REDDY,Kidlink School,Nursery,Male,26IKL0054,0,0,,2516c235-536e-469b-a644-91977b23fed6
+review,KEEP?,b229f99d-b9f4-47d3-b83f-554640cae072,Gangavarapu Kethan Ram Chowdary,Quantum Leap School,Grade 3,Male,26QLS0027,0,0,Gangavarapu Kethan Ram Chowdary,
+review,REVIEW,d44df757-3afd-40cd-b070-63541c493f1b,GANGAVARAPU KETHAN RAM CHOWDARY,Kidlink School,Grade 3,Male,22KDL0081,0,0,,b229f99d-b9f4-47d3-b83f-554640cae072
+review,KEEP?,bd8ab312-1e88-43e0-8319-b7c5a0486107,MALLOJI DAEWON JOHN,Quantum Leap School,Grade 3,Male,26QLS0093,1,0,MALLOJI DAEWON JOHN,
+review,REVIEW,a55c7e8e-6f31-4a70-94d4-468367156cdd,MALLOJI DAEWON JOHN,Kidlink School,Grade 3,Male,24KDL0008,0,0,,bd8ab312-1e88-43e0-8319-b7c5a0486107
+review,KEEP?,c908767b-d2fb-43ac-8119-606e0d488661,VENKATA HANSHITH CHOWDARY KANCHARLA,Quantum Leap School,Grade 5,Male,22QLS0685,0,0,,
+review,REVIEW,8063bb08-b8a3-4943-9bd2-8c7146d82c9a,KANCHARLA VENKAT HANSHITH CHOWDARY,Kidlink School,Grade 5,Male,25KDL0100,0,0,,c908767b-d2fb-43ac-8119-606e0d488661
+review,KEEP?,40941b8c-caff-4f17-8205-c470491b1d17,S Jeshwin,Quantum Leap School,Grade 6,Male,26QLS0046,1,0,,
+review,REVIEW,b0a979e5-4128-4c61-ab22-3b47a91f916f,JESHWIN S,Kidlink School,Grade 6,Male,22KDL0222,0,0,,40941b8c-caff-4f17-8205-c470491b1d17
+review,KEEP?,fcda981e-7349-4b5b-8a93-9385099e18d7,P Jay Likith,Quantum Leap School,Grade 3,Male,26QLS0039,2,0,P Jay Likith,
+review,REVIEW,a59fa059-c3fb-4951-a7a5-caf577713d7b,P JAI LIKITH,Kidlink School,Grade 3,Male,23KDL0032,0,0,P JAI LIKITH,fcda981e-7349-4b5b-8a93-9385099e18d7
+review,KEEP?,5ea7d5d9-38cc-404a-951e-ebbe9205666e,Ashika Shaik,Kidlink School,Grade 6,Female,22KIS0162,0,0,,
+review,REVIEW,247aa00d-b2e7-47da-ac27-192536ceda1f,ANSHIKA SHAIK,Kidlink School,UKG,Female,25KIS0091,0,0,,5ea7d5d9-38cc-404a-951e-ebbe9205666e
+review,KEEP?,04f412dc-82b6-4f43-8c8c-404d637105c3,PRAVALIKA ALAKUNTLA,Quantum Leap School,Grade 7,Female,26QLS0213,2,0,,
+review,REVIEW,0142dbab-0301-491e-9100-f01384068d4e,PRAVALIKA ALAKUNTLA,Kidlink School,Grade 7,Female,23KIS0266,0,0,,04f412dc-82b6-4f43-8c8c-404d637105c3
+review,KEEP?,90c380c6-308c-4eec-b28b-546c9dc58ef4,Yellabanti Manvitha,Kidlink School,Nursery,Male,26KLC160,0,0,,
+review,REVIEW,f9fb102b-b6c5-4efd-91ce-418543674653,ANVITH YELABANTI,Kidlink School,UKG,Male,25KLC0082,0,0,,90c380c6-308c-4eec-b28b-546c9dc58ef4
+review,KEEP?,cb70a17e-c14a-4995-9b1f-a120dd17330b,PURNITHA MUPPASANI,Kidlink School,Nursery,Female,25KLC0110,0,0,,
+review,REVIEW,6deb74e8-9e26-4ca4-98f8-46493b053076,Muppasani. Purnitha,Kidlink School,Nursery,Male,26KLC137,0,0,,cb70a17e-c14a-4995-9b1f-a120dd17330b
+review,KEEP?,812e1ca4-f514-4b7d-b3da-fb2c479e977d,Aarush A Kasabikatti,St. Andrews High School Suchitra,Grade 2,Male,24BP0357,1,0,Aarush A Kasabikatti,
+review,REVIEW,1d03213a-916e-4612-ab21-93946acc09fc,Ayush A Kasabikatti,St. Andrews High School Suchitra,Grade 5,Male,24BP0356,1,0,,812e1ca4-f514-4b7d-b3da-fb2c479e977d
+review,KEEP?,eb81d33e-7d08-4d01-b69d-b6d36b942c83,Anav Pentapati,St. Andrews High School Suchitra,Grade 3,Male,25BP0032,2,0,,
+review,REVIEW,37e03151-ad85-4baf-9964-5135fca1a6c4,Anvi Pentapati,St. Andrews High School Suchitra,Grade 8,Female,22BP1075,2,0,,eb81d33e-7d08-4d01-b69d-b6d36b942c83
+review,KEEP?,a9c079af-7083-4d6e-8976-67306797c447,ANUPATI ARYAN,St. Andrews High School Suchitra,Grade 10,Male,BP150778,2,0,ANUPATI ARYAN,
+review,REVIEW,5ca1d242-5fef-4d8c-9153-f34fbce427ed,ANUPATI ARYAN,St. Andrews High School Suchitra,Grade 10,Male,24BP0800,1,0,,a9c079af-7083-4d6e-8976-67306797c447
+review,KEEP?,7d67b5a6-34f8-43b9-a371-a675de1c38b2,Tashvi Aaradhya Molleti,Kidlink School,Grade 2,Female,22KIS0037,0,0,,
+review,REVIEW,33b413dc-e327-4a8e-ae39-eae98ddc388b,MOLLETI YASHVI AADHYA,Kidlink School,LKG,Female,25KIS0065,0,0,,7d67b5a6-34f8-43b9-a371-a675de1c38b2
+review,KEEP?,4b8ceed7-ce2f-42cc-bb89-a7594be3a92a,JOANNA SATEESH BHUPATHI RAJU,Kidlink School,Nursery,Female,25KDL0028,1,0,,
+review,REVIEW,623a8dce-5bcc-47d9-9334-dee894829019,JOANNA SATEESH BHUPATHI RAJU,Kidlink School,Nursery,Male,26KDL313041,0,0,,4b8ceed7-ce2f-42cc-bb89-a7594be3a92a
+review,KEEP?,29ec259b-5a5c-430c-ba34-e0d840402c10,PRATHVIK SAKURU,Kidlink School,Nursery,Male,25KDL0148,2,0,,
+review,REVIEW,639f471d-e543-4af0-a737-a7592a0ef1a6,PRATHVIK SAKURU,Kidlink School,Nursery,Male,26KDL313032,1,0,,29ec259b-5a5c-430c-ba34-e0d840402c10
+review,KEEP?,50e22273-d2f4-4124-b6fd-e60e99fb6e26,Kancharla. Hasvitha,Kidlink School,Nursery,Male,26KLC132,0,0,,
+review,REVIEW,8ca6e372-4b5d-450a-b734-9aef7e4a62a1,HASVITHA KANCHERLA,Kidlink School,Nursery,Female,24KLC0139,0,0,,50e22273-d2f4-4124-b6fd-e60e99fb6e26
+review,KEEP?,b853bc1e-03f4-4507-9cea-f8361d63925b,Aadya Reddy Pakala,Kidlink School,Nursery,Male,26KLC139,0,0,,
+review,REVIEW,9e70fe00-09de-4bb6-a4c6-b1f3f8abbf30,AADHYA REDDY PAKALA,Kidlink School,Nursery,Female,25KLC0111,0,0,,b853bc1e-03f4-4507-9cea-f8361d63925b
+review,KEEP?,7b29bcc8-edf3-4cc1-9b49-3df37af2fc9a,NISHIKA SAI MALLALA,Kidlink School,Nursery,Female,25KLC0102,0,0,,
+review,REVIEW,5774c132-82d5-4306-a651-1a6b72d3aaae,Mallala. Nishika Sri,Kidlink School,Nursery,Male,26KLC135,0,0,,7b29bcc8-edf3-4cc1-9b49-3df37af2fc9a
+review,KEEP?,64cc5984-15a6-4563-a9da-c4dfe5b4694e,Nishta Ragam,St. Andrews High School Suchitra,LKG,Female,25BP0470,2,0,Nishta Ragam,
+review,REVIEW,e43eeaf4-ace7-46ed-bf22-29f25c46d7ce,Niha Ragam,St. Andrews High School Suchitra,Grade 8,Female,25BP0066,1,0,Niha Ragam,64cc5984-15a6-4563-a9da-c4dfe5b4694e
+review,KEEP?,5c80d5b9-bc2e-43f9-9dbc-52b8335f9a05,Thouta Deekshitha Goud,St. Andrews High School Suchitra,Grade 11,Female,26BP0681,1,0,,
+review,REVIEW,d437230b-e0cc-4068-8ad9-f3be6afc1d01,DEEKSHITHA GOUD THOUTA,St. Andrews High School Suchitra,Grade 12,Female,SC250932,0,0,DEEKSHITHA GOUD THOUTA,5c80d5b9-bc2e-43f9-9dbc-52b8335f9a05
+review,KEEP?,d56ba276-fb0d-457b-878e-ad0cb208c902,Nayra Patnaik,St. Andrews High School Suchitra,Grade 2,Female,25BP0083,2,0,,
+review,REVIEW,f645cbe0-ed08-4f0b-8f40-5c80b910149a,Kayra Patnaik,St. Andrews High School Suchitra,Grade 2,Female,25BP0084,1,0,,d56ba276-fb0d-457b-878e-ad0cb208c902
+review,KEEP?,d15e8ee8-f1d0-4c3a-9cc4-d6d8732b83e6,SHAIK SAMEEL DANISH,St. Andrews High School Suchitra,Grade 11,Male,26BP0740,2,0,,
+review,REVIEW,6684f789-797c-454a-ba90-3529380f2e2b,SHAIK SAMEEL DANISH,St. Andrews High School Suchitra,Grade 10,Male,24BP0927,0,0,,d15e8ee8-f1d0-4c3a-9cc4-d6d8732b83e6
+review,KEEP?,021805cd-304b-48ea-adeb-2ff04e19e49d,TANUSH PERUMALLA,St Andrews School Keesara,Nursery,Male,26KS0245,1,0,,
+review,REVIEW,67537899-e881-4589-85c4-95896c3e1777,TANISH PERUMALLA,St Andrews School Keesara,Grade 1,Male,26KS0244,1,0,,021805cd-304b-48ea-adeb-2ff04e19e49d
+review,KEEP?,4e191833-e250-4f10-a462-ffa58c42dc8d,Joseph Immanuel,St Andrews School Keesara,Grade 6,Male,26KS0282,2,0,,
+review,REVIEW,2b4b2027-b1f2-43cf-8c23-48016503ebf0,Joseph Immanuel,St. Andrews High School Suchitra,Grade 6,Male,22BP0531,0,0,,4e191833-e250-4f10-a462-ffa58c42dc8d
+review,KEEP?,b6b06620-adc3-4305-82a1-4dfe79cad5b5,DEEKSHA KRITI NARAHARI,St. Michaels School,Grade 10,Female,23SMS1777,2,0,NARAHARI DEEKSHA KRITI,
+review,REVIEW,c017e87f-ffb6-4c39-a67d-713be953a008,DEEKSHA KRITI NARAHARI,St. Michaels School,Grade 10,Female,23SMS1879,1,0,DEEKSHA SANGA,b6b06620-adc3-4305-82a1-4dfe79cad5b5
+review,KEEP?,891adb4c-491e-4839-812f-b76485ce4ad7,ARAT AYUSH NISHANT,St Andrews School Keesara,Grade 10,Male,KS150411,1,0,ARAT AYUSH NISHANT,
+review,REVIEW,f94902a7-9463-4eec-a43d-d93c522af48b,ARAT AYUSH NISHANT,St Andrews School Keesara,Grade 10,Male,22KS0877,1,0,,891adb4c-491e-4839-812f-b76485ce4ad7
+review,KEEP?,bebae150-61c8-45d8-9309-8b9572bd6218,AAKASH KUMAR SINGH,St. Michaels School,Grade 11,Male,26SMS0394,1,0,,
+review,REVIEW,1d7542e8-6cb0-4d33-8056-a259e6a9f218,AAKASH KUMAR SINGH,St. Michaels School,Grade 10,Male,23SMS1909,0,0,,bebae150-61c8-45d8-9309-8b9572bd6218
+review,KEEP?,9380299c-d4d9-44f5-b4d2-c42ec254dc37,BETHAPUDI ARNAV CHOWDARY,St. Michaels School,Grade 1,Male,24SMS0567,0,0,,
+review,REVIEW,030b26a5-22c2-4cc2-bfe4-2e6f726109f2,BETHAPUDI ARVIN CHOWDARY,St. Michaels School,Grade 8,Male,23SMS1226,0,0,,9380299c-d4d9-44f5-b4d2-c42ec254dc37
+review,KEEP?,f5b9cac9-9e8a-4e38-8cd4-9fdd0f5f2d69,Aaruhi Kemedi,St. Andrews High School Suchitra,Grade 4,Female,22BP1949,3,0,Aaruhi Kemedi,
+review,REVIEW,080179f0-567e-4ba5-9676-f10bda78ce6c,Aarushi Kemedi,St. Andrews High School Suchitra,Grade 7,Female,22BP0842,1,0,Aarushi Kemedi,f5b9cac9-9e8a-4e38-8cd4-9fdd0f5f2d69
+review,KEEP?,22437894-7b4e-4af5-ab5e-a0182dd06e4c,Miraya Ojha,TIC TAC TOE - PN,Grade 1,Female,25TTT15,1,0,,
+review,REVIEW,2cd1fb3c-708c-4a5e-877b-2585feb97fd2,Miraya Ojha,TIC TAC TOE - PN,Nursery,Female,25TTTPN0040,0,0,Miraya,22437894-7b4e-4af5-ab5e-a0182dd06e4c
+review,KEEP?,e526a379-afa7-4c78-b8db-edfe62ab2149,Ritvee Sule Sule,TIC TAC TOE - PN,Grade 2,Male,25TTT52,1,0,,
+review,REVIEW,84f2c27f-0d85-4fd0-992c-d8d5d8c20359,Ritvee  Sule Sule,TIC TAC TOE - PN,LKG,Female,25TTTPN0032,0,0,Ritvee  Sule,e526a379-afa7-4c78-b8db-edfe62ab2149
+review,KEEP?,a363f63a-6368-49b0-9987-9a1dc6fe98fb,Adita Patra,TIC TAC TOE - PN,Grade 2,Female,25TTT56,1,0,,
+review,REVIEW,82b22b45-e52b-4e12-84f9-05ff792dbba8,Adita Patra,TIC TAC TOE - PN,LKG,Female,25TTTPN0062,0,0,Adita,a363f63a-6368-49b0-9987-9a1dc6fe98fb
+review,KEEP?,22ec580e-8805-49fb-aa57-360fdd11485a,Gaeul Chae,TIC TAC TOE - PN,Grade 2,Male,25TTT60,0,0,,
+review,REVIEW,8094b6e6-c1f7-452e-9e1f-573c668e1293,Gaeul Chae,TIC TAC TOE - PN,LKG,Female,25TTTPN0005,0,0,,22ec580e-8805-49fb-aa57-360fdd11485a
+review,KEEP?,e35036fa-ec60-41fa-9323-74f523fa2cc9,Sharvari Pahapalkar,TIC TAC TOE - PN,Grade 3,Male,25TTT65,1,0,,
+review,REVIEW,c715a020-e0c1-4a2c-92b2-0a199c325f19,Sharvari Pahapalkar,TIC TAC TOE - PN,UKG,Female,24TTTPN0027,0,0,Sharvari,e35036fa-ec60-41fa-9323-74f523fa2cc9
+review,KEEP?,13bd772f-610a-4b9a-8998-26805d72d3d2,Dhruva Bhadane,TIC TAC TOE - PN,Grade 1,Male,25TTT12,1,0,Dhruva,
+review,REVIEW,5be777ea-d8a5-46a8-a0a2-31f3227e50ec,Dhruva Badane,TIC TAC TOE - PN,Nursery,Female,25TTTPN0035,0,0,,13bd772f-610a-4b9a-8998-26805d72d3d2
+review,KEEP?,0f80f60d-7a63-4a77-8096-ab33211b64e2,Amalya Susan Jinu,St Andrews School Keesara,Grade 11,Female,KS260034,2,0,Amalya Susan Jinu,
+review,REVIEW,d2ef289b-a217-4c88-a8cf-fd8c06b1c88c,AMALYA SUSAN JINU,St Andrews School Keesara,Grade 10,Female,22KS1041,0,0,,0f80f60d-7a63-4a77-8096-ab33211b64e2
+review,KEEP?,14330569-ccc4-4ad7-9835-0582f658cc47,Arnav Chandel,Winmore Academy Whitefield,Grade 7,Male,23WMWF0261,4,0,Arnav Chandel,
+review,REVIEW,009036bb-cec4-49b1-b005-59eb9c153387,Aarav Chandel,Winmore Academy Whitefield,Grade 3,Male,23WMWF0320,4,0,Aarav Chandel,14330569-ccc4-4ad7-9835-0582f658cc47
+review,KEEP?,161dcd2d-a39f-47aa-94d1-ae1f552360d4,SAMAIRA SUNIL KAMMETA,St. Michaels School,Grade 4,Female,23SMS0432,1,0,SAMAIRA SUNIL KAMMETA,
+review,REVIEW,b4942471-fe88-4c6c-95ec-1ea665473155,SAMARTH SUNIL KAMMETA,St. Michaels School,LKG,Male,24SMS0585,0,0,,161dcd2d-a39f-47aa-94d1-ae1f552360d4
+review,KEEP?,cc12423e-bd1a-43de-83b1-8c5379db20b6,Aliza Abdul rahman,St. Andrews High School Suchitra,LKG,Female,25BP0028,3,0,,
+review,REVIEW,1c3c80b7-2ba3-4eae-957c-a283e8fe3cc7,ALINA ABDUL RAHMAN,St. Andrews High School Suchitra,Grade 4,Female,23BP0891,3,0,,cc12423e-bd1a-43de-83b1-8c5379db20b6
+review,KEEP?,1d0ce25d-683d-4ede-901d-882aeac83651,Krithik Gavireddi,St. Andrews High School Suchitra,Grade 5,Male,22BP0131,2,0,Krithik Gavireddi,
+review,REVIEW,a74aa769-d750-4d8d-b7c9-619b09b51b3c,GAVIREDDI KARTHIK,St. Andrews High School Suchitra,Grade 10,Male,BP221372,2,0,GAVIREDDI KARTHIK,1d0ce25d-683d-4ede-901d-882aeac83651
+review,KEEP?,c39a2f3d-0bce-441c-94e2-1249adff2656,ALLAM VIHAAN,St. Michaels School,Grade 5,Female,AW260210,1,0,ALLAM VIHAAN,
+review,REVIEW,f23895f8-c9f5-490e-94d2-f9545a833f86,Allam Vihaan,St. Andrews High School Suchitra,Grade 5,Male,22BP0192,0,0,,c39a2f3d-0bce-441c-94e2-1249adff2656
+review,KEEP?,a334e238-e9f1-4d29-982a-7c555fa08d7e,RISHAAN REMMERCE,St. Michaels School,Grade 8,Female,AW260252,1,0,RISHAAN REMMERCE,
+review,REVIEW,1f773d8f-e672-4208-b85a-558e294b5882,SHRIHAAN REMMERCE,St. Michaels School,Grade 5,Female,AW260254,1,0,SHRIHAAN REMMERCE,a334e238-e9f1-4d29-982a-7c555fa08d7e
+review,KEEP?,221d3668-9572-49c5-9013-08111faef34f,Ridhaav Rishabh Shah,St. Andrews High School Suchitra,Grade 6,Male,25BP0511,2,0,,
+review,REVIEW,dbb57ce6-ebd2-4fae-8274-c7ca767b9321,Ridhvvi Rishabh Shah,St. Andrews High School Suchitra,Grade 4,Female,25BP0512,1,0,,221d3668-9572-49c5-9013-08111faef34f
+review,KEEP?,813c3607-157a-412d-a677-7833094f9668,Aarav Ganguly,St. Andrews High School Suchitra,Grade 11,Male,SC260278,1,0,Aarav Ganguly,
+review,REVIEW,3f4bc820-dc78-435b-b3bc-5e0538eeb231,AARAV GANGULY,St. Andrews High School Suchitra,Grade 10,Male,22BP3030,0,0,,813c3607-157a-412d-a677-7833094f9668
+review,KEEP?,3c239113-5ace-4b9a-afdd-6d23d643e32b,NISHIL PENDYALA,St. Michaels School,Grade 7,Male,23SMS1062,1,0,NISHIL PENDYALA,
+review,REVIEW,5adaa219-f568-4dbb-9f37-1e1042e41d89,PENDYALA NIKHIL,St. Michaels School,Grade 6,Male,23SMS0884,1,0,,3c239113-5ace-4b9a-afdd-6d23d643e32b
+review,KEEP?,ad483550-f2f1-45eb-8aa6-5edb5ccdb521,Taksh Kothiya,Winmore Academy Whitefield,Grade 3,Male,24WMWF0021,2,0,,
+review,REVIEW,29936d64-1b87-485f-9767-89899771fec3,Yaksh Kothiya,Winmore Academy Whitefield,Grade 8,Male,23WMWF0093,2,0,,ad483550-f2f1-45eb-8aa6-5edb5ccdb521
+review,KEEP?,80f04391-c85f-4b2a-8aa4-1dc9c2a91237,MADHIREDDY INIKA,St Andrews School Keesara,LKG,Female,25KS0198,2,0,,
+review,REVIEW,2a10f529-8f6c-46a7-820d-df8ec97ef8da,Idikha Madhireddy,St Andrews School Keesara,LKG,Female,25KS0197,1,0,,80f04391-c85f-4b2a-8aa4-1dc9c2a91237
+review,KEEP?,f6cf4d5f-ecc2-4e9e-b833-2fae0c8390fe,ALINA FATHIMA,St. Andrews High School Suchitra,Grade 10,Female,BP160541,2,0,ALINA FATHIMA,
+review,REVIEW,2f5e5c11-0748-4641-97b5-2df43dfa43cf,ALIZA FATHIMA,St. Andrews High School Suchitra,UKG,Female,24BP0038,2,0,,f6cf4d5f-ecc2-4e9e-b833-2fae0c8390fe
+review,KEEP?,5bca601b-f6ac-4cbe-a2b8-f70658b1cf6b,Sai Dhaneesh Raj Ragula,St. Andrews High School Suchitra,Grade 8,Male,22BP1072,1,0,Sai Dhaneesh Raj Ragula,
+review,REVIEW,3055be40-dc38-4759-a396-b05aa5fc316d,Sai Ganesh Raj Ragula,St. Andrews High School Suchitra,Grade 5,Male,22BP0025,1,0,Sai Ganesh Raj Ragula,5bca601b-f6ac-4cbe-a2b8-f70658b1cf6b
+review,KEEP?,30a8f486-9f8e-4f81-821c-ae400270e50b,RATHOD PRATIKA,St. Andrews High School Suchitra,Grade 7,Female,24BP0104,3,0,,
+review,REVIEW,e183d647-1bf6-486b-b38e-7b9f93063496,RATHOD PRATIKSHA,St. Andrews High School Suchitra,Grade 9,Female,24BP0105,1,0,,30a8f486-9f8e-4f81-821c-ae400270e50b
+review,KEEP?,3267a05a-381e-41e8-8d6a-93105e218ba7,SAHASRA GODAVARTHI,St Andrews School Keesara,Grade 2,Female,23KS0192,1,0,,
+review,REVIEW,6b628f68-dd4d-44b2-bf3d-7cadc5d39364,SAHAS GODAVARTHI,St Andrews School Keesara,Grade 2,Male,23KS0191,1,0,,3267a05a-381e-41e8-8d6a-93105e218ba7
+review,KEEP?,a6507a1c-b7d0-4620-acba-0df27e47818d,Mohammed Hassan Ali,St Andrews School Keesara,Grade 5,Male,22KS0072,1,0,Mohammed Hassan Ali,
+review,REVIEW,33232a7a-b462-46e1-8ff7-b5a4c826eb5e,Mohammed Hussain Ali,St Andrews School Keesara,UKG,Male,25KS0279,1,0,,a6507a1c-b7d0-4620-acba-0df27e47818d
+review,KEEP?,abde9729-1e98-41f8-ae04-14b101367d7b,Rithwik Acharya Samudrala,St Andrews School Keesara,Grade 8,Male,KS260050,1,0,Rithwik Acharya Samudrala,
+review,REVIEW,fafbdde0-04a3-4b60-91a8-2c710950c889,Rithika Acharya Samudrala,St Andrews School Keesara,Grade 4,Female,KS260051,1,0,Rithika Acharya Samudrala - 1,abde9729-1e98-41f8-ae04-14b101367d7b
+review,KEEP?,bf53e2d0-d5cc-4994-b4e0-7280c62fe3f0,Sadhvi Reddy Panyala,St. Andrews High School Suchitra,Nursery,Female,26BP0843,1,0,,
+review,REVIEW,39423ff6-af92-4109-b935-5f31d9a19ccd,Saanvi Reddy Panyala,St. Andrews High School Suchitra,Nursery,Female,26BP0842,1,0,,bf53e2d0-d5cc-4994-b4e0-7280c62fe3f0
+review,KEEP?,74bb9318-556e-477d-9ef2-c1560e418554,Rithik Vaddi,St. Andrews High School Suchitra,Grade 8,Male,22BP0934,1,0,Rithik Vaddi,
+review,REVIEW,39d3104c-18c3-4534-b894-236b7eb2d73c,Rishik Vaddi,St. Andrews High School Suchitra,Grade 8,Male,22BP0926,1,0,Rishik Vaddi,74bb9318-556e-477d-9ef2-c1560e418554
+review,KEEP?,3b0ffd6c-39dd-4bf4-8a53-6eb1fd831094,Aarnya Chaubey,St. Andrews High School Suchitra,Grade 11,Male,26BP0580,1,0,,
+review,REVIEW,80c85282-a766-48b4-aab5-e75b655167e7,AARNYA CHAUBEY,St. Andrews High School Suchitra,Grade 10,Male,22BP3284,0,0,,3b0ffd6c-39dd-4bf4-8a53-6eb1fd831094
+review,KEEP?,ba3a150d-edf2-4484-984a-f86d28500b78,Sriman Reddy Mandala,St. Andrews High School Suchitra,Grade 8,Male,22BP1092,1,0,Sriman Reddy Mandala,
+review,REVIEW,455c9299-502b-4c1d-938f-56a3878df774,Sriyan Reddy Mandala,St. Andrews High School Suchitra,Grade 4,Male,22BP1937,1,0,,ba3a150d-edf2-4484-984a-f86d28500b78
+review,KEEP?,45bf73e9-ea35-4085-b667-06cc3ba29d42,Aradhya Srikant,St. Andrews High School Suchitra,Grade 5,Female,22BP0052,1,0,Aradhya Srikant,
+review,REVIEW,22b96e11-d478-4755-b7ab-1e7b07ba1c42,AADITHYA SRIKANT,St. Andrews High School Suchitra,Grade 10,Male,22BP3333,0,0,,45bf73e9-ea35-4085-b667-06cc3ba29d42
+review,KEEP?,3f9b7a22-739a-4fcc-9b78-0de63c08b3aa,Anaya Ramprakash Singh,Crimson Anisha School- LR CBSE,Grade 6,Female,25CAG10116,1,0,Anaya Ramprakash Singh,
+review,REVIEW,d844529e-7250-468c-a306-3fdcedee24ec,Anika Ramprakash Singh,Crimson Anisha School- LR CBSE,Grade 1,Female,25CAG10121,1,0,Anika Ramprakash Singh,3f9b7a22-739a-4fcc-9b78-0de63c08b3aa
+review,KEEP?,f3d6a86c-b763-4503-a366-0f0f585b354f,ANSH akshay khandare,Crimson Anisha School- LR CBSE,Grade 1,Male,26CAG10242,1,0,ANSH akshay khandare,
+review,REVIEW,e93fb6a4-821b-4878-8fa3-e53b529cad22,Anvi akshay khandare,Crimson Anisha School- LR CBSE,Grade 1,Female,26CAG10240,1,0,Anvi akshay khandare,f3d6a86c-b763-4503-a366-0f0f585b354f
+review,KEEP?,62f15d6d-2854-4d47-99a5-39eb9c972213,NITHISH KUMAR HANCHINAL,Winmore Academy Jakkur,Grade 11,Male,26WMJK0256,0,0,,
+review,REVIEW,0bdf4391-255f-4f32-96bd-cbfe12a29590,NITISH KUMAR HANCHINAL,Winmore Academy Jakkur,Grade 10,Male,23WMJK0456,0,0,,62f15d6d-2854-4d47-99a5-39eb9c972213
+review,KEEP?,e42e128e-b071-4075-ac71-d52164a3098c,AARAV Singh THAKUR,Crimson Anisha School- LR CBSE,Grade 6,Male,23CAG10223,1,0,AARAV Singh THAKUR,
+review,REVIEW,5adcf99e-3698-43ee-bbd7-dea05fe9b95b,AARYAN SINGH THAKUR,TTT LR,UKG,Male,24CAG10466,1,0,AARYAN SINGH THAKUR,e42e128e-b071-4075-ac71-d52164a3098c
+review,KEEP?,35c66646-d668-40bb-b8c9-a38fde66f231,KAVYA TYAGI,Crimson Anisha School- LR CBSE,Grade 3,Female,26CAG10401,1,0,KAVYA TYAGI,
+review,REVIEW,9ff5b9c2-62e7-494d-b081-299e57ef7bf7,Navya Tyagi,Crimson Anisha School- LR CBSE,Grade 6,Female,26CAG10405,1,0,Navya Tyagi,35c66646-d668-40bb-b8c9-a38fde66f231
+review,KEEP?,6394ad88-943e-420f-a7bf-59b3334debbd,Akshit Reddy Dandiyala,St. Andrews High School Suchitra,Grade 4,Male,22BP1956,3,0,Akshit Reddy Dandiyala,
+review,REVIEW,f11d2388-cc0a-49c1-91d3-467844a42773,Ashrith Reddy Dandiyala,St. Andrews High School Suchitra,Grade 5,Male,22BP0248,2,0,Ashrith Reddy Dandiyala,6394ad88-943e-420f-a7bf-59b3334debbd
+review,KEEP?,c5ea50bb-2e0f-4ff9-8a22-872f1f9c8204,BANDI SAHAS PRAJVAL,St. Michaels School,Grade 6,Male,24SMS0598,5,0,,
+review,REVIEW,6aa4ca2d-c201-4e7d-9fa5-e5c79f5c1eee,BANDI SUHAS PRAJVAL,St. Michaels School,Grade 7,Male,24SMS0599,2,0,,c5ea50bb-2e0f-4ff9-8a22-872f1f9c8204
+review,KEEP?,cf6bee72-8425-4f02-938a-566bab96d56d,Rumaisah Sohaib Khan,St. Andrews High School Suchitra,Grade 4,Female,22BP2011,3,0,,
+review,REVIEW,74451ec1-4797-4093-b63f-f6793181dc02,Rufaidah Sohaib Khan,St. Andrews High School Suchitra,Grade 3,Female,22BP1836,1,0,,cf6bee72-8425-4f02-938a-566bab96d56d
+review,KEEP?,fe3edff2-872d-4acd-8666-6a507f5ddfad,Aanya Sharma,Crimson Anisha School- LR CBSE,Grade 5,Female,22CAG10303,0,0,Aanya Sharma - 1,
+review,REVIEW,f30cd3cc-9fd4-4bff-892d-b1d094667a2e,AADYA SHARMA,Crimson Anisha School- LR CBSE,Grade 4,Female,23CAG10654,0,0,AADYA SHARMA,fe3edff2-872d-4acd-8666-6a507f5ddfad
+review,KEEP?,e501c415-bd26-423e-91f7-b27a8b035aa8,Shaik Mohammed Affan Hussain,St. Andrews High School Suchitra,Grade 6,Male,22BP0483,3,0,Shaik Mohammed Affan Hussain,
+review,REVIEW,c71c7e37-3359-4de2-9a7c-fd05519c78d8,Shaik Mohammed Ayaan Hussain,St. Andrews High School Suchitra,Grade 8,Male,22BP1189,2,0,Shaik Mohammed Ayaan Hussain,e501c415-bd26-423e-91f7-b27a8b035aa8
+review,REVIEW,75550c9a-9432-4609-a083-cb21d92f98bc,SHAIK MOHAMMED AZAAN HUSSAIN,St. Andrews High School Suchitra,UKG,Male,25BP0001,2,0,,e501c415-bd26-423e-91f7-b27a8b035aa8
+review,KEEP?,d5f4a9d5-3be9-41be-9174-d8a072df2c6d,Ridhaan. M,TSUS Chennai,Grade 4,Male,20199,1,0,Ridhaan. M,
+review,REVIEW,b025f21d-adf5-45aa-94c6-df4e47e23d0d,Rihaan. M,TSUS Chennai,Grade 4,Male,20200,1,0,Rihaan. M,d5f4a9d5-3be9-41be-9174-d8a072df2c6d
+review,KEEP?,6374cd59-4ef9-4144-aed1-58ca0fc27dc5,SYED MOHAMMAD TAMIM IQBAL,Crimson Anisha School- NIBM CBSE,Grade 6,Male,26CAG20222,1,0,SYED MOHAMMAD TAMIM IQBAL,
+review,REVIEW,9541325c-50ce-4890-8eac-6c5119d5170e,SYED MOHAMMAD TABIB IQBAL,Crimson Anisha School- NIBM CBSE,Grade 12,Male,26CAG20220,0,0,SYED MOHAMMAD TABIB IQBAL,6374cd59-4ef9-4144-aed1-58ca0fc27dc5
+review,KEEP?,d170037c-8944-44f9-9376-9377c1dd86b7,DEVALAPALLY AADHYA,St. Andrews High School Suchitra,Grade 4,Female,24BP0526,3,0,,
+review,REVIEW,7936cb30-51c3-4cc0-91d3-6fa01d5e6c94,DEVALAPALLY AARADHYA,St. Andrews High School Suchitra,Grade 5,Female,24BP0527,1,0,,d170037c-8944-44f9-9376-9377c1dd86b7
+review,KEEP?,f0ccc66c-da20-41db-86ac-5f252aaedf43,Sadu Haridev Siddharth Naidu,Quantum Leap School,Grade 1,Male,26QLS0077,5,0,Sadu Haridev Siddharth Naidu,
+review,REVIEW,54785ead-199e-4631-864d-734b107a9a4e,SADU HARIDEV SIDDHARTH NAIDU,Kidlink School,Grade 1,Male,25KDL0089,0,0,SADU HARIDEV SIDDHARTH NAIDU - 1,f0ccc66c-da20-41db-86ac-5f252aaedf43
+review,KEEP?,b3bf709f-113b-4133-9c39-6437aadc3ea2,Meddhansh Sai Yarlagadda,St. Andrews High School Suchitra,Grade 4,Male,SC260363,2,0,Meddhansh Sai Yarlagadda,
+review,REVIEW,90ebe95d-e85a-4c8f-895d-054bfa6c5f28,Meddhansh Sai Yarlagadda,Winmore Academy Whitefield,Grade 3,Male,24WMWF0059,0,0,,b3bf709f-113b-4133-9c39-6437aadc3ea2
+review,KEEP?,1c5fb2a7-8a0c-4a9e-b4ec-732b73f0b605,Ishith Kalloji,St. Andrews High School Suchitra,Nursery,Male,SC260004,1,0,Ishith Kalloji,
+review,REVIEW,8093180a-c333-491b-9da6-f0c7e7239abb,ISHITA KALLOJI,St. Andrews High School Suchitra,Grade 2,Female,23BP0041,1,0,,1c5fb2a7-8a0c-4a9e-b4ec-732b73f0b605
+review,KEEP?,c0d3a5ca-fecf-48b2-89f4-1e3cfa47b693,REGULAGADDA ROMAN OLIVER,St. Michaels School,Grade 6,Male,23SMS0820,4,0,,
+review,REVIEW,80bfee13-8af8-43d0-94c7-b9abd45b681d,REGULAGADDA RYAN OLIVER,St. Michaels School,Grade 4,Male,23SMS0344,2,0,,c0d3a5ca-fecf-48b2-89f4-1e3cfa47b693
+review,KEEP?,c97bb58a-37c6-41a0-8e2f-b4d133d014a7,Sai sri vaishnav govindapuram,St. Andrews High School Suchitra,Nursery,Male,SC260192,1,0,Sai sri vaishnav govindapuram,
+review,REVIEW,38da76c2-348a-4729-83ea-ed81c6060810,Sai sri vaishnavi govindapuram,St. Andrews High School Suchitra,Nursery,Female,SC260193,1,0,Sai sri vaishnavi govindapuram,c97bb58a-37c6-41a0-8e2f-b4d133d014a7
+review,KEEP?,90199350-cc09-4f46-b382-775995bff065,GOPU ASHRITH,St. Michaels School,LKG,Male,25SMS0081,2,0,GOPU ASHRITH,
+review,REVIEW,40637291-e08f-4a6c-aa49-4026ee638ca9,GOPU ASHVITH,St. Michaels School,LKG,Male,25SMS0080,1,0,GOPU ASHVITH,90199350-cc09-4f46-b382-775995bff065
+review,KEEP?,ffd1ec60-0b52-4dbd-91b0-136ac563dcfa,Talluri Sai Praneetha,St Andrews School Keesara,Grade 6,Female,26KS0261,1,0,,
+review,REVIEW,deeb39ce-3213-4f52-93fc-4d3ebab0ca20,Sai Praneetha Talluri,Crimson Anisha School- LR CIE,Grade 6,Female,24CAG10449,0,0,,ffd1ec60-0b52-4dbd-91b0-136ac563dcfa
+review,KEEP?,89004c09-d7ec-490b-85a2-6c7dda1e4b96,Talluri Venkata Nagha Khashyap,St Andrews School Keesara,LKG,Male,26KS0262,1,0,,
+review,REVIEW,27b75b1b-0584-4ed5-a615-876cc659bf0e,Talluri Venkata nagha khashyap,TTT LR,LKG,Male,25CAG10562,0,0,,89004c09-d7ec-490b-85a2-6c7dda1e4b96
+review,KEEP?,c08073fc-5260-4679-8be1-b1d340ca3715,Swara Vijay Mali,Crimson Anisha School- LR CBSE,Grade 7,Female,22CAG10150,1,0,Swara Vijay Mali,
+review,REVIEW,05339980-325d-4ffb-b42e-e07b9cf7c431,Sara Vijay Mali,Crimson Anisha School- LR CBSE,Grade 3,Female,22CAG10285,1,0,Sara Vijay Mali,c08073fc-5260-4679-8be1-b1d340ca3715
+review,KEEP?,cbbd80ac-3f20-4127-93a7-ed66f68b6b2f,Sridhi Gadam,St. Andrews High School Suchitra,Grade 4,Female,22BP1904,1,0,Sridhi Gadam,
+review,REVIEW,968c0605-a4b1-40f7-9fe3-8f79bab683d0,Srinidhi Gadam,St. Andrews High School Suchitra,Grade 9,Female,22BP2448,1,0,,cbbd80ac-3f20-4127-93a7-ed66f68b6b2f
+review,KEEP?,c6dea744-d55b-45d8-80c2-0feb1cef64a7,MADICHARLA ADITYA RAO,St. Andrews High School Suchitra,Grade 10,Male,22BP2514,2,0,MADICHARLA ADITYA RAO,
+review,REVIEW,1156f6a8-a41c-453f-801a-10df73449159,Advaitha Rao Madicharla,St. Andrews High School Suchitra,Grade 1,Female,26BP0909,1,0,,c6dea744-d55b-45d8-80c2-0feb1cef64a7
+review,KEEP?,a0816303-5355-41ee-a974-83b82c0b1287,BALEMLA VARSHITH REDDY,St. Andrews High School Suchitra,Grade 10,Male,22BP2644,0,0,BALEMLA VARSHITH REDDY,
+review,REVIEW,f2fea99b-f8bf-42ef-a563-a43a5fa4b85e,BALEMLA VARSHA REDDY,St. Andrews High School Suchitra,Grade 10,Female,22BP2636,0,0,BALEMLA VARSHA REDDY,a0816303-5355-41ee-a974-83b82c0b1287
+review,KEEP?,ccf4682f-9521-4653-a365-52148b90a680,AGANYA PRAVIN HUSHANGABADE,St. Andrews High School Suchitra,Grade 5,Female,24BP0391,1,0,,
+review,REVIEW,a11344b5-710d-4220-ae12-6b3e01a2d82d,AGASTYA PRAVIN HUSHANGABADE,St. Andrews High School Suchitra,Grade 7,Male,24BP0378,1,0,,ccf4682f-9521-4653-a365-52148b90a680
+review,KEEP?,b5265de6-16e8-44fc-9e75-fba14554b547,HARSHIT PRAVEEN PATHAK,TTT LR,UKG,Male,24CAG10492,1,0,HARSHIT PRAVEEN PATHAK,
+review,REVIEW,47daf8b1-d2d5-4082-9ef4-1bcb27afe0e7,Harshita Praveen Pathak,Crimson Anisha School- LR CIE,Grade 6,Female,22CAG10523,1,0,Harshita Praveen Pathak,b5265de6-16e8-44fc-9e75-fba14554b547
+review,KEEP?,bebdd1ab-1052-4a15-ab32-dd16df097f63,Thakur Aadrith Singh,St. Andrews High School Suchitra,Grade 5,Male,22BP0056,1,0,Thakur Aadrith Singh,
+review,REVIEW,a3e6631b-26ba-421e-92ca-3af613541fa1,THAKUR AADVITH SINGH,St. Andrews High School Suchitra,Grade 2,Male,23BP0090,1,0,,bebdd1ab-1052-4a15-ab32-dd16df097f63
+review,KEEP?,dbcee59a-2827-401d-8cd4-99846bc6e7fe,Sawali Vitthal khandagale,Crimson Anisha School- NIBM CBSE,Grade 9,Female,25CAG20391,1,0,Sawali Vitthal khandagale,
+review,REVIEW,1ec8fe24-89be-41ab-93e0-14192de14f65,Sai Vitthal Khandagale,Crimson Anisha School- NIBM CBSE,Grade 12,Female,25CAG20445,0,0,Sai Vitthal Khandagale,dbcee59a-2827-401d-8cd4-99846bc6e7fe
+review,KEEP?,19c93069-14d5-4a54-bd9d-aa8d98729304,Aerpula Hrithika,St Andrews School Keesara,Grade 6,Female,22KS0169,1,0,Aerpula Hrithika,
+review,REVIEW,a9d388c0-f932-456a-a2be-d3d4af6c56cb,Aerpula Dhruthika,St Andrews School Keesara,Grade 7,Female,22KS0292,1,0,Aerpula Dhruthika,19c93069-14d5-4a54-bd9d-aa8d98729304
+review,KEEP?,4a531138-057b-4c5a-81fb-c6af619bb133,RUTVIK SHIVAJI GARANDE,Crimson Anisha School- NIBM CBSE,Grade 2,Male,26CAG20078,1,0,RUTVIK SHIVAJI GARANDE,
+review,REVIEW,a42afb3a-6d92-4b7b-bc57-36279043dfff,SATVIK SHIVAJI GARANDE,Crimson Anisha School- NIBM CBSE,Grade 7,Male,26CAG20077,1,0,SATVIK SHIVAJI GARANDE,4a531138-057b-4c5a-81fb-c6af619bb133
+review,KEEP?,2982b74e-32fd-45ef-abcc-5c821348736c,Ananya Tiwari,St Andrews School Keesara,Grade 11,Female,26KS0311,2,0,,
+review,REVIEW,5780065c-2de7-421e-91f8-ce9ecc97c0db,ANANYA TIWARI,St Andrews School Keesara,Grade 10,Female,22KS0990,0,0,,2982b74e-32fd-45ef-abcc-5c821348736c
+review,KEEP?,62a1906f-4750-4725-a364-94cc544b69f7,KOPPULA VIVAAN,St. Michaels School,Grade 2,Male,AW260135,1,0,KOPPULA VIVAAN,
+review,REVIEW,c170f3fe-5329-403c-ba2f-3816b8c3826e,KOPPULA VIHAAN,St. Michaels School,UKG,Male,AW260136,1,0,,62a1906f-4750-4725-a364-94cc544b69f7
+review,KEEP?,1ac874f1-fedb-4fc7-bdf6-f3657ce54d22,RIDAH FATHIMA,St. Michaels School,Grade 11,Female,26SMS0101,0,0,,
+review,REVIEW,b1c37d61-b4fd-4b8f-a754-eda4c5934bed,NIDAH FATHIMA,St. Michaels School,Grade 8,Female,24SMS0313,0,0,,1ac874f1-fedb-4fc7-bdf6-f3657ce54d22
+review,KEEP?,bee8b0eb-d43a-4a9b-9be6-47ab0c339fcf,Parmarigari Arelin Grace,St Andrews School Keesara,Grade 4,Female,22KS0649,2,0,Parmarigari Arelin Grace,
+review,REVIEW,f78bceaf-3a89-4d33-9bd9-538da42921d8,Parmarigari Avelin Grace,St Andrews School Keesara,Grade 8,Female,22KS0466,2,0,Parmarigari Avelin Grace,bee8b0eb-d43a-4a9b-9be6-47ab0c339fcf
+review,KEEP?,1c87195a-9400-4ea6-9b84-17c2fc16a844,MANHA ALI SHAIK,Winmore Academy Jakkur,Grade 9,Male,25WMJK0162,2,0,MANHA ALI SHAIK,
+review,REVIEW,d3705035-25b0-48ed-b138-9ea13ca1cc50,MADIHA ALI SHAIK,Winmore Academy Jakkur,Grade 6,Female,25WMJK0161,2,0,,1c87195a-9400-4ea6-9b84-17c2fc16a844
+review,KEEP?,e87b00eb-26df-47a5-8555-222c3481e77a,UVIKSHA SALAVATH,St. Michaels School,Grade 4,Female,26SMS0415,1,0,,
+review,REVIEW,c510257b-8a8a-4d22-b02f-f08ccc62cb8f,SALAVATH UDVIKSHA,St. Michaels School,Grade 6,Female,26SMS0414,1,0,,e87b00eb-26df-47a5-8555-222c3481e77a
+review,KEEP?,cc84ef39-9dbf-48fc-b35e-4e38c2780647,Zayn Muhammed Siddik,Winmore Academy Whitefield,Grade 2,Male,25WMWF0015,1,0,,
+review,REVIEW,c5622460-fecb-409f-89c7-1c0b879d953b,Zidan Muhammed Siddik,Winmore Academy Whitefield,Grade 4,Male,23WMWF0280,0,0,Zidan Muhammed Siddik,cc84ef39-9dbf-48fc-b35e-4e38c2780647
+review,KEEP?,b8480e12-8f22-4fca-8d50-e07ef6d83f93,Pranav N M,Winmore Academy Whitefield,Grade 10,Male,WF220021,2,0,Pranav N M,
+review,REVIEW,fb294a65-39f3-4fe7-8369-a9037b53baed,Pranav N M,Winmore Academy Whitefield,Grade 10,Male,23WMWF0230,1,0,,b8480e12-8f22-4fca-8d50-e07ef6d83f93
+review,KEEP?,d3d6acfd-dad9-4880-989d-f7eb1dd3effd,Shivaansh Nahar,St. Andrews High School Suchitra,Grade 2,Male,26BP0637,1,0,,
+review,REVIEW,57e477f7-5991-4754-8d7d-7fdf0568c2ba,Shivaansh Nahar,TSUS Chennai,Grade 2,Male,23032,0,0,Shivaansh Nahar - 1,d3d6acfd-dad9-4880-989d-f7eb1dd3effd
+review,KEEP?,6fa558ba-ed36-4483-ad98-39d60fd622ba,Anchal,St. Andrews High School Suchitra,Grade 9,Female,123456,0,0,Anchal - 1,
+review,REVIEW,c7485c4e-a365-4368-ab05-961d9cde6f89,Aanchal,TSUS Chennai,Grade 3,Female,1012,0,0,,6fa558ba-ed36-4483-ad98-39d60fd622ba
+review,KEEP?,dd2a638d-44b1-4f0d-8513-cada744ba683,ABDUL ARMAAN KHAN,St. Michaels School,Grade 6,Male,25SMS0443,0,0,,
+review,REVIEW,1d33fb27-f2c7-44d6-b479-f028d7320d1a,ABDUL AYAAN KHAN,St. Michaels School,Grade 5,Male,25SMS0442,0,0,,dd2a638d-44b1-4f0d-8513-cada744ba683
+review,KEEP?,d7b0c287-5bd0-4d36-858c-df2f9eb02574,AARAV Shukla,Winmore Academy Jakkur,Grade 1,Male,25WMJK0022,3,0,AARAV Shukla,
+review,REVIEW,6dda40a6-12f2-4ca9-88a4-e2eea0bdd082,Aarna Shukla,Winmore Academy Jakkur,Grade 4,Male,23WMJK0119,2,0,Aarna Shukla,d7b0c287-5bd0-4d36-858c-df2f9eb02574
+review,KEEP?,f987973f-00c1-4a25-b450-bd5dc03fbcde,PRUTHWIK POREDDY,Winmore Academy Jakkur,Grade 11,Male,26WMJK0032,2,0,,
+review,REVIEW,3a37fcee-f35b-4b96-8c40-612518db7779,PRUTHWIK POREDDY,Winmore Academy Jakkur,Grade 10,Male,23WMJK0449,0,0,,f987973f-00c1-4a25-b450-bd5dc03fbcde
+review,KEEP?,63c7747d-df9d-4aac-9892-9fec851d8c90,Aarya Gaurav Kumar SINGH,TTT LR,LKG,Female,24CAG10214,1,0,Aarya Gaurav Kumar SINGH,
+review,REVIEW,60968422-1a6f-4f58-a044-d8379ebd5566,Aarav Gaurav Kumar SINGH,Crimson Anisha School- LR CIE,Grade 1,Male,24CAG10213,1,0,Aarav Gaurav Kumar SINGH - 1,63c7747d-df9d-4aac-9892-9fec851d8c90
+review,KEEP?,3e2588d2-566d-4919-934d-019be8a276fe,Rishisekhar Reddy C B,St Andrews School Keesara,Grade 7,Male,KS260088,1,0,Rishisekhar Reddy C B,
+review,REVIEW,e913ee47-f4f8-4d9d-abea-ecb68ac4f743,C B Rishi Sekhar Reddy,St. Andrews High School Suchitra,Grade 7,Male,25BP0229,1,0,,3e2588d2-566d-4919-934d-019be8a276fe
+review,KEEP?,ec5973f3-23cc-4435-be9b-a5fd6e5f9228,Pemmaka Dhrithi Reddy,St Andrews School Keesara,Grade 7,Female,22KS0324,2,0,Pemmaka Dhrithi Reddy,
+review,REVIEW,ec282d49-31d4-4b52-afe9-ecab4adcedac,Pemmaka Dhrithi Reddy,St. Andrews High School Suchitra,Grade 7,Female,26BP0781,0,0,,ec5973f3-23cc-4435-be9b-a5fd6e5f9228
+review,KEEP?,5bceda47-3106-4e91-b98f-8f7d2d02aa3f,Nida Harmain,Winmore Academy Jakkur,Grade 11,Male,26WMJK0220,1,0,,
+review,REVIEW,362a3fd4-0444-44c6-982a-d8ba80f030ae,Nida Harmain,Winmore Academy Jakkur,Grade 10,Female,25WMJK0242,0,0,,5bceda47-3106-4e91-b98f-8f7d2d02aa3f
+review,KEEP?,aa42c1ef-645b-477f-b268-0481774ddf07,LEKKALA VIHANVI REDDY,The Celestiia School,Grade 4,Female,26TCS0106,3,0,,
+review,REVIEW,131e985d-96f5-4c38-80ea-52b452754036,VIHANSH REDDY LEKKALA,The Celestiia School,UKG,Male,26TCS0107,3,0,,aa42c1ef-645b-477f-b268-0481774ddf07
+review,KEEP?,8178b427-5613-4fc5-9de7-bd426122726c,Noorvi Kumbhar,TIC TAC TOE - PN,Nursery,Female,24TTTPN0016,2,0,,
+review,REVIEW,42bb62cf-e156-4bed-a5f1-27257de03d29,Noorvi Kumbhar,TIC TAC TOE - PN,Grade 2,Female,25TTT40,0,0,,8178b427-5613-4fc5-9de7-bd426122726c
+review,KEEP?,cb098686-ab51-4262-907c-2db852e85ec5,Archana,St. Michaels School,Grade 6,Male,456782,1,0,,
+review,REVIEW,8b1cbe1c-de40-4318-92b8-738d3c87337d,ARCHANA-12,St. Michaels School,Grade 7,Female,1117,1,0,,cb098686-ab51-4262-907c-2db852e85ec5
+review,REVIEW,ad466473-4ca5-457d-a537-221ce1b29b6b,Archana,The Celestiia School,Grade 2,Female,CELES20263,0,0,,cb098686-ab51-4262-907c-2db852e85ec5
+review,KEEP?,db32bb26-b40f-4409-8104-bc87126a78f3,Albert John Mavely,Winmore Academy Whitefield,Grade 10,Male,WF210036,3,0,Albert John Mavely,
+review,REVIEW,c69df56d-dd64-428f-9c06-4c72f7d647c6,Albert John Mavely,Winmore Academy Whitefield,Grade 10,Male,23WMWF0198,2,0,,db32bb26-b40f-4409-8104-bc87126a78f3
+review,KEEP?,9e1649de-882c-4662-9e14-081f55e2c987,N Uttaramruta,Winmore Academy Whitefield,Grade 1,Male,WF250129,1,0,N Uttaramruta,
+review,REVIEW,242a5ce3-de00-425c-aa3e-a10fc2828369,N Uttaramruta,Winmore Academy Whitefield,Grade 1,Female,26WMWF0014,0,0,,9e1649de-882c-4662-9e14-081f55e2c987
+review,KEEP?,e81a25da-9828-4bae-b61a-1858a66fe2cc,Fathima Zehra P S,Winmore Academy Whitefield,Grade 8,Female,23WMWF0094,0,0,,
+review,REVIEW,ac22d333-7da7-43c1-9858-f44ebbe4da5a,Fathima Zehra P S,Winmore Academy Whitefield,Grade 9,Female,WF190040,0,0,,e81a25da-9828-4bae-b61a-1858a66fe2cc
+review,KEEP?,af9a65bd-bb8a-415c-8912-17b0c3ae5929,Tathoi Das,Winmore Academy Whitefield,Grade 10,Male,WF200059,1,0,Tathoi Das,
+review,REVIEW,16fe9b68-516f-4b46-9f05-21e02034a4dc,Tathoi Das,Winmore Academy Whitefield,Grade 10,Female,23WMWF0165,1,0,,af9a65bd-bb8a-415c-8912-17b0c3ae5929
+review,KEEP?,2ac49318-991c-4daa-9e21-747c98637321,Jeevitha K,Winmore Academy Whitefield,Grade 11,Female,WF170075,0,0,Jeevitha K,
+review,REVIEW,6ba025a9-4b76-475a-a901-ba4e91289cf1,Jeevitha K,Winmore Academy Whitefield,Grade 10,Female,23WMWF0025,0,0,,2ac49318-991c-4daa-9e21-747c98637321
+review,KEEP?,221d55c3-6a74-456d-bd72-a0b81021a23e,Nihal H Talawar,Winmore Academy Whitefield,Grade 3,Male,WF260089,1,0,Nihal H Talawar,
+review,REVIEW,b4c6cba9-28ee-4e15-8daf-25bd99479d7e,Nihal H Talawar,Winmore Academy Whitefield,Grade 2,Male,25WMWF0037,0,0,,221d55c3-6a74-456d-bd72-a0b81021a23e
+review,KEEP?,c8d7d615-99ba-4038-a9b5-bc574ca0115d,AARAV ARUNDAS,Winmore Academy Jakkur,Grade 11,Male,26WMJK0262,0,0,,
+review,REVIEW,769287f1-4de5-44d2-9904-ecaf451ba134,AARAV ARUNDAS,Winmore Academy Jakkur,Grade 10,Male,23WMJK0442,0,0,,c8d7d615-99ba-4038-a9b5-bc574ca0115d
+review,KEEP?,76b68baa-8b29-4989-90b8-5c5a76ae0d38,ANUJ NAMBIAR KALYADAN,Winmore Academy Jakkur,Grade 8,Male,23WMJK0357,1,0,ANUJ NAMBIAR KALYADAN,
+review,REVIEW,102f8750-55cd-4e5b-b442-f669c9079955,ANSH NAMBIAR KALYADAN,Winmore Academy Jakkur,Grade 10,Male,23WMJK0440,0,0,,76b68baa-8b29-4989-90b8-5c5a76ae0d38
+review,KEEP?,8575b39f-dea7-40c8-813c-646bcba8b0de,Annistha Roy Chowdhury,Winmore Academy Jakkur,Grade 10,Female,23WMJK0438,0,0,,
+review,REVIEW,264ee432-895b-4e0b-98c1-2d156baff8ff,Annistha Roy Chowdhury,Winmore Academy Jakkur,Grade 11,Female,26WMJK0163,0,0,,8575b39f-dea7-40c8-813c-646bcba8b0de
+review,KEEP?,83d11638-a5f1-4131-9e27-8ad41ed647ff,CHARUVRAT REDDY HV,Winmore Academy Jakkur,Grade 11,Male,26WMJK0065,0,0,CHARUVRAT REDDY HV,
+review,REVIEW,4c0278b2-d513-464e-bc89-b10857889d0a,CHARUVRAT REDDY H V,Winmore Academy Jakkur,Grade 10,Male,23WMJK0441,0,0,,83d11638-a5f1-4131-9e27-8ad41ed647ff
+review,KEEP?,2775645a-33c1-411b-953d-a5620b84e00b,ESTHER PREETI UTARID,Winmore Academy Jakkur,Grade 11,Female,26WMJK0103,3,0,,
+review,REVIEW,fe69c3c1-822a-45fe-bd37-32d4f2347cc7,ESTHER PREETI UTARID,Winmore Academy Jakkur,Grade 10,Female,23WMJK0455,0,0,,2775645a-33c1-411b-953d-a5620b84e00b
+review,KEEP?,46283d65-f495-4040-9ccf-4518972a2aa2,ETHAN LEO LOBO,Winmore Academy Jakkur,Grade 10,Male,23WMJK0434,0,0,,
+review,REVIEW,1cd9a205-feac-43f3-b2db-fb23a747e663,ETHAN LEO LOBO,Winmore Academy Jakkur,Grade 11,Male,26WMJK0057,0,0,,46283d65-f495-4040-9ccf-4518972a2aa2
+review,KEEP?,f3505444-df1c-4a9c-834f-7a17c1fd97de,Jaideep Venkatramaraj.G.N,Winmore Academy Jakkur,Grade 11,Male,26WMJK0205,2,0,,
+review,REVIEW,354018e5-388c-420d-aabd-90a9a39ae53a,Jaideep Venkataramaraj GN,Winmore Academy Jakkur,Grade 10,Male,25WMJK0201,0,0,,f3505444-df1c-4a9c-834f-7a17c1fd97de
+review,KEEP?,946020ac-f304-4b80-abbc-807acdc6dfba,MEENAKSHI M,Winmore Academy Jakkur,Grade 10,Female,23WMJK0454,0,0,,
+review,REVIEW,238edb3c-d6b1-46d9-8ee8-c2c2231c2cf4,MEENAKSHI M,Winmore Academy Jakkur,Grade 11,Female,26WMJK0159,0,0,,946020ac-f304-4b80-abbc-807acdc6dfba
+review,KEEP?,53abd638-0fde-4edc-ae7a-153e0ff6dbd4,MUDDANA JAI SAVAR,Winmore Academy Jakkur,Grade 11,Male,26WMJK0201,3,0,,
+review,REVIEW,07e3c005-c80b-48fe-9323-37eac832767d,MUDDANA JAI SAVAR,Winmore Academy Jakkur,Grade 10,Male,24WMJK0159,0,0,,53abd638-0fde-4edc-ae7a-153e0ff6dbd4
+review,KEEP?,fb7792b9-bb36-4380-8c49-b8fe5c2d1515,Manith P,Winmore Academy Jakkur,Grade 11,Male,26WMJK0229,1,0,,
+review,REVIEW,d83a7e2a-a5f1-48b2-9c09-21bfcf6e340a,Manith P,Winmore Academy Jakkur,Grade 10,Male,24WMJK0095,0,0,,fb7792b9-bb36-4380-8c49-b8fe5c2d1515
+review,KEEP?,25c1e6e9-3b25-436a-ae62-7676b6d694f2,NISHCHITHA L,Winmore Academy Jakkur,Grade 11,Female,26WMJK0148,2,0,,
+review,REVIEW,a9a458ba-a68a-407e-8bad-da78b10db212,NISHCHITHA L,Winmore Academy Jakkur,Grade 10,Female,23WMJK0445,0,0,,25c1e6e9-3b25-436a-ae62-7676b6d694f2
+review,KEEP?,a2f9e33e-8cbd-4048-b13d-ddbe6570e2f4,RUVANTHIKA R B,Winmore Academy Jakkur,Grade 10,Female,23WMJK0433,0,0,,
+review,REVIEW,cd1ecd71-0741-4440-950c-aa26638680ad,R.B.Ruvanthika,Winmore Academy Jakkur,Grade 11,Female,26WMJK0024,0,0,,a2f9e33e-8cbd-4048-b13d-ddbe6570e2f4
+review,KEEP?,c623297b-4590-4762-853b-4e04f1033d42,SAI NAMISH KANCHARLA,Winmore Academy Jakkur,Grade 11,Male,26WMJK0078,0,0,SAI NAMISH KANCHARLA,
+review,REVIEW,25cefda8-9508-46f5-bbe9-1f9bd8788906,SAI NAMISH KANCHARLA,Winmore Academy Jakkur,Grade 10,Male,23WMJK0446,0,0,,c623297b-4590-4762-853b-4e04f1033d42
+review,KEEP?,dfe9af09-6583-485f-a6a7-7f26b2077a25,Sai Samiksha,Winmore Academy Jakkur,Grade 11,Female,26WMJK0165,0,0,Sai Samiksha,
+review,REVIEW,7ceeeb5f-78d9-49a0-afde-b653dd5024e6,SAI SAMIKSHA,Winmore Academy Jakkur,Grade 10,Female,23WMJK0444,0,0,,dfe9af09-6583-485f-a6a7-7f26b2077a25
+review,KEEP?,8b2dec6f-52b2-4bba-8349-0483bc9623f1,SHRIDAH UDUPA H S,Winmore Academy Jakkur,Grade 10,Male,23WMJK0448,0,0,,
+review,REVIEW,1c25ada5-1588-44a6-aa5c-ffbcb9061d8b,SHRIDAH UDUPA,Winmore Academy Jakkur,Grade 11,Female,26WMJK0225,0,0,,8b2dec6f-52b2-4bba-8349-0483bc9623f1
+review,KEEP?,72dc4606-eccb-4678-b29d-85d6ae9bbe43,SHRISTI SHREE,Winmore Academy Jakkur,Grade 11,Female,26WMJK0206,2,0,,
+review,REVIEW,fd500059-cce8-4978-9162-82b6fbb93e9a,SHRISTI SHREE,Winmore Academy Jakkur,Grade 10,Female,23WMJK0435,0,0,,72dc4606-eccb-4678-b29d-85d6ae9bbe43
+review,KEEP?,84fdd27a-2a2f-4338-90a5-28935b4c6501,SIDDHI LUHAR,Winmore Academy Jakkur,Grade 11,Female,26WMJK0033,0,0,SIDDHI LUHAR,
+review,REVIEW,cf892671-ee30-434f-bdba-63f1b854418e,SIDDHI LUHAR,Winmore Academy Jakkur,Grade 10,Female,23WMJK0437,0,0,,84fdd27a-2a2f-4338-90a5-28935b4c6501
+review,KEEP?,cbd99eba-8bfe-48fc-8a6b-b6cc7cbc3730,Sardar Arshdeep Singh,Winmore Academy Jakkur,Grade 10,Male,23WMJK0450,0,0,,
+review,REVIEW,3fb765c3-2592-4b7c-a598-abf390e40f64,Sardar Arshdeep Singh,Winmore Academy Jakkur,Grade 11,Male,26WMJK0142,0,0,,cbd99eba-8bfe-48fc-8a6b-b6cc7cbc3730
+review,KEEP?,1526fbaf-8b85-49d5-b9e3-00c14f414099,SHRUKHA RAKESH,Winmore Academy Jakkur,Grade 11,Female,26WMJK0101,3,0,,
+review,REVIEW,fcf49ab7-36f6-492c-91f7-495b4d84621a,Shrukha Rakesh,Winmore Academy Jakkur,Grade 10,Female,24WMJK0086,0,0,,1526fbaf-8b85-49d5-b9e3-00c14f414099
+review,KEEP?,79286026-0b0c-4d63-9491-b2ff3f5e7322,Rudhvika Bade,St Andrews School Keesara,Nursery,Female,26KS0179,1,0,,
+review,REVIEW,bb20fcbc-30b6-4e06-9471-93b7e877f1be,Rudhvika Bade,St. Andrews High School Suchitra,Nursery,Female,SC260009,0,0,Rudhvika Bade,79286026-0b0c-4d63-9491-b2ff3f5e7322
+review,KEEP?,7b66b42f-5886-48f8-975a-081ef79a5e35,FATHIMA TUZ ZEHRA,Quantum Leap School,Grade 8,Female,26QLS0089,1,0,,
+review,REVIEW,d24a9f35-09f6-4551-bbfd-db7a4b085db0,FATHIMA TUZ ZEHRA,Kidlink School,Grade 8,Female,23KIS0264,0,0,,7b66b42f-5886-48f8-975a-081ef79a5e35
+review,KEEP?,fafc5a4d-66a6-4c0f-a513-927c6a90ae29,IBA FARUKH FARAS,Crimson Anisha School- LR CBSE,Grade 1,Female,24CAG10300,1,0,IBA FARUKH FARAS,
+review,REVIEW,d1ac99b7-f5fa-46c0-8c4a-0d24304fbd66,RIJA FARUKH FARAS,Crimson Anisha School- LR CBSE,Grade 12,Female,25CAG10589,0,0,RIJA FARUKH FARAS,fafc5a4d-66a6-4c0f-a513-927c6a90ae29
+review,KEEP?,02b09ec3-65a0-4b7d-8212-65ee31adfe77,ANUMULA LAXMI HARSHITH,Samyuktha School,Grade 8,Male,23SIS0381,2,0,,
+review,REVIEW,666e8170-f292-4cf0-b1cd-28303c5bb7e2,ANUMULA LAXMI HANSHITH,Samyuktha School,Grade 10,Male,23SIS0383,1,0,,02b09ec3-65a0-4b7d-8212-65ee31adfe77
+review,KEEP?,dcc509b7-ad04-45e6-9651-6c209431b4c7,AAKANKSH KUMAR KHOBBANBHAT,Samyuktha School,Grade 3,Male,26SIS0147,1,0,AAKANKSH KUMAR KHOBBANBHAT,
+review,REVIEW,558d5dab-1e90-4397-9778-2d835a2d6c0a,ANSH KUMAR KHOBBANBHAT,Samyuktha School,Grade 6,Male,26SIS0148,1,0,ANSH KUMAR KHOBBANBHAT,dcc509b7-ad04-45e6-9651-6c209431b4c7
+review,KEEP?,a5c3c0ee-c0cc-4d55-bc24-1a79ee75dde7,CHANDRA KAILAS VARMA POTHURI,Quantum Leap School,Grade 2,Male,26QLS102,2,0,,
+review,REVIEW,7b84cedc-7aff-48a2-b9be-c7f9e37c1a67,CHANDRA KAILAS VARMA POTHURI,Quantum Leap School,Grade 2,Male,26QLS0102,1,0,,a5c3c0ee-c0cc-4d55-bc24-1a79ee75dde7
+review,REVIEW,aa83860d-cbf3-46f9-9aff-dfb3b51c942b,CHANDRA KAILAS VARMA POTTURI,Quantum Leap School,Grade 3,Male,24QLS0123,0,0,CHANDRA KAILAS VARMA POTTURI,a5c3c0ee-c0cc-4d55-bc24-1a79ee75dde7
+review,KEEP?,d28bd344-003a-4138-88ea-6e17908f248a,SAI MANOGNYA SANTHOSH KUMAR MANJAKUPPAM,Samyuktha School,Grade 1,Male,23SIS0271,4,0,SAI MANOGNYA SANTHOSH KUMAR MANJAKUPPAM,
+review,REVIEW,8d02237a-4ea6-4e5b-bc43-2aa548d5200a,SAI RASAGNYA SANTHOSH KUMAR MANJAKUPPAM,Samyuktha School,Grade 4,Male,26SIS0118,3,0,SAI RASAGNYA SANTHOSH KUMAR MANJAKUPPAM,d28bd344-003a-4138-88ea-6e17908f248a
+review,KEEP?,b97f078a-0082-4a9b-a308-85013e21e9dc,ANAGHA VISHAL PANDIT,Crimson Anisha School- LR CBSE,Grade 8,Female,23CAG10037,1,0,ANAGHA VISHAL PANDIT,
+review,REVIEW,2802b98b-1c37-4d13-86b6-3d4d5ae791fe,ANANYA VISHAL PANDIT,Crimson Anisha School- LR CBSE,Grade 3,Female,23CAG10038,1,0,ANANYA VISHAL PANDIT,b97f078a-0082-4a9b-a308-85013e21e9dc
+review,KEEP?,9bb4659e-45d2-4665-aec2-c9bd5e42f302,Aarav Kumar,Crimson Anisha School- NIBM CBSE,Grade 6,Male,24CAG20549,1,0,Aarav Kumar - 1,
+review,REVIEW,4e6b4a93-ca22-4822-b191-3a7a398a6f86,Aarav Kumar,Crimson Anisha School- NIBM CBSE,Grade 12,Male,25CAG20431,0,0,,9bb4659e-45d2-4665-aec2-c9bd5e42f302
+review,KEEP?,2a9cc499-af5c-480d-8404-45cc041e54c7,Saarth Kunwar,St. Andrews High School Suchitra,Grade 6,Male,26BP0889,1,0,,
+review,REVIEW,288fdb77-fe82-408d-b534-3dd7591599b6,Paarth Kunwar,St. Andrews High School Suchitra,Grade 9,Male,26BP0890,1,0,,2a9cc499-af5c-480d-8404-45cc041e54c7
+review,KEEP?,038085a7-5fe9-4ae7-b1d6-d1266631b8b5,MOHAMMED GIYAS ARSLAAN,Samyuktha School,Grade 2,Male,23SIS0156,1,0,,
+review,REVIEW,b1f08667-f2a1-429a-b088-f4c08bfb0fe5,MOHAMMED GIYAS ARHAAN,Samyuktha School,Grade 4,Male,23SIS0159,0,0,,038085a7-5fe9-4ae7-b1d6-d1266631b8b5
+review,KEEP?,e8a6eed5-d3b5-4437-af94-7b9a5b23edbe,MANDAVA CHAARVI,Kidlink School,Nursery,Female,26IKL0062,2,0,,
+review,REVIEW,e787ff7c-9733-44aa-ad13-98d63b65b4fc,MANDAVA CHAARVI,Kidlink School,Nursery,FEMALE,26IKL0066,0,0,,e8a6eed5-d3b5-4437-af94-7b9a5b23edbe
+review,KEEP?,f375c478-7d08-4818-88e6-40cd51a47e3a,SHREYASH GORAK,St. Michaels School,Grade 7,Male,23SMS0967,1,0,SHREYASH GORAK,
+review,REVIEW,8e4a05b2-e6f2-4bd6-a789-6785ce496750,GORAK SHREYA,St. Michaels School,Grade 5,Female,23SMS0558,1,0,GORAK SHREYA,f375c478-7d08-4818-88e6-40cd51a47e3a
+review,KEEP?,319b7a13-8c8d-452b-8dbb-d3df399c5e86,VISLAVATH VIHANSHI PAWAR,Samyuktha School,UKG,Female,26SIS0266,2,0,,
+review,REVIEW,669201d0-ebe1-4460-a10e-e282f67e5e69,VISLAVATH VIHAN PAWAR,Samyuktha School,UKG,Male,26SIS0265,2,0,,319b7a13-8c8d-452b-8dbb-d3df399c5e86
+review,KEEP?,711e4fc7-7c18-4630-935b-dc5f8c87404e,Hridaan Desai,TIC TAC TOE - PN,Grade 2,Male,25TTT46,1,0,,
+review,REVIEW,b3501177-205d-4923-809a-ad6e0468ceea,Hridhaan Desai,TIC TAC TOE - PN,LKG,Male,25TTTPN0013,0,0,Hridhaan,711e4fc7-7c18-4630-935b-dc5f8c87404e
+review,KEEP?,640c0baf-2ff6-48d3-a6dc-ad12b58cccf7,Anaya Nahid,TIC TAC TOE- NIBM,LKG,FEMALE,26CAG20394,1,0,,
+review,REVIEW,afe43905-aeef-49a3-8a3f-4de6990647cc,Aayra Nahid,Crimson Anisha School- NIBM CBSE,Grade 4,Male,23CAG20139,1,0,,640c0baf-2ff6-48d3-a6dc-ad12b58cccf7
+review,KEEP?,aab3d085-ade1-4a9f-8559-2d63b841096e,ABHIRAM VEMA,St. Michaels School,Grade 11,Male,26SMS0596,1,0,,
+review,REVIEW,adf30685-f6f8-4c94-b88e-40c2356661ca,ABHIRAM VEMA,St. Michaels School,Grade 10,Male,23SMS2089,0,0,,aab3d085-ade1-4a9f-8559-2d63b841096e
+review,KEEP?,9ad1683e-9ee6-4d47-b059-740942c95b32,Siddhi Hemant Kapre,Crimson Anisha School- NIBM CBSE,Grade 8,Female,22CAG20483,1,0,Siddhi Hemant Kapre,
+review,REVIEW,2da04eae-2d28-487e-aa75-d49ebba9a7f9,Riddhi Hemant Kapre,Crimson Anisha School- NIBM CBSE,Grade 4,Female,23CAG20358,1,0,Riddhi Hemant Kapre,9ad1683e-9ee6-4d47-b059-740942c95b32
+review,KEEP?,efee7cf2-4da0-42ee-8966-e92dfab68021,NELLOORI	VIBHA KIRAN,Kidlink School,LKG,Female,26IKL0069,1,0,,
+review,REVIEW,57bbbe81-0e01-43c1-8efc-52051e3ef3c5,NELLORE VIBHA KIRAN,Kidlink School,LKG,FEMALE,26IKL0073,0,0,,efee7cf2-4da0-42ee-8966-e92dfab68021
+review,KEEP?,06e13122-e695-4b4b-8be9-21c4593774f9,Aaron George,St. Andrews High School Suchitra,Grade 11,Male,SC260281,1,0,Aaron George,
+review,REVIEW,819af9ed-5099-4cdd-ad8c-24bb701fbc2a,AARON GEORGE,St. Andrews High School Suchitra,Grade 10,Male,22BP3063,0,0,,06e13122-e695-4b4b-8be9-21c4593774f9
+review,KEEP?,c9703c37-d0d8-46cf-bdc2-f329ae6eea15,Angeline Ratna Adidala,St Andrews School Keesara,Grade 11,Female,KS260054,2,0,Angeline Ratna Adidala,
+review,REVIEW,9e33e410-d0af-48a9-899e-c9bde915c04b,ADIDALA ANGELINE RATNA,St Andrews School Keesara,Grade 10,Female,22KS0947,0,0,,c9703c37-d0d8-46cf-bdc2-f329ae6eea15
+review,KEEP?,17a42fe6-5854-4456-a0ea-ed5294c53854,AARAV NIHAL CHUNDRU,St Andrews School Keesara,Grade 10,Male,22KS0918,2,0,,
+review,REVIEW,fff92d06-f971-453a-93ef-a78d3dd13e8a,AARAV NIHAL CHUNDRU,St Andrews School Keesara,Grade 10,Male,KS170807,1,0,AARAV NIHAL CHUNDRU,17a42fe6-5854-4456-a0ea-ed5294c53854
+review,KEEP?,0f884d0e-7104-421c-a39a-a98a841d26d6,AKKI VARSHINI,St Andrews School Keesara,Grade 5,Female,23KS0238,0,0,,
+review,REVIEW,7c15b6bc-8bb0-49b0-85b7-3c1d46e473a7,AKKI VARDHINI,St Andrews School Keesara,Grade 8,Female,23KS0237,0,0,,0f884d0e-7104-421c-a39a-a98a841d26d6
+review,KEEP?,0b2f1177-5100-4ff4-a882-53128d4f0381,AARAV SILIVERU,St. Michaels School,Grade 6,Male,23SMS0788,1,0,AARAV SILIVERU,
+review,REVIEW,0b14366e-bff8-46a9-9594-36a63d7e5aec,AARVI SILIVERU,St. Michaels School,Grade 10,Female,23SMS2021,0,0,,0b2f1177-5100-4ff4-a882-53128d4f0381
+review,KEEP?,984104dd-4741-4719-afa3-d26be45d4e14,Aayush Meena Narayan Meena,St. Andrews High School Suchitra,Class VIII,,SC260972,0,0,,
+review,REVIEW,2b7f5813-d4bc-42ba-849e-e1fa703c4e15,Aayush Meena Narayan Meena,St. Andrews High School Suchitra,Grade 8,Male,26BP0972,0,0,,984104dd-4741-4719-afa3-d26be45d4e14
+review,KEEP?,4d086128-808d-4f98-a87c-3cdada8210d0,Advit John Madduri,St. Andrews High School Suchitra,Grade 7,Male,26BP0973,2,0,,
+review,REVIEW,5890c049-2d81-4480-85ea-c34eb5ced4b1,Advit John Madduri,St. Andrews High School Suchitra,Class VII,,SC260973,0,0,,4d086128-808d-4f98-a87c-3cdada8210d0
+review,KEEP?,9839761a-5693-403b-a01e-d45db611cb18,Amaira Nirmayi Karthik,St. Andrews High School Suchitra,LKG,,SC260970,0,0,,
+review,REVIEW,6f84ccd1-a56a-4988-8c21-18172a52a890,Amaira Nirmayi Karthik,St. Andrews High School Suchitra,LKG,Female,26BP0970,0,0,,9839761a-5693-403b-a01e-d45db611cb18
+review,KEEP?,ca92bea9-e913-4942-8647-d2be6ada0b72,MOHAMMED AYAAN AHMED,Samyuktha School,Grade 10,Male,23SIS0717,5,0,,
+review,REVIEW,8ab7ab37-41c6-4116-8f73-82948b153bca,MOHAMMED AYAAZ AHMED,Samyuktha School,Grade 8,Male,23SIS0716,0,0,,ca92bea9-e913-4942-8647-d2be6ada0b72
+review,KEEP?,d8fc9d05-f84e-44e0-ace6-93e15f0d9eb6,VAJANALA AKSHAYA,Samyuktha School,Grade 11,Male,25SIS0171,0,0,,
+review,REVIEW,8985322f-7b0a-4efa-99bd-62715e4de525,VAJANALA AKSHARA,Samyuktha School,Grade 10,Male,25SIS0172,0,0,,d8fc9d05-f84e-44e0-ace6-93e15f0d9eb6
+review,KEEP?,473effc3-29c1-40ac-8378-451b214eb490,Yerraju Rishi Vardhan Chary,Samyuktha School,Grade 2,Male,25SIS0110,0,0,,
+review,REVIEW,4d8e3e63-ff7d-4eec-af4d-d6ce9569a7b4,Yerraju Harsha Vardhan Chary,Samyuktha School,Grade 4,Male,25SIS0109,0,0,,473effc3-29c1-40ac-8378-451b214eb490
+review,KEEP?,19354a4d-6511-4c3d-a639-bb6c994645a6,Ayansh Mishra,St. Andrews High School Suchitra,Grade 2,Male,26BP0974,1,0,,
+review,REVIEW,a6907768-ff1d-4e10-894b-60289032cb3f,Ayansh Mishra,St. Andrews High School Suchitra,Class II,,SC260974,0,0,,19354a4d-6511-4c3d-a639-bb6c994645a6
+review,KEEP?,b98ac3e9-85e0-49c4-a3e2-d3fc8d1dde00,Neginhal Smahi Mahesh,Samyuktha School,Grade 2,Male,25SIS0019,1,0,,
+review,REVIEW,a9438c1e-f85a-4f16-a71b-35c8c21f46b1,Neginhal Sachi Mahesh,Samyuktha School,Grade 6,Male,25SIS0018,1,0,,b98ac3e9-85e0-49c4-a3e2-d3fc8d1dde00
+review,KEEP?,ee9e92d1-86fc-4d37-bd14-06472485bb59,SRIHARI CHANDRASEKARAPURAM VIVEK,Winmore Academy Jakkur,Grade 2,Male,26WMJK0302,5,0,,
+review,REVIEW,b8b7dd41-6130-4aef-a2bc-bfdbdbaa1a26,SRIRAM CHANDRASEKARAPURAM VIVEK,Winmore Academy Jakkur,Grade 6,Male,26WMJK0301,2,0,,ee9e92d1-86fc-4d37-bd14-06472485bb59
+review,KEEP?,c3f3aec6-94ca-4d5f-b01f-9bbf049f5d8f,Swastik Dixit,St. Andrews High School Suchitra,Grade 7,Male,26BP0978,0,0,,
+review,REVIEW,0547126f-9777-4163-9779-736b3c230e7b,Swastik Dixit,St. Andrews High School Suchitra,Class VII,,SC260978,0,0,,c3f3aec6-94ca-4d5f-b01f-9bbf049f5d8f
+review,KEEP?,e2c7d2ca-0070-47a3-9932-e0a4747b0ba2,Nallapu Vivaan Reddy,St. Andrews High School Suchitra,Grade 6,Male,26BP0980,1,0,,
+review,REVIEW,51e356aa-c47a-4f60-b887-2e97a62bc4ba,Nallapu Vivaan Reddy,St. Andrews High School Suchitra,Class VI,,SC260980,0,0,,e2c7d2ca-0070-47a3-9932-e0a4747b0ba2
+review,KEEP?,1317de56-ce0d-4cf9-a7ec-9a764d31b374,Nallapu Shrinika Reddy,St. Andrews High School Suchitra,Grade 3,Female,26BP0979,1,0,,
+review,REVIEW,d2feafb7-4031-46a0-9198-62a7795662c9,Nallapu Shrinika Reddy,St. Andrews High School Suchitra,Class III,,SC260979,0,0,,1317de56-ce0d-4cf9-a7ec-9a764d31b374
+review,KEEP?,e03e4015-1f5e-4073-ab29-3b1293738f34,Amayra Kaur Marok,St. Andrews High School Suchitra,LKG,Female,26BP0977,1,0,,
+review,REVIEW,b0aa38d9-a532-458d-adc0-e2691a2c08f1,Amayra Kaur Marok,St. Andrews High School Suchitra,LKG,,SC260977,0,0,,e03e4015-1f5e-4073-ab29-3b1293738f34
+review,KEEP?,9aef415a-448a-4e85-a356-d2bbcb7fc022,Aaiza Jamal Farooquee,Winmore Academy Whitefield,LKG,Female,WF260079,1,0,Aaiza Jamal Farooquee,
+review,REVIEW,0ba62a25-b12c-4ad8-94cc-294211d0f343,Aaira Jamal Farooquee,Winmore Academy Whitefield,LKG,Female,WF260078,1,0,Aaira Jamal Farooquee,9aef415a-448a-4e85-a356-d2bbcb7fc022
+review,KEEP?,44e435b0-f40e-4a4d-88c4-e3c1c773470a,HANVIKA RAVIPATI,Quantum Leap School,Grade 4,Female,24QLS0104,0,0,,
+review,REVIEW,b7f34a2a-599b-4c8b-9f64-ee7959c8b397,RAVIPATI HANVIKA,Kidlink School,Grade 4,Female,26KDL313055,0,0,,44e435b0-f40e-4a4d-88c4-e3c1c773470a
+review,KEEP?,5eb946e9-fb55-4dbe-91fb-f7ee83dde821,Shrisha GANESH JADHAV,Crimson Anisha School- LR CBSE,Grade 3,Male,24CAG10526,1,0,Shrisha GANESH JADHAV,
+review,REVIEW,a45abcda-a172-4842-933d-9e19e8d0f9d0,Shrisham Ganesh Jadhav,Crimson Anisha School- LR CBSE,Grade 1,Male,26CAG10499,1,0,Shrisham Ganesh Jadhav,5eb946e9-fb55-4dbe-91fb-f7ee83dde821
+review,KEEP?,91c4e180-816d-447c-b19c-025998719b15,AAHIL UMARFARUK MUJAWAR,TTT LR,LKG,Male,26CAG10598,1,0,AAHIL UMARFARUK MUJAWAR,
+review,REVIEW,00ca7bd3-14bb-43aa-88eb-01bc91c50994,AAFIQ UMARFARUK MUJAWAR,Crimson Anisha School- LR CBSE,Grade 1,Male,26CAG10634,1,0,AAFIQ UMARFARUK MUJAWAR,91c4e180-816d-447c-b19c-025998719b15
+review,KEEP?,24151a03-1943-4b0b-be65-0606bfc28e8a,Thanisha,TSUS Chennai,Grade 2,Female,24115,2,0,Thanisha,
+review,REVIEW,9f6241fd-0d1b-46e5-826d-2c0464fbc54a,S .Thanisha,TSUS Chennai,UKG,Male,25021,2,0,S .Thanisha,24151a03-1943-4b0b-be65-0606bfc28e8a
+review,KEEP?,b5bfea0b-6453-4efc-a64d-79f02c00999c,JETTI PAARDHU,Quantum Leap School,Grade 2,Male,26QLS0136,1,0,JETTI PAARDHU,
+review,REVIEW,9bebc9b7-57f5-4745-b0c5-9ec1c1f69233,JETTI PAARDHU,Kidlink School,Grade 3,Male,24KDL0091,0,0,JETTI PAARDHU - 1,b5bfea0b-6453-4efc-a64d-79f02c00999c
+review,KEEP?,f7575c74-806b-4dec-81f7-0ede9fbbc76a,Sanshit Jain,TSUS Chennai,Grade 7,Male,20312,2,0,Sanshit Jain,
+review,REVIEW,e2dce9f0-7459-4cee-bca9-11043343225e,Kanshit Jain,TSUS Chennai,Grade 11,Male,20313,0,0,Kanshit Jain,f7575c74-806b-4dec-81f7-0ede9fbbc76a
+review,KEEP?,77a8b6ef-374f-429b-95d5-cfd0963ca02b,KIYANSH CHADALAVADA.CH,Young India Police School,Grade 2,Male,26YIPS0172,1,0,KIYANSH CHADALAVADA.CH,
+review,REVIEW,b811d885-c550-4a07-a1eb-7513578a123f,CHADALAVADA KIYANSH,Kidlink School,Grade 2,Male,25KIS0010,0,0,,77a8b6ef-374f-429b-95d5-cfd0963ca02b
+review,KEEP?,a24584be-e277-4819-80b6-22082a8aff47,AADHYA SINGH DIGUVA,St. Michaels School,Grade 6,Female,23SMS0899,3,0,AADHYA SINGH DIGUVA,
+review,REVIEW,905ae17c-3861-4278-ab4d-3c0e8cf13106,AARADHYA SINGH DIGUVA,St. Michaels School,Grade 3,Female,23SMS0297,1,0,AARADHYA SINGH DIGUVA,a24584be-e277-4819-80b6-22082a8aff47
+review,KEEP?,31921e69-0fff-4f31-a044-60dd413076f0,ABBA AKSHITH,St. Michaels School,Grade 3,Male,23SMS0157,3,0,ABBA AKSHITH,
+review,REVIEW,5d6a4c65-fec2-4f39-9b64-445cfc25788c,ABBA ASHRITH,St. Michaels School,Grade 5,Male,23SMS0645,0,0,ABBA ASHRITH,31921e69-0fff-4f31-a044-60dd413076f0
+review,KEEP?,795abb8a-461e-417c-bfbe-4cc8839d6716,Saif Khalilullah Shaikh,Crimson Anisha School- NIBM CBSE,Grade 5,Male,26CAG20248,1,0,Saif Khalilullah Shaikh,
+review,REVIEW,ef6a8614-4239-400d-a221-3d1aa8384957,Sahil Khalilullah Shaikh,Crimson Anisha School- NIBM CBSE,Grade 11,Male,22CAG20193,0,0,Sahil Khalilullah Shaikh,795abb8a-461e-417c-bfbe-4cc8839d6716
+review,KEEP?,2ee80675-7f4f-45c6-ad8a-72c5671fcbdc,PASUPALA SHAIK MOHAMMED AQIB,St. Michaels School,Grade 9,Male,23SMS1590,2,0,PASUPALA SHAIK MOHAMMED AQIB,
+review,REVIEW,31e805e7-14b4-4f13-ab29-0ad56390e178,PASUPALA SHAIK MOHAMMED ASIM,St. Michaels School,Grade 9,Male,23SMS1521,1,0,PASUPALA SHAIK MOHAMMED ASIM,2ee80675-7f4f-45c6-ad8a-72c5671fcbdc
+review,KEEP?,a1bee6a4-3e5b-4f13-af58-7f58191ac754,SHAYNE SEBASTIAN,Winmore Academy Jakkur,Grade 4,Male,23WMJK0098,1,0,SHAYNE SEBASTIAN,
+review,REVIEW,23c8f40a-ba21-4d58-ba0d-0d818d4bbe75,Shaun Sebastian,Winmore Academy Jakkur,Grade 2,Male,24WMJK0020,1,0,Shaun Sebastian,a1bee6a4-3e5b-4f13-af58-7f58191ac754
+review,KEEP?,c4239cb2-80aa-44b0-ae97-9fad0729d680,KASOJU SIDDHARTH,Samyuktha School,Grade 4,Male,23SIS0064,1,0,KASOJU SIDDHARTH,
+review,REVIEW,06db47e5-11ab-4c75-b206-672f679a229a,KASOJU SIDDHANTH,Samyuktha School,Grade 4,Male,23SIS0063,1,0,KASOJU SIDDHANTH,c4239cb2-80aa-44b0-ae97-9fad0729d680
+review,KEEP?,231807ee-58cd-483f-a852-e84dea064ae2,Abhishek - G10,St. Michaels School,Grade 5,Male,1119,1,0,Abhishek - G10,
+review,REVIEW,f299368b-a6b8-4b7f-be65-4e38afe5e6ca,Abhishek - G10,Winmore Academy Jakkur,Grade 11,Male,4,0,0,Abhishek Kumar - 1,231807ee-58cd-483f-a852-e84dea064ae2
+review,KEEP?,4cee7b29-44ec-4615-a4ed-853b6560fe32,Shashank Vishnu Thorat,Crimson Anisha School- LR CBSE,Grade 2,Male,26CAG10657,1,0,Shashank Vishnu Thorat,
+review,REVIEW,a482977a-d5c9-4b9f-b2c9-7caa63c2b404,Shashwat Vishnu Thorat,Crimson Anisha School- LR CBSE,LKG,Male,26CAG10668,0,0,,4cee7b29-44ec-4615-a4ed-853b6560fe32
+review,KEEP?,db2aa79a-8ee5-43e4-820a-0b10e3431416,BODDUPALLI VENKAT ASHWIK KUMAR,Quantum Leap School,Grade 6,Male,26QLS0145,1,0,BODDUPALLI VENKAT ASHWIK KUMAR,
+review,REVIEW,752d7685-8947-4523-b2f3-efed6def8e96,VENKAT ASHWIK KUMAR BODDUPALLI,Kidlink School,Grade 6,Male,23KDL0134,0,0,VENKAT ASHWIK KUMAR BODDUPALLI,db2aa79a-8ee5-43e4-820a-0b10e3431416
+review,KEEP?,06b817be-4fe3-4635-b64f-309490c02b5d,Hisita Satapathy,Winmore Academy Jakkur,UKG,Female,26WMJK0140,1,0,Hisita Satapathy,
+review,REVIEW,8e7715f5-7335-4ed0-a1e6-b709c23c978b,HASITA SATAPATHY,Winmore Academy Jakkur,Grade 11,Female,26WMJK0141,1,0,HASITA SATAPATHY,06b817be-4fe3-4635-b64f-309490c02b5d
+review,KEEP?,d0432b9a-e2d5-43bd-8255-112ad8807ba7,Nimish Nagesh Dnyanmote,Crimson Anisha School- LR CBSE,Grade 2,Male,25CAG10453,1,0,Nimish Nagesh Dnyanmote,
+review,REVIEW,00bc79f6-b230-43a1-9e6f-693891ad9ff5,Nidhish Nagesh Dnyanmote,Crimson Anisha School- LR CIE,Grade 2,Male,25CAG10496,1,0,Nidhish Nagesh Dnyanmote,d0432b9a-e2d5-43bd-8255-112ad8807ba7
+review,KEEP?,0e333bcb-584f-41c7-9bf2-01a34d74b809,SHREYANSHI,TSUS Chennai,Grade 2,Male,26143,1,0,,
+review,REVIEW,78158241-eebe-40b3-9848-9a5101b01b8a,SHREYANSH,TSUS Chennai,Grade 2,Male,26142,1,0,,0e333bcb-584f-41c7-9bf2-01a34d74b809
+review,KEEP?,044b4cb5-185e-434f-9143-e42b36d15054,YEKULA JEEVANSH,Kidlink School,LKG,Male,26IKL0034,2,0,,
+review,REVIEW,e5ee429d-5cbb-45fb-9594-9edaf4ce658b,JEEVANSH.YEKULA,Kidlink School,LKG,Male,26IKL0209,1,0,JEEVANSH.YEKULA,044b4cb5-185e-434f-9143-e42b36d15054
+review,KEEP?,1bee33f6-fb60-4600-8a5f-8144cdb151cf,KODALI ADVAIT CHOWDARY,St. Michaels School,Grade 6,Male,23SMS0877,9,0,KODALI ADVAIT CHOWDARY,
+review,REVIEW,789323cc-82dd-4102-9d3d-9103fd42e116,KODALI BHAVIT CHOWDARY,St. Michaels School,Grade 1,Male,25SMS0294,5,0,KODALI BHAVIT CHOWDARY,1bee33f6-fb60-4600-8a5f-8144cdb151cf
+review,KEEP?,aa58704e-19bf-4ea6-bbde-91b5a5e6ca8e,Ishaan Vithanala,St. Andrews High School Suchitra,UKG,Male,25BP0495,1,0,,
+review,REVIEW,7391531d-5fdd-4a78-bde5-39370a33b677,Vithanala Vihaan,St. Andrews High School Suchitra,Grade 8,Male,22BP4621,1,0,,aa58704e-19bf-4ea6-bbde-91b5a5e6ca8e
+review,KEEP?,280c2a8a-8acb-44d7-82f7-bc2ec1c4581b,RISHIKA NALIKALA,St. Michaels School,Grade 7,Female,23SMS1061,2,0,RISHIKA NALIKALA,
+review,REVIEW,ace4fa52-8fb1-458a-93b6-4afc1c9b2a32,NISHKA NALIKALA,St. Michaels School,Grade 5,Female,23SMS0638,2,0,NISHKA NALIKALA,280c2a8a-8acb-44d7-82f7-bc2ec1c4581b
+review,KEEP?,82228d1e-c0ac-4204-870f-0b82c3d17c06,Aerpula Saketh Shourya Yadav,St Andrews School Keesara,Grade 1,Male,24KS0217,2,0,,
+review,REVIEW,2f4a05b0-732a-48c2-a482-029f6420fdb1,Ashwath Shourya Yadav Aerpula,St Andrews School Keesara,LKG,Male,KS260022,1,0,Ashwath Shourya Yadav Aerpula,82228d1e-c0ac-4204-870f-0b82c3d17c06
+review,KEEP?,22d9e72d-0518-43c4-9fcc-821731290a85,Jinaya Jain,TSUS Chennai,Grade 7,Female,22160,2,0,Jinaya Jain - 1,
+review,REVIEW,2d62e145-541e-426d-99ae-bf3fe2df73ec,Jinay jain,TSUS Chennai,Grade 3,Male,23045,0,0,Jinay jain,22d9e72d-0518-43c4-9fcc-821731290a85
+review,KEEP?,d58d1698-1452-44ef-b712-bd131f32c535,Dhruvi,TSUS Chennai,Grade 1,Female,23008,2,0,Dhruvi,
+review,REVIEW,49f4b8da-9051-4e03-8678-e561ae7ec80f,Dhruv,TSUS Chennai,Grade 1,Male,23007,2,0,Dhruv,d58d1698-1452-44ef-b712-bd131f32c535
+review,KEEP?,2d811c48-bf14-4112-8ff6-ea947f96752b,Yoshita S Bagrecha,TSUS Chennai,Grade 8,Female,25132,1,0,Yoshita S Bagrecha,
+review,REVIEW,1684729d-c002-42f0-bfcb-53614e952a2d,Yoshith S Bagrecha,TSUS Chennai,Grade 8,Male,25131,1,0,Yoshith S Bagrecha,2d811c48-bf14-4112-8ff6-ea947f96752b
+review,KEEP?,481d2114-af51-47e2-a537-483f8d86605f,Kaira Jaiswal,TSUS Chennai,Grade 8,Female,21193,1,0,Kaira Jaiswal,
+review,REVIEW,cd89d4ec-3a7d-4220-b1a0-deafdba5a7fc,Kabir Jaiswal,TSUS Chennai,Grade 3,Male,22313,1,0,Kabir Jaiswal,481d2114-af51-47e2-a537-483f8d86605f
+review,KEEP?,db7a5637-1780-47c4-b43e-b61438b354d4,Bhavika Shiyal,TSUS Chennai,Grade 2,Female,23069,2,0,Bhavika Shiyal,
+review,REVIEW,24864236-86c1-41b4-a436-915c0862df81,Bhavik Shiyal,TSUS Chennai,Grade 2,Male,23070,1,0,Bhavik Shiyal,db7a5637-1780-47c4-b43e-b61438b354d4
+review,KEEP?,88ddfee6-2065-4d53-820f-d799dc60f960,S.Shreya   Jain,TSUS Chennai,Grade 8,Female,26012,1,0,S.Shreya   Jain,
+review,REVIEW,b163d1ef-3820-4988-bb3b-d8b7bf878b66,Shreyan   Jain,TSUS Chennai,Grade 4,Male,26013,1,0,Shreyan   Jain,88ddfee6-2065-4d53-820f-d799dc60f960
+review,KEEP?,8c01736f-fbd7-447e-b928-3044145ff2ee,Sayali Ramesh Shedge,Crimson Anisha School- LR CBSE,Grade 12,Female,22CAG10125,0,0,,
+review,REVIEW,e4dd19a1-8c04-484b-b6c1-2339dedb5e36,Sai Ramesh Shedge,Crimson Anisha School- LR CBSE,Grade 11,Male,22CAG10111,0,0,,8c01736f-fbd7-447e-b928-3044145ff2ee
+review,KEEP?,181233e0-f0e6-4e05-89b2-fed3150ad2da,Aditi Onkar Vadhavkar,Crimson Anisha School- NIBM CBSE,Grade 12,Female,22CAG20259,2,0,,
+review,REVIEW,e5c5aacb-19b0-427c-97a1-006efbbf8385,Aditya Onkar Vadhavkar,Crimson Anisha School- NIBM CBSE,Grade 9,Male,22CAG20257,0,0,Aditya Onkar Vadhavkar,181233e0-f0e6-4e05-89b2-fed3150ad2da
+review,KEEP?,88c55db5-17e1-418d-b589-9d708a6f185f,Areez Innus Mujawar,Crimson Anisha School- LR CBSE,Grade 10,Male,25CAG10265,1,0,Areez Innus Mujawar,
+review,REVIEW,a4694e77-4852-4ec8-ad9a-db2995b53aee,Aleeza Innus Mujawar,Crimson Anisha School- LR CBSE,Grade 2,Female,25CAG10266,1,0,Aleeza Innus Mujawar,88c55db5-17e1-418d-b589-9d708a6f185f
+review,KEEP?,04565a6d-20f0-4cb4-bc1c-fb839da4b453,VENKATA AARADHYA CHOWDARY BANDARU,Quantum Leap School,Grade 7,Female,22QLS0303,0,0,,
+review,REVIEW,81deeea7-1844-4729-8894-e59fc6bd2732,VENKATA AAROHI CHOWDARY BANDARU,Quantum Leap School,Grade 4,Female,23QLS0400,0,0,,04565a6d-20f0-4cb4-bc1c-fb839da4b453
+review,KEEP?,a0d6f0d9-cff3-4f39-b4b1-d60e753f6506,ESHITHA REDDY MANUKONDA,Quantum Leap School,Grade 5,Female,24QLS0237,0,0,,
+review,REVIEW,cc1e7d86-0c26-4dc0-9f7b-8e750213eb01,JUHITHA REDDY MANUKONDA,Quantum Leap School,Grade 6,Female,24QLS0233,0,0,,a0d6f0d9-cff3-4f39-b4b1-d60e753f6506
+review,KEEP?,9d9fceda-9e4f-4637-8361-c29247975ada,RISHAANAND REDDY PALAKOLLU,Quantum Leap School,Grade 5,Male,24QLS0101,0,0,,
+review,REVIEW,6ddc6cc5-fbeb-40dc-a141-2aad107232e8,VIHAANAND REDDY PALAKOLLU,Quantum Leap School,Grade 7,Male,24QLS0086,0,0,,9d9fceda-9e4f-4637-8361-c29247975ada
+review,KEEP?,ec1614da-ed62-4fad-97b3-e4c2d62c345e,Sachi Shrivastava,TSUS Chennai,Grade 3,Female,24242,4,0,Sachi Shrivastava,
+review,REVIEW,5c9690ee-06fb-471b-8aa4-351362ffd1b4,Sahil Shrivastava,TSUS Chennai,UKG,Male,25047,0,0,Sahil Shrivastava,ec1614da-ed62-4fad-97b3-e4c2d62c345e
+review,KEEP?,0dcc7618-53e0-4567-b920-994c6e84fcaf,ANAYARA AKHILESH SINGH,TTT LR,UKG,Female,25CAG10526,1,0,ANAYARA AKHILESH SINGH,
+review,REVIEW,919b0576-c640-47b0-8bf3-ba4187593976,ANANYA AKHILESH SINGH,Crimson Anisha School- LR CBSE,Grade 4,Female,23CAG10055,1,0,ANANYA AKHILESH SINGH,0dcc7618-53e0-4567-b920-994c6e84fcaf
+review,KEEP?,9a7913c1-cb9a-445d-9d5b-5c61d272350a,HRIHAAN PIYUSH TALELE,TTT LR,LKG,Male,25CAG10771,1,0,HRIHAAN PIYUSH TALELE,
+review,REVIEW,2dbbf70b-9858-495d-a71b-088aee8f80b6,HRIDAAN PIYUSH TALELE,TTT LR,LKG,Male,25CAG10770,1,0,HRIDAAN PIYUSH TALELE,9a7913c1-cb9a-445d-9d5b-5c61d272350a
+review,KEEP?,fa7f056e-0a82-4b05-8b64-340e90facc9b,SAMAIRA UTTAM CHOUGALE,Crimson Anisha School- LR CBSE,Grade 1,Female,24CAG10073,0,0,,
+review,REVIEW,82e4e23a-4005-4d26-91cb-2e10c8770b65,SAMARTH UTTAM CHOUGALE,Crimson Anisha School- LR CBSE,Grade 7,Male,24CAG10074,0,0,,fa7f056e-0a82-4b05-8b64-340e90facc9b
+review,KEEP?,cb56977b-8e38-4371-952b-b299dc672ed1,JISHITHA SHIVAKSHI THOTA,Crimson Anisha School- LR CBSE,Grade 1,Female,23CAG10373,0,0,,
+review,REVIEW,fb2acc07-9762-4387-b71c-90afbf09c321,Jishith Shivaksh Thota,Crimson Anisha School- LR CBSE,Grade 1,Male,23CAG10392,0,0,,cb56977b-8e38-4371-952b-b299dc672ed1
+review,KEEP?,485b5fc6-c27d-49e6-8849-dff92693f4aa,SWARA YOGESH KHARCHE,Crimson Anisha School- LR CBSE,Grade 6,Female,25CAG10570,1,0,SWARA YOGESH KHARCHE,
+review,REVIEW,883d33b8-99b6-43f7-84a1-9d74123b0895,Swanand Yogesh Kharche,Crimson Anisha School- LR CBSE,Grade 2,Male,25CAG10535,1,0,Swanand Yogesh Kharche,485b5fc6-c27d-49e6-8849-dff92693f4aa
+review,KEEP?,11963dbc-87f8-4843-82a0-1a1b8ce03a5a,Simon Raj Nagulapalli,St. Andrews High School Suchitra,Grade 3,Male,SC260180,1,0,Simon Raj Nagulapalli,
+review,REVIEW,87660c73-4d93-4ea4-b492-f61d7d35627d,Solomon Raj Nagulapalli,St. Andrews High School Suchitra,Grade 5,Male,SC260179,1,0,Solomon Raj Nagulapalli,11963dbc-87f8-4843-82a0-1a1b8ce03a5a
+review,KEEP?,12fbff08-4693-4217-bbef-db35e067e29b,Mishti Upadhyaya,Crimson Anisha School- LR CBSE,Grade 4,Female,23CAG10644,1,0,Mishti Upadhyaya,
+review,REVIEW,0a72e0f6-372d-4875-9a7b-0746d23bea50,Ishti Upadhyaya,Crimson Anisha School- LR CBSE,Grade 4,Female,23CAG10643,1,0,Ishti Upadhyaya,12fbff08-4693-4217-bbef-db35e067e29b
+review,KEEP?,cd05b568-c2f7-4f4d-95b4-5164d17ee9db,Krishan Ashish Katole,Crimson Anisha School- LR CBSE,Grade 6,Male,22CAG10393,1,0,Krishan Ashish Katole,
+review,REVIEW,85f0ee0c-6508-4923-95cb-e9d5ae7a4005,Prisha Ashish Katole,TTT LR,LKG,Female,25CAG10568,1,0,Prisha Ashish Katole,cd05b568-c2f7-4f4d-95b4-5164d17ee9db
+review,KEEP?,b154adfa-02bf-41ea-9466-44f16e8f26c2,SAACHI Sanjay KORDE,Crimson Anisha School- LR CIE,Grade 8,Female,23CAG10154,1,0,SAACHI Sanjay KORDE,
+review,REVIEW,c0487f15-166c-43af-bb47-287d05e5b57b,Sanchit Sanjay Korde,Crimson Anisha School- LR CIE,Grade 1,Male,23CAG10670,1,0,Sanchit Sanjay Korde - 1,b154adfa-02bf-41ea-9466-44f16e8f26c2
+review,KEEP?,c4b91790-1a28-4b83-8c58-2020ccf53d3b,Abhang Ravindra Kondhalkar,Crimson Aisha School- NIBM CIE,Grade 8,Male,22CAG20037,1,0,Abhang Ravindra Kondhalkar,
+review,REVIEW,0cf790ff-c987-4bbd-8641-17eca6cd893a,Gatha Ravindra Kondhalkar,Crimson Anisha School- NIBM CBSE,Grade 10,Female,22CAG20223,1,0,,c4b91790-1a28-4b83-8c58-2020ccf53d3b
+review,KEEP?,339ee1e6-8504-4d25-b2cd-e9e9a605fed8,Soyana Ramkrishna Shrestha,Crimson Anisha School- LR CBSE,Grade 2,Female,24CAG10562,1,0,Soyana Ramkrishna Shrestha,
+review,REVIEW,717f0ea5-2cc1-45ba-b477-2d8f53eb1ca4,Suhana Ramkrishna Shrestha,TTT LR,Nursery,Female,26CAG10284,0,0,Suhana Ramkrishna Shrestha,339ee1e6-8504-4d25-b2cd-e9e9a605fed8
+review,KEEP?,b8c424b7-302c-49e9-9617-d806916247cd,Musa Zubair Shaikh,Crimson Anisha School- NIBM CBSE,Grade 6,Male,22CAG20099,1,0,,
+review,REVIEW,109f14f7-1dca-49f8-9141-7c2b268a6006,Dua Zubair Shaikh,Crimson Anisha School- NIBM CBSE,Grade 6,Female,22CAG20100,0,0,,b8c424b7-302c-49e9-9617-d806916247cd
+review,KEEP?,a43b5967-238c-44ba-8464-2794fdfeddcf,Ayaan Vishal Khandelwal,Crimson Anisha School- NIBM CBSE,Grade 4,Male,23CAG20043,1,0,Ayaan Vishal Khandelwal,
+review,REVIEW,4a3c5e21-1c47-48c2-88b9-0a7761703bab,Aanya Vishal Khandelwal,Crimson Anisha School- NIBM CBSE,Grade 6,Female,23CAG20260,1,0,Aanya Vishal Khandelwal,a43b5967-238c-44ba-8464-2794fdfeddcf
+review,KEEP?,a18b8fd6-1959-43a5-95c1-928263d94e54,NITYAN NITIN MUKATI,Crimson Anisha School- LR CBSE,Grade 2,Male,26CAG10200,1,0,NITYAN NITIN MUKATI,
+review,REVIEW,3b4881ae-00b3-4630-b866-d766574dd943,NITSA NITIN MUKATI,Crimson Anisha School- LR CBSE,Grade 6,Female,25CAG10061,1,0,NITSA NITIN MUKATI,a18b8fd6-1959-43a5-95c1-928263d94e54
+review,KEEP?,2d33aa48-55dd-41fa-94be-33b59b200648,ADITYA BAHUGUNA,Crimson Anisha School- LR CBSE,Grade 8,Male,26CAG10066,1,0,ADITYA BAHUGUNA - 1,
+review,REVIEW,14e03197-f740-40d3-8a00-d385c9b1abd0,Adiya Bahuguna,Crimson Anisha School- LR CBSE,Grade 1,Female,26CAG10067,1,0,Adiya Bahuguna,2d33aa48-55dd-41fa-94be-33b59b200648
+review,KEEP?,963db088-f1da-4cdd-97f9-0de8f9342e92,SHAARVI SIDDHARTH NAIK,St. Michaels School,LKG,Female,AW260212,1,0,SHAARVI SIDDHARTH NAIK,
+review,REVIEW,e513bbb7-3634-487c-9dc3-4409b4a5b6a1,SAANVI SIDDHARTH NAIK,St. Michaels School,Grade 3,Female,AW260211,1,0,SAANVI SIDDHARTH NAIK,963db088-f1da-4cdd-97f9-0de8f9342e92

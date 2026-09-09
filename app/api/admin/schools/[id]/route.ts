@@ -5,6 +5,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { schools } from "@/db/schema";
 import { isResponse, requirePermission } from "@/lib/admin-guard";
+import { logAdminActivity, diffFields } from "@/lib/activity";
 
 const Body = z.object({
   name: z.string().min(1).optional(),
@@ -42,17 +43,55 @@ export async function PATCH(
       else update[k] = val;
     }
   }
+  const [before] = await db.select().from(schools).where(eq(schools.id, id)).limit(1);
   await db.update(schools).set(update).where(eq(schools.id, id));
+  if (before) {
+    const changes = diffFields(
+      before as unknown as Record<string, unknown>,
+      update,
+      {
+        name: "Name",
+        slug: "Slug",
+        city: "City",
+        state: "State",
+        status: "Status",
+        isFeatured: "Featured",
+        isSetupComplete: "Setup complete",
+        contactEmail: "Contact email",
+        contactPhone: "Contact phone",
+        bannerUrl: "Banner URL",
+        logoUrl: "Logo URL",
+      }
+    );
+    if (changes.length > 0) {
+      void logAdminActivity(guard, {
+        action: "school.update",
+        entityType: "school",
+        entityId: id,
+        summary: `Updated ${changes.map((c) => c.label ?? c.field).join(", ")}`,
+        changes,
+        req,
+      });
+    }
+  }
   return NextResponse.json({ ok: true });
 }
 
 export async function DELETE(
-  _: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const guard = await requirePermission("schools.write");
   if (isResponse(guard)) return guard;
   const { id } = await params;
+  const [before] = await db.select().from(schools).where(eq(schools.id, id)).limit(1);
   await db.delete(schools).where(eq(schools.id, id));
+  void logAdminActivity(guard, {
+    action: "school.delete",
+    entityType: "school",
+    entityId: id,
+    summary: `Deleted school ${before?.name ?? id}`,
+    req,
+  });
   return NextResponse.json({ ok: true });
 }

@@ -4,6 +4,7 @@ import { grades, students } from "@/db/schema";
 import { eq, sql, count } from "drizzle-orm";
 import { PageHeader, Card, CardHeader, Badge } from "@/components/admin/ui/primitives";
 import { GradeEditor } from "@/components/admin/GradeEditor";
+import { RecordHistory } from "@/components/admin/RecordHistory";
 
 export const dynamic = "force-dynamic";
 
@@ -25,6 +26,9 @@ export default async function GradeDetailPage({ params }: { params: Promise<{ id
         <CardHeader title="Edit grade" />
         <GradeEditor mode="edit" gradeId={id} initial={{ gradeName: g.gradeName ?? "", gradeCode: g.gradeCode ?? "", status: (g.status === "Inactive" ? "Inactive" : "Active") as "Active" | "Inactive" }} />
       </Card>
+      <div className="mt-5">
+        <RecordHistory entityType="grade" entityId={id} title="Grade history" />
+      </div>
     </div>
   );
 }

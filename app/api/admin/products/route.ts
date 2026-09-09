@@ -13,6 +13,7 @@ import {
 import { isResponse, requirePermission } from "@/lib/admin-guard";
 import { invalidateCatalog } from "@/lib/cache";
 import { buildQrPayload, renderQrSvg } from "@/lib/qr";
+import { logAdminActivity } from "@/lib/activity";
 
 export async function GET(req: Request) {
   const guard = await requirePermission("catalog.read");
@@ -274,5 +275,14 @@ export async function POST(req: Request) {
   }
 
   await invalidateCatalog();
+
+  void logAdminActivity(guard, {
+    action: "product.create",
+    entityType: "product",
+    entityId: created.id,
+    summary: `Created product ${created.name}`,
+    req,
+  });
+
   return NextResponse.json({ product: created });
 }

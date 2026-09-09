@@ -6,6 +6,7 @@ import { db } from "@/db/client";
 import { productImages } from "@/db/schema";
 import { isResponse, requirePermission } from "@/lib/admin-guard";
 import { invalidateCatalog } from "@/lib/cache";
+import { logAdminActivity } from "@/lib/activity";
 
 const PostBody = z.object({
   url: z.string().url(),
@@ -51,5 +52,14 @@ export async function POST(
     })
     .returning();
   await invalidateCatalog();
+
+  void logAdminActivity(guard, {
+    action: "product.image.add",
+    entityType: "product",
+    entityId: id,
+    summary: `Added product image`,
+    req,
+  });
+
   return NextResponse.json({ image: created });
 }

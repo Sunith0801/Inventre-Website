@@ -5,6 +5,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { websiteCartCoupons, schools, students } from "@/db/schema";
 import { isResponse, requirePermission } from "@/lib/admin-guard";
+import { logAdminActivity, diffFields } from "@/lib/activity";
 
 const Body = z.object({
   couponCode: z.string().min(2).max(64).optional(),
@@ -111,11 +112,43 @@ export async function PATCH(
     .update(websiteCartCoupons)
     .set(update)
     .where(eq(websiteCartCoupons.id, id));
+  const after = { ...update };
+  delete after.updatedAt;
+  const changes = diffFields(
+    existing as unknown as Record<string, unknown>,
+    after,
+    {
+      couponCode: "Coupon Code",
+      isActive: "Active",
+      schoolErpName: "School",
+      schoolId: "School",
+      studentErpName: "Student",
+      studentId: "Student",
+      grade: "Grade",
+      startDatetime: "Start",
+      endDatetime: "End",
+      oneTimeUse: "One-time Use",
+      canUseMultipleTimes: "Multiple Uses",
+      discountType: "Discount Type",
+      discount: "Discount",
+      maximumDiscountAmount: "Max Discount Amount",
+    }
+  );
+  if (changes.length > 0) {
+    void logAdminActivity(guard, {
+      action: "coupon.update",
+      entityType: "coupon",
+      entityId: id,
+      summary: `Updated ${changes.map((c) => c.label ?? c.field).join(", ")}`,
+      changes,
+      req,
+    });
+  }
   return NextResponse.json({ ok: true });
 }
 
 export async function DELETE(
-  _: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const guard = await requirePermission("discounts.write");
@@ -130,5 +163,12 @@ export async function DELETE(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   // ERPNext delete retired. Just drop the local row.
   await db.delete(websiteCartCoupons).where(eq(websiteCartCoupons.id, id));
+  void logAdminActivity(guard, {
+    action: "coupon.delete",
+    entityType: "coupon",
+    entityId: id,
+    summary: `Deleted coupon ${existing.couponCode ?? id}`,
+    req,
+  });
   return NextResponse.json({ ok: true });
 }

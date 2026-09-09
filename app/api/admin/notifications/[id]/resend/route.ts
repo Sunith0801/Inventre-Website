@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requirePermission, isResponse } from "@/lib/admin-guard";
 import { resendNotification } from "@/lib/order-confirmation";
+import { logAdminActivity } from "@/lib/activity";
 
 /**
  * Re-fire a failed order-confirmation notification (one channel, one
@@ -8,7 +9,7 @@ import { resendNotification } from "@/lib/order-confirmation";
  * appended to order_notifications — the dashboard shows the full history.
  */
 export async function POST(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const guard = await requirePermission("order-notifications.write");
@@ -22,5 +23,12 @@ export async function POST(
       : 502;
     return NextResponse.json({ error: result.error }, { status });
   }
+  void logAdminActivity(guard, {
+    action: "notification.resend",
+    entityType: "notification",
+    entityId: id,
+    summary: "Resent order-confirmation notification",
+    req,
+  });
   return NextResponse.json({ ok: true });
 }

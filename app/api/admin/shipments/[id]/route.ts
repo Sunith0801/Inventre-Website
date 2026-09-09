@@ -1,12 +1,16 @@
 import { NextResponse } from "next/server";
 import { parseBody } from "@/lib/parse-body";
 import { z } from "zod";
+import { eq } from "drizzle-orm";
+import { db } from "@/db/client";
+import { shipments } from "@/db/schema";
 import { requirePermission, isResponse } from "@/lib/admin-guard";
 import {
   getShipmentDetail,
   markShipped,
   markDelivered,
 } from "@/lib/repos/shipments";
+import { logAdminActivity } from "@/lib/activity";
 
 export async function GET(
   _: Request,
@@ -54,6 +58,21 @@ export async function POST(
     } else if (body.action === "mark_delivered") {
       await markDelivered(id, guard.id);
     }
+    const [ship] = await db
+      .select({ orderId: shipments.orderId, shipmentNumber: shipments.shipmentNumber })
+      .from(shipments)
+      .where(eq(shipments.id, id))
+      .limit(1);
+    void logAdminActivity(guard, {
+      action: "shipment.update",
+      entityType: ship?.orderId ? "order" : "shipment",
+      entityId: ship?.orderId ?? id,
+      summary:
+        body.action === "mark_shipped"
+          ? `Shipment ${ship?.shipmentNumber ?? id} marked shipped${body.carrier ? ` via ${body.carrier}` : ""}${body.trackingNumber ? ` (${body.trackingNumber})` : ""}`
+          : `Shipment ${ship?.shipmentNumber ?? id} marked delivered`,
+      req,
+    });
     return NextResponse.json({ ok: true });
   } catch (e) {
     return NextResponse.json(

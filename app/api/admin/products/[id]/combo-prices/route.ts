@@ -5,6 +5,7 @@ import { db } from "@/db/client";
 import { itemPrices, productVariants } from "@/db/schema";
 import { isResponse, requirePermission } from "@/lib/admin-guard";
 import { invalidateCatalog } from "@/lib/cache";
+import { logAdminActivity } from "@/lib/activity";
 
 const Body = z.object({
   priceListId: z.string().uuid(),
@@ -101,5 +102,14 @@ export async function POST(
   });
 
   await invalidateCatalog();
+
+  void logAdminActivity(guard, {
+    action: "product.combo_prices.set",
+    entityType: "product",
+    entityId: productId,
+    summary: `Updated prices for ${updates.length} variant(s)`,
+    req,
+  });
+
   return NextResponse.json({ ok: true });
 }

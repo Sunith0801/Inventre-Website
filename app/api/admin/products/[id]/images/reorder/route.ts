@@ -6,6 +6,7 @@ import { db } from "@/db/client";
 import { productImages } from "@/db/schema";
 import { isResponse, requirePermission } from "@/lib/admin-guard";
 import { invalidateCatalog } from "@/lib/cache";
+import { logAdminActivity } from "@/lib/activity";
 
 const Body = z.object({
   order: z.array(z.string().uuid()).min(1),
@@ -58,5 +59,14 @@ export async function POST(
   });
 
   await invalidateCatalog();
+
+  void logAdminActivity(guard, {
+    action: "product.image.reorder",
+    entityType: "product",
+    entityId: productId,
+    summary: `Reordered ${body.order.length} product image(s)`,
+    req,
+  });
+
   return NextResponse.json({ ok: true });
 }
