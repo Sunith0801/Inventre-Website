@@ -20,6 +20,7 @@ import {
   applyStockChange,
   getDefaultWarehouseId,
 } from "@/lib/repos/inventory";
+import { logAdminActivity } from "@/lib/activity";
 
 export async function GET(req: Request) {
   const guard = await requirePermission("orders.read");
@@ -266,6 +267,14 @@ export async function POST(req: Request) {
       }
 
       return draft;
+    });
+
+    void logAdminActivity(guard, {
+      action: "order.create",
+      entityType: "order",
+      entityId: created.id,
+      summary: `Created order ${orderNumber} (${body.paymentStatus})`,
+      req,
     });
 
     return NextResponse.json({ id: created.id, orderNumber });

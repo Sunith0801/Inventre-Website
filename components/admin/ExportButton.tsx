@@ -6,12 +6,15 @@ import { Button } from "@/components/admin/ui/primitives-client";
 export function ExportButton({
   type,
   label = "Export CSV",
+  href,
 }: {
   type: "orders" | "customers" | "invoices" | "products" | "stock" | "schools";
   label?: string;
+  /** Override the download URL (e.g. a filter-aware, per-area export route). */
+  href?: string;
 }) {
   return (
-    <a href={`/api/admin/export/${type}`} download>
+    <a href={href ?? `/api/admin/export/${type}`} download>
       <Button
         variant="secondary"
         size="sm"

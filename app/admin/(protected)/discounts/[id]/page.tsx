@@ -24,6 +24,7 @@ import {
   WebsiteCartCouponForm,
   type CouponInitial,
 } from "@/components/admin/WebsiteCartCouponForm";
+import { RecordHistory } from "@/components/admin/RecordHistory";
 
 export const dynamic = "force-dynamic";
 
@@ -228,6 +229,10 @@ export default async function EditDiscountPage({
           </div>
         )}
       </Card>
+
+      <div className="mt-5">
+        <RecordHistory entityType="coupon" entityId={id} title="Coupon history" />
+      </div>
     </div>
   );
 }

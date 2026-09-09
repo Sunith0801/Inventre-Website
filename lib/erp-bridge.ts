@@ -1031,6 +1031,7 @@ export async function buildExchangePayload(
     ),
   );
   const perItemVariantLookup = new Map<string, Record<string, unknown>>();
+  const perItemColours = await loadVariantColours(perItemRequestedVariantIds);
   if (perItemRequestedVariantIds.length > 0) {
     const rvRows = await db
       .select({ variant: productVariants, product: products })
@@ -1043,6 +1044,7 @@ export async function buildExchangePayload(
         item_code: resolveItemCode(v, p),
         item_name: p.name,
         size: v.size,
+        colour: perItemColours.get(v.id) ?? null,
         sku: v.sku,
         image_url: v.imageUrl ?? null,
       });
@@ -1074,6 +1076,20 @@ export async function buildExchangePayload(
         .filter((v): v is string => isUuid(v)),
     ),
   );
+
+  // Colour for every variant this payload names — the delivered piece, the
+  // requested sibling, and each resolved component. See loadVariantColours:
+  // colour is an attribute binding, never a `product_variants` column, so
+  // until now it was dropped on the floor and audit could only show the size.
+  const rcpHeadVariantId = (ret.requestedComponentPath as { variantId?: string } | null)
+    ?.variantId;
+  const colourByVariant = await loadVariantColours([
+    ...lineRows.map(({ variant }) => variant.id),
+    ...perItemRequestedVariantIds,
+    ...componentVariantIds,
+    ...(ret.requestedVariantId ? [ret.requestedVariantId] : []),
+    ...(rcpHeadVariantId ? [rcpHeadVariantId] : []),
+  ]);
   const componentVariantLookup = new Map<string, Record<string, unknown>>();
   if (componentVariantIds.length > 0) {
     const cvRows = await db
@@ -1087,6 +1103,7 @@ export async function buildExchangePayload(
         item_code: resolveItemCode(v, p),
         item_name: p.name,
         size: v.size,
+        colour: colourByVariant.get(v.id) ?? null,
         sku: v.sku,
         image_url: v.imageUrl ?? null,
       });
@@ -1112,6 +1129,12 @@ export async function buildExchangePayload(
       item_code: resolveItemCode(variant, product),
       item_name: oi.nameSnapshot,
       delivered_size: (comp?.size as string | null | undefined) ?? variant.size ?? null,
+      // Colour of the piece the customer actually received, so audit's
+      // Delivered card can say "Yellow · 28" instead of a bare size.
+      delivered_colour:
+        (comp?.colour as string | null | undefined) ??
+        colourByVariant.get(variant.id) ??
+        null,
       qty: ri.qty,
       condition: ri.condition ?? null,
       line_reason: ri.reason ?? null,
@@ -1169,6 +1192,7 @@ export async function buildExchangePayload(
         item_code: resolveItemCode(rv.variant, rv.product),
         item_name: rv.product.name,
         size: rv.variant.size,
+        colour: colourByVariant.get(rv.variant.id) ?? null,
         sku: rv.variant.sku,
         // Variant image — products has its primary image in the
         // `product_images` join table which is too heavy to fetch
@@ -1193,6 +1217,11 @@ export async function buildExchangePayload(
     | null;
   if (rcp) {
     enrichedComponentPath = {
+      // Spread FIRST so everything the customer's path carries survives —
+      // notably `variantChange` ({originalColour/Size, requestedColour/Size}),
+      // which this hand-built object used to drop, leaving audit's head row
+      // with no record of what the parent actually asked to change.
+      ...rcp,
       variant_id: rcp.variantId ?? null,
       component_name: rcp.componentName ?? null,
       attributes: rcp.attributes ?? [],
@@ -1209,6 +1238,7 @@ export async function buildExchangePayload(
           item_code: resolveItemCode(cp.variant, cp.product),
           item_name: cp.product.name,
           size: cp.variant.size,
+          colour: colourByVariant.get(cp.variant.id) ?? null,
           sku: cp.variant.sku,
           image_url: cp.variant.imageUrl ?? null,
         });
@@ -1324,6 +1354,38 @@ export async function emitConcernEvent(
   } catch (e) {
     console.error(`[erp-bridge] ${eventType} ${concernId} failed:`, e);
   }
+}
+
+
+/**
+ * Colour per variant, resolved from the attribute bindings
+ * (`product_variant_attributes` → `product_attributes` / values).
+ *
+ * Colour is NOT a column on `product_variants` — only `size` is — so every
+ * exchange payload audit ever received carried the size and silently dropped
+ * the colour. The storefront picker asks the parent for "Required colour"
+ * (e.g. a Yellow sports polo), and audit's Exchange detail then showed only
+ * "Size 28", leaving the warehouse to guess which colour to hand over.
+ *
+ * Empty map for an empty input; a variant with no colour binding is simply
+ * absent (callers emit null), so a size-only product is unaffected.
+ */
+async function loadVariantColours(
+  variantIds: string[],
+): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  const ids = Array.from(new Set(variantIds.filter(isUuid)));
+  if (ids.length === 0) return out;
+  const r = (await db.execute(sql`
+    SELECT pva.variant_id::text AS variant_id, pav.value AS value
+      FROM product_variant_attributes pva
+      JOIN product_attributes pa ON pa.id = pva.attribute_id
+      JOIN product_attribute_values pav ON pav.id = pva.value_id
+     WHERE pva.variant_id IN ${sql.raw(`(${ids.map((i) => `'${i}'`).join(",")})`)}
+       AND pa.name ~* 'colou?r'
+  `)) as unknown as { variant_id: string; value: string | null }[];
+  for (const x of r) if (x.value) out.set(x.variant_id, x.value);
+  return out;
 }
 
 export async function emitExchangeEvent(

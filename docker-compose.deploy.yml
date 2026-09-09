@@ -133,8 +133,18 @@ services:
       NEXT_PUBLIC_APP_URL: https://inventre.in
       NEXT_TELEMETRY_DISABLED: "1"
       MSG91_SENDER_ID: ""  # legacy — not used, kept to avoid startup warnings
+      # Settlement-report drop dir (CCAvenue SFTP push lands on the host at
+      # /home/ccavenue-sftp/settlements; bind-mounted below). The daily
+      # ccavenue-settlement-reconcile cron drains it to auto-heal captures
+      # hidden behind aborted retries.
+      CCAVENUE_SETTLEMENT_DIR: /settlements
       # AUTH_SECRET / JWT_SECRET / CRON_* / S3_* / SMTP_* etc. come from
       # env_file (.env.deploy). They are intentionally NOT listed here.
+    volumes:
+      # CCAvenue settlement-report drop (host SFTP chroot dir). Read+rename
+      # (processed files become *.done.csv). Container runs as uid 1001; a
+      # POSIX ACL on the host dir grants it access (files land as uid 1000).
+      - /home/ccavenue-sftp/settlements:/settlements
     ports:
       - "3010:3000"
     # Self-heal if the app ever gets fully stuck (e.g. wedged ioredis

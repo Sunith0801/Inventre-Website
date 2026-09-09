@@ -12,6 +12,7 @@ import {
 } from "@/db/schema";
 import { isResponse, requirePermission } from "@/lib/admin-guard";
 import { invalidateCatalog } from "@/lib/cache";
+import { logAdminActivity } from "@/lib/activity";
 
 /** Existing BOM components for a product — for prefilling the BOM form. */
 export async function GET(req: Request) {
@@ -99,5 +100,14 @@ export async function POST(req: Request) {
   }
 
   await invalidateCatalog();
+
+  void logAdminActivity(guard, {
+    action: "bom.create",
+    entityType: "bom",
+    entityId: bundle.id,
+    summary: `Set BOM with ${body.components.length} component(s)`,
+    req,
+  });
+
   return NextResponse.json({ ok: true, bundleId: bundle.id });
 }

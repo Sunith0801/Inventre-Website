@@ -4,6 +4,7 @@ import { db } from "@/db/client";
 import { contentBlocks } from "@/db/schema";
 import { HomeContentEditor } from "@/components/admin/HomeContentEditor";
 import { PageHeader } from "@/components/admin/ui/primitives";
+import { RecordHistory } from "@/components/admin/RecordHistory";
 
 const LABELS: Record<string, string> = {
   "home.sale_strip": "Sale strip",
@@ -41,6 +42,10 @@ export default async function ContentBlockEdit({
         }
       />
       <HomeContentEditor blockKey={decoded} initial={block.data} />
+
+      <div className="mt-5">
+        <RecordHistory entityType="content" entityId={decoded} title="Content history" />
+      </div>
     </div>
   );
 }

@@ -217,6 +217,13 @@ export default async function ProductsListPage({
   const standardGradeOpts = gradeOpts.filter((o) => !/dse/i.test(o.value));
   const dseGradeOpts = gradeOpts.filter((o) => /dse/i.test(o.value));
   const variantCount = new Map(variantCounts.map((v) => [v.productId, Number(v.n)]));
+  // The export must reproduce exactly what the filters select — same params,
+  // minus pagination (an export escapes the page slice by design).
+  const exportQs = new URLSearchParams(
+    Object.entries({ q, status, schoolId, erp, grade, kind }).filter(
+      ([, v]) => v,
+    ) as [string, string][],
+  ).toString();
   // Pick the primary image (or the lowest sortOrder one) per product.
   const imageByProduct = new Map<string, string>();
   for (const im of primaryImages) {
@@ -244,7 +251,16 @@ export default async function ProductsListPage({
         }${effectiveGrade ? ` · ${effectiveGrade}` : ""}`}
         actions={
           <div className="flex items-center gap-2">
-            <ExportButton type="products" />
+            <ExportButton
+              type="products"
+              label="Export Excel"
+              href={`/api/admin/products/export${exportQs ? `?${exportQs}` : ""}`}
+            />
+            <ExportButton
+              type="products"
+              label="Price List (by school)"
+              href={`/api/admin/products/price-list${exportQs ? `?${exportQs}` : ""}`}
+            />
             <Link href="/admin/products/new">
               <Button icon={<Plus className="h-3.5 w-3.5" />} variant="primary">
                 Add product

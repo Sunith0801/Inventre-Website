@@ -31,6 +31,8 @@ export type Product = {
   sizeTable?: { size: string; chest: string; length: string; sleeve: string }[];
   /** Optional size-chart reference image rendered above the size table. */
   sizeChartUrl?: string | null;
+  /** Free-text note shown directly under the product image on the PDP. */
+  imageNote?: string | null;
   /** Template-level variant options (e.g. Hindi / Kannada Bookkit). When
    *  present, the PDP renders an attribute selector that navigates to the
    *  chosen variant's own PDP. */

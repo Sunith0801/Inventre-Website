@@ -7,6 +7,7 @@ import { productAttributes } from "@/db/schema";
 import { isResponse, requirePermission } from "@/lib/admin-guard";
 import { invalidateCatalog } from "@/lib/cache";
 import { normalizeAttributeName } from "@/lib/normalize-attribute-name";
+import { logAdminActivity, diffFields } from "@/lib/activity";
 
 const Body = z.object({
   name: z.string().min(1).optional(),
@@ -72,21 +73,70 @@ export async function PATCH(
       update[k] = v;
     }
   }
+  const [beforeRow] = await db
+    .select()
+    .from(productAttributes)
+    .where(eq(productAttributes.id, id))
+    .limit(1);
   await db.update(productAttributes).set(update).where(eq(productAttributes.id, id));
   // Attribute name / metadata appears in cached product DTOs
   // (attributeGroups[].name). Bust both shop caches so renames land live.
   await invalidateCatalog();
+
+  // Exclude the bookkeeping `updatedAt` from the diff so it doesn't show as a
+  // change on every edit.
+  const { updatedAt: _ignore, ...afterForDiff } = update;
+  const changes = diffFields(
+    (beforeRow ?? {}) as unknown as Record<string, unknown>,
+    afterForDiff,
+    {
+      name: "Name",
+      type: "Type",
+      description: "Description",
+      sortOrder: "Sort Order",
+      isDisabled: "Disabled",
+      isNumeric: "Numeric",
+      numericFromRange: "Numeric From",
+      numericToRange: "Numeric To",
+      numericIncrement: "Numeric Increment",
+    }
+  );
+  if (changes.length > 0) {
+    void logAdminActivity(guard, {
+      action: "attribute.update",
+      entityType: "attribute",
+      entityId: id,
+      summary: `Updated ${changes.map((c) => c.label ?? c.field).join(", ")}`,
+      changes,
+      req,
+    });
+  }
+
   return NextResponse.json({ ok: true });
 }
 
 export async function DELETE(
-  _: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const guard = await requirePermission("catalog.write");
   if (isResponse(guard)) return guard;
   const { id } = await params;
+  const [beforeDelete] = await db
+    .select({ name: productAttributes.name })
+    .from(productAttributes)
+    .where(eq(productAttributes.id, id))
+    .limit(1);
   await db.delete(productAttributes).where(eq(productAttributes.id, id));
   await invalidateCatalog();
+
+  void logAdminActivity(guard, {
+    action: "attribute.delete",
+    entityType: "attribute",
+    entityId: id,
+    summary: `Deleted attribute ${beforeDelete?.name ?? id}`,
+    req,
+  });
+
   return NextResponse.json({ ok: true });
 }

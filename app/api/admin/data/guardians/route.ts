@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db, schema } from "@/db/client";
 import { isResponse, requirePermission } from "@/lib/admin-guard";
+import { logAdminActivity } from "@/lib/activity";
 import { parseJson } from "@/lib/api-handler";
 import { phone10Schema, phone10NullableSchema } from "@/lib/phone";
 
@@ -32,5 +33,14 @@ export async function POST(req: Request) {
       dateOfBirth: body.dateOfBirth ?? null,
     })
     .returning({ id: schema.guardians.id });
+
+  void logAdminActivity(guard, {
+    action: "guardian.create",
+    entityType: "guardian",
+    entityId: created.id,
+    summary: `Created guardian ${body.guardianName}`,
+    req,
+  });
+
   return NextResponse.json({ id: created.id });
 }

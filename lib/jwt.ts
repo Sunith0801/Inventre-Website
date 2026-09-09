@@ -2,7 +2,7 @@ import { SignJWT, jwtVerify, type JWTPayload } from "jose";
 
 export type SessionPayload = {
   sub: string;
-  kind: "parent" | "admin";
+  kind: "parent" | "admin" | "fees";
   schoolId?: string;
   role?: "super" | "ops" | "school_admin";
   // Parent sessions only: the phone the user actually authenticated with.
@@ -47,4 +47,13 @@ export async function verifySession(
 // the split and is kept for parents to avoid invalidating live sessions.
 export const SESSION_COOKIE = "inv_session";
 export const ADMIN_SESSION_COOKIE = "inv_admin";
+/**
+ * Fee-ledger session — deliberately a THIRD cookie rather than a small-
+ * permission admin session. A fee-desk login is then not an admin at all:
+ * `kind` is checked against the area, so admin guards reject this token
+ * outright, and the admin pages that carry no permission guard of their own
+ * stop being reachable by these accounts. It also lets one browser hold an
+ * admin login and a fee-desk login at the same time.
+ */
+export const FEES_SESSION_COOKIE = "inv_fees";
 export const SESSION_MAX_AGE = SESSION_TTL;

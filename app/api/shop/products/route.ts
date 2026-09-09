@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
+import { getSiteAccess } from "@/lib/site-access";
 import { requireParent, isResponse } from "@/lib/parent-guard";
 import { listProductsForStudent } from "@/lib/repos/products";
 import { toTargetedGrade } from "@/lib/repos/grades";
+import {
+  isCatalogDisabledSchool,
+  catalogDisabledMessage,
+} from "@/lib/school-catalog-gate";
 
 /**
  * Roots-only shop feed.
@@ -19,15 +24,37 @@ import { toTargetedGrade } from "@/lib/repos/grades";
 export async function GET(req: Request) {
   const me = await requireParent();
   if (isResponse(me)) return me;
+  // Access is per family: ANY switched-off student on this account closes
+  // the catalog for all of them. Enforced here as well as in the shop
+  // layout because route handlers never run that layout — a direct fetch
+  // would otherwise still be served a full catalog.
+  if (me.closedStudents.length > 0) {
+    const access = await getSiteAccess();
+    return NextResponse.json(
+      { closed: true, title: access.title, subtitle: access.subtitle },
+      { status: 403 },
+    );
+  }
   if (me.students.length === 0) {
     return NextResponse.json({ error: "No student attached" }, { status: 400 });
   }
 
   const url = new URL(req.url);
   const requestedId = url.searchParams.get("studentId");
+
   const active =
     (requestedId && me.students.find((s) => s.id === requestedId)) ||
     me.students[0];
+
+  // Offline-only schools (e.g. Young India Police School) get NO catalog at
+  // all — no products to add. Checked before the grade resolution below so
+  // these parents never see a "grade is missing" prompt either.
+  if (isCatalogDisabledSchool(active.school)) {
+    return NextResponse.json(
+      { error: catalogDisabledMessage(active.school.name) },
+      { status: 400 }
+    );
+  }
 
   // `students.grade` is the Targeted-Grade vocabulary (Nursery / LKG / UKG
   // / Grade 1..12), same as `product_grades.grade`. When it's missing,

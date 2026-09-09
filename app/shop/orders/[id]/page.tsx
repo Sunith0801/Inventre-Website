@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { useFocusRefetch } from "@/lib/use-focus-refetch";
-import { derivePlacement } from "@/lib/order-display";
+import { derivePlacement, describePaymentStatus } from "@/lib/order-display";
 import { ArrowLeft, CheckCircle2, Package } from "lucide-react";
 import { Nav } from "@/components/Nav";
 import { Footer } from "@/components/Footer";
@@ -53,10 +53,17 @@ type OrderDetail = {
     id: string;
     name: string;
     size: string;
+    /** Per-axis attributes (Colour · Size) for a plain line item, resolved
+     *  from product_variant_attributes — same enrichment Magic Box contents
+     *  get. Empty for legacy variants with no attribute rows. */
+    attributes?: { name: string; value: string }[];
     qty: number;
     unitPrice: number;
     total: number;
     imageUrl: string;
+    /** Per-item delivery status for a plain line (null for Magic Box parents,
+     *  which show per-component status inside "Box contents"). */
+    status?: CategoryStatus | null;
     bundleSelections:
       | {
           componentProductId: string;
@@ -65,10 +72,22 @@ type OrderDetail = {
           variantId: string;
           size: string;
           attributes: { name: string; value: string }[];
+          /** Per-component delivery status; null when the box isn't
+           *  line-level tracked (then no per-component badge is shown). */
+          status?: CategoryStatus | null;
+          /** Shipment category (lowercased) this component belongs to, so it
+           *  can be listed inside the matching per-category tracking card. */
+          category?: string | null;
         }[]
       | null;
   }[];
   payment: { provider: string; status: string; method: string | null } | null;
+  rto?: {
+    active: boolean;
+    delivered: boolean;
+    stage: string | null;
+    timeline: { at: string; label: string; location: string | null }[];
+  } | null;
   tracking?: {
     partner: string;
     trackingNumber: string | null;
@@ -110,9 +129,13 @@ type OrderDetail = {
       deliveredQty: number;
       pickedQty: number;
       returnedQty: number;
+      itemCode: string | null;
+      status: CategoryStatus;
     }[];
   }[];
   pollPending?: boolean;
+  paymentStatusRaw?: string | null;
+  canReorder?: boolean;
 };
 
 type CategoryStatus =
@@ -129,6 +152,28 @@ const CATEGORY_STATUS_CLASS: Record<CategoryStatus, string> = {
   returned: "bg-rose-100 text-rose-800",
   pending: "bg-ink-100 text-ink-600",
 };
+
+// Small per-item / per-component delivery-status pill. Shows the line's LIVE
+// status in the same words and colours as the category card (delivered / out
+// for delivery / in transit / returned / pending), rather than the old binary
+// green-delivered-else-red-"pending" — a parcel already on the van read
+// "pending" to the parent, which contradicted the tracking timeline right
+// above it. "pending" is now only what the resolver genuinely can't report on
+// (held back, out-of-stock, no shipment row). Renders nothing when status is
+// unknown (order/box not line-level tracked).
+function ItemStatusPill({ status }: { status?: CategoryStatus | null }) {
+  if (!status) return null;
+  return (
+    <span
+      className={
+        "shrink-0 rounded-full px-2 py-0.5 text-[9.5px] font-bold uppercase tracking-wider " +
+        (CATEGORY_STATUS_CLASS[status] ?? CATEGORY_STATUS_CLASS.pending)
+      }
+    >
+      {status}
+    </span>
+  );
+}
 
 // 7-stage pipeline. "in transit" and "out for delivery" are intentionally
 // distinct from "shipped" so the stage bar reflects audit's real progress
@@ -168,6 +213,9 @@ export default function OrderDetailPage() {
     status: string;
     pickupDate: string | null;
     createdAt: string;
+    atStore?: boolean;
+    rejectionReason?: string | null;
+    duplicateOf?: unknown;
   } | null>(null);
   const [activeMissing, setActiveMissing] = useState<{
     id: string;
@@ -175,6 +223,7 @@ export default function OrderDetailPage() {
     status: string;
     pickupDate: string | null;
     createdAt: string;
+    atStore?: boolean;
   } | null>(null);
 
   const refetchOrder = useCallback(
@@ -307,6 +356,12 @@ export default function OrderDetailPage() {
   const placement = derivePlacement(order);
   const notPlaced = placement === "not_placed";
   const paymentProcessing = placement === "processing";
+  // Actual CCAvenue status + its meaning (e.g. "Initiated" / "Aborted"), shown
+  // on an abandoned checkout. Null when we can't identify the gateway word.
+  const payInfo = describePaymentStatus(order.paymentStatusRaw);
+  // Re-ordering is impossible when a one-per-student Magic Box is already
+  // placed for this student — then we hide the "Place again" button.
+  const canReorder = order.canReorder !== false;
 
   return (
     <main className="min-h-screen">
@@ -384,6 +439,67 @@ export default function OrderDetailPage() {
           </span>
         </div>
 
+        {/* RTO (Return to Origin) — prominent badge + sub-timeline, shown
+            whenever audit's carrier feed reports the parcel returning to
+            origin. Sits above the normal tracking so it's the first thing the
+            customer sees, instead of the truth being buried in the scan log. */}
+        {order.rto && (order.rto.active || order.rto.delivered) && (
+          <div className="mt-6 rounded-2xl border border-rose-200 bg-rose-50 p-4 sm:p-5">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded-full bg-rose-600 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider text-white">
+                RTO
+              </span>
+              <span className="text-[13.5px] font-bold text-rose-900">
+                {order.rto.delivered
+                  ? "Returned to origin"
+                  : "Return to origin in progress"}
+              </span>
+              {order.rto.stage && (
+                <span className="ml-auto rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-rose-700 ring-1 ring-rose-200">
+                  {order.rto.stage}
+                </span>
+              )}
+            </div>
+            <p className="mt-1.5 text-[12.5px] text-rose-700">
+              {order.rto.delivered
+                ? "This parcel could not be delivered and has been returned to the sender. Our team will reach out about a re-dispatch."
+                : "The carrier is returning this parcel to the sender. We're tracking it and will update you on the next step."}
+            </p>
+            {order.rto.timeline.length > 0 && (
+              <ol className="mt-3 space-y-2 border-t border-rose-200 pt-3">
+                {[...order.rto.timeline].reverse().map((ev, i) => (
+                  <li
+                    key={i}
+                    className="flex items-baseline gap-2.5 text-[12px]"
+                  >
+                    <span
+                      className={
+                        "mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full " +
+                        (i === 0 ? "bg-rose-600" : "bg-rose-300")
+                      }
+                    />
+                    <span className="font-semibold text-rose-900">
+                      {ev.label}
+                    </span>
+                    {ev.location && (
+                      <span className="text-rose-600">· {ev.location}</span>
+                    )}
+                    <span className="ml-auto shrink-0 tabular-nums text-rose-500">
+                      {new Date(ev.at).toLocaleString("en-IN", {
+                        day: "2-digit",
+                        month: "short",
+                        hour: "numeric",
+                        minute: "2-digit",
+                        hour12: true,
+                      })}
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            )}
+          </div>
+        )}
+
         {/* Per-category tracking. Each parcel-stream (Bookkit, Uniform, …)
             gets a self-contained card with: status badge, 5-step stepper,
             per-item progress, and the matching carrier shipment(s) with
@@ -399,25 +515,77 @@ export default function OrderDetailPage() {
           if (notPlaced) {
             return (
               <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-5">
-                <p className="font-display text-[16px] font-bold text-amber-900">
-                  This order hasn&apos;t been placed
-                </p>
-                <p className="mt-1.5 text-[13.5px] leading-relaxed text-amber-800">
-                  You reached the payment page but the payment wasn&apos;t
-                  completed — <b>no money was charged</b>. You can place the
-                  order again whenever you&apos;re ready.
-                </p>
-                <a
-                  href="/shop"
-                  className="mt-3 inline-flex items-center justify-center rounded-full bg-ink-900 px-5 py-2.5 text-[13px] font-bold text-white transition-colors hover:bg-brand"
-                >
-                  Place the order again
-                </a>
+                {/* Show the ACTUAL CCAvenue status word + its meaning when we
+                    could identify it; otherwise fall back to a generic line. */}
+                {payInfo ? (
+                  <>
+                    <p className="text-[11px] font-bold tracking-wider uppercase text-amber-700">
+                      Payment status
+                    </p>
+                    <p className="mt-0.5 font-display text-[16px] font-bold text-amber-900">
+                      {payInfo.statusWord}
+                    </p>
+                    <p className="mt-1.5 text-[13.5px] leading-relaxed text-amber-800">
+                      {payInfo.description}
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="font-display text-[16px] font-bold text-amber-900">
+                      This order hasn&apos;t been placed
+                    </p>
+                    <p className="mt-1.5 text-[13.5px] leading-relaxed text-amber-800">
+                      You reached the payment page but the payment wasn&apos;t
+                      completed — <b>no money was charged</b>.
+                    </p>
+                  </>
+                )}
+                {canReorder ? (
+                  <a
+                    href="/shop"
+                    className="mt-3 inline-flex items-center justify-center rounded-full bg-ink-900 px-5 py-2.5 text-[13px] font-bold text-white transition-colors hover:bg-brand"
+                  >
+                    Place the order again
+                  </a>
+                ) : (
+                  <p className="mt-3 inline-flex items-center gap-1.5 text-[13px] font-semibold text-emerald-700">
+                    <CheckCircle2 className="h-4 w-4" />
+                    You&apos;ve already placed this order
+                    {order.studentName ? ` for ${order.studentName}` : ""}.
+                  </p>
+                )}
               </div>
             );
           }
           const groups = order.categoryGroups ?? [];
           const allShipments = order.shipmentHistory ?? [];
+          // Group Magic Box components by their shipment category so each
+          // tracking card can list its own components with per-item status.
+          const compByCat = new Map<
+            string,
+            {
+              name: string;
+              size: string;
+              qty: number;
+              attributes?: { name: string; value: string }[];
+              status?: CategoryStatus | null;
+            }[]
+          >();
+          for (const it of order.items) {
+            for (const c of it.bundleSelections ?? []) {
+              const key = (c.category ?? "").toLowerCase();
+              if (!key) continue;
+              const arr = compByCat.get(key) ?? [];
+              arr.push({
+                name: c.name,
+                size: c.size,
+                qty: c.qty,
+                attributes: c.attributes,
+                status: c.status ?? null,
+              });
+              compByCat.set(key, arr);
+            }
+          }
           if (groups.length > 0) {
             return (
               <div className="mt-6 space-y-4">
@@ -432,6 +600,7 @@ export default function OrderDetailPage() {
                     key={g.rootCategoryId ?? g.rootCategoryName}
                     group={g}
                     shipments={shipmentsForCategory(allShipments, g.rootCategoryName)}
+                    components={compByCat.get(g.rootCategoryName.toLowerCase())}
                   />
                 ))}
               </div>
@@ -500,28 +669,48 @@ export default function OrderDetailPage() {
                       {it.name}
                     </p>
                     <p className="text-[12px] text-ink-500">
-                      {it.bundleSelections && it.bundleSelections.length > 0
-                        ? `Magic Box · ${it.bundleSelections.length} items`
-                        : it.size
-                          ? `Size ${it.size}`
-                          : ""}
-                      {(it.bundleSelections && it.bundleSelections.length > 0) ||
-                      it.size
-                        ? " · "
-                        : ""}
-                      ×{it.qty}
+                      {(() => {
+                        // Magic Box → item count. Plain line → prefer the
+                        // resolved per-axis attributes (Colour · Size); fall
+                        // back to the bare size when a variant has no attribute
+                        // rows (legacy items).
+                        const isBox =
+                          it.bundleSelections && it.bundleSelections.length > 0;
+                        const attrLabel =
+                          it.attributes && it.attributes.length > 0
+                            ? it.attributes.map((a) => a.value).join(" · ")
+                            : it.size
+                              ? `Size ${it.size}`
+                              : "";
+                        const lead = isBox
+                          ? `Magic Box · ${it.bundleSelections!.length} items`
+                          : attrLabel;
+                        return (
+                          <>
+                            {lead}
+                            {lead ? " · " : ""}×{it.qty}
+                          </>
+                        );
+                      })()}
                     </p>
                   </div>
-                  <p className="font-semibold tabular-nums text-ink-900">
-                    ₹{it.total.toLocaleString()}
-                  </p>
+                  <div className="flex flex-col items-end gap-1 shrink-0">
+                    <ItemStatusPill status={it.status} />
+                    <p className="font-semibold tabular-nums text-ink-900">
+                      ₹{it.total.toLocaleString()}
+                    </p>
+                  </div>
                 </div>
                 {it.bundleSelections && it.bundleSelections.length > 0 && (
-                  <div className="mt-2 rounded-lg border border-ink-100 bg-cream-50/60 px-3 py-2">
-                    <p className="text-[10.5px] font-semibold uppercase tracking-wide text-ink-500 mb-1.5">
-                      Box contents
-                    </p>
-                    <ul className="grid sm:grid-cols-2 gap-x-5 gap-y-1">
+                  /* Collapsed by default — a 35-component Magic Box otherwise
+                     buries the rest of the page. <details> keeps it keyboard-
+                     and screen-reader-accessible with no client state. */
+                  <details className="group mt-3">
+                    <ItemsToggle
+                      count={it.bundleSelections.length}
+                      noun="box item"
+                    />
+                    <ul className="mt-2 grid sm:grid-cols-2 gap-x-5 gap-y-1 rounded-lg border border-ink-100 bg-cream-50/60 px-3 py-2">
                       {it.bundleSelections.map((s) => {
                         const isMultiAxis =
                           s.attributes && s.attributes.length > 0;
@@ -534,22 +723,25 @@ export default function OrderDetailPage() {
                               {s.name}
                               {s.qty > 1 ? ` ×${s.qty}` : ""}
                             </span>
-                            {isMultiAxis ? (
-                              <span className="font-semibold text-ink-800 text-right text-[11px] leading-snug">
-                                {s.attributes
-                                  .map((a) => a.value)
-                                  .join(" · ")}
-                              </span>
-                            ) : (
-                              <span className="font-mono font-semibold text-ink-800 text-right text-[11px]">
-                                {s.size}
-                              </span>
-                            )}
+                            <span className="flex items-center justify-end gap-1.5">
+                              {isMultiAxis ? (
+                                <span className="font-semibold text-ink-800 text-right text-[11px] leading-snug">
+                                  {s.attributes
+                                    .map((a) => a.value)
+                                    .join(" · ")}
+                                </span>
+                              ) : (
+                                <span className="font-mono font-semibold text-ink-800 text-right text-[11px]">
+                                  {s.size}
+                                </span>
+                              )}
+                              <ItemStatusPill status={s.status} />
+                            </span>
                           </li>
                         );
                       })}
                     </ul>
-                  </div>
+                  </details>
                 )}
               </li>
             ))}
@@ -635,10 +827,10 @@ export default function OrderDetailPage() {
                       >
                         {order.payment.status === "paid"
                           ? "Paid"
-                          : order.payment.status === "failed"
-                            ? "Not completed"
-                            : notPlaced
-                              ? "Not completed"
+                          : notPlaced
+                            ? (payInfo?.statusWord ?? "Not completed")
+                            : order.payment.status === "failed"
+                              ? (payInfo?.statusWord ?? "Not completed")
                               : paymentProcessing
                                 ? "Processing"
                                 : order.payment.status}
@@ -718,9 +910,13 @@ function shipmentsForCategory(
 function StageBar({
   reachedIdx,
   accent = "brand",
+  lastLabel,
 }: {
   reachedIdx: number;
   accent?: "brand" | "emerald" | "rose";
+  /** Override the final node's label. Used to show "RTO" instead of
+   *  "delivered" for a returned (Return-to-Origin) category. */
+  lastLabel?: string;
 }) {
   const fill =
     accent === "emerald"
@@ -750,6 +946,7 @@ function StageBar({
         const reached = i <= reachedIdx;
         const last = i === stages.length - 1;
         const segFilled = i < reachedIdx;
+        const label = last && lastLabel ? lastLabel : s;
         return (
           <li key={s} className="relative flex flex-col items-center text-center">
             {!last && (
@@ -781,7 +978,7 @@ function StageBar({
                 (reached ? "text-ink-900" : "text-ink-400")
               }
             >
-              {s}
+              {label}
             </span>
           </li>
         );
@@ -790,12 +987,46 @@ function StageBar({
   );
 }
 
+/** Clickable header for the collapsible item lists. Deliberately styled as an
+ *  obvious control — brand-tinted pill, hover state, circled chevron and an
+ *  explicit verb — because the first cut used a plain grey caption and
+ *  customers didn't notice it opened at all. */
+function ItemsToggle({ count, noun = "item" }: { count: number; noun?: string }) {
+  const label = `${count} ${noun}${count === 1 ? "" : "s"}`;
+  return (
+    <summary className="flex cursor-pointer list-none items-center justify-between gap-2 rounded-lg border border-brand-200 bg-brand-50 px-3 py-2 text-[12.5px] font-semibold text-brand-700 transition-colors hover:border-brand-300 hover:bg-brand-100 [&::-webkit-details-marker]:hidden">
+      <span>
+        <span className="group-open:hidden">View {label}</span>
+        <span className="hidden group-open:inline">Hide {label}</span>
+      </span>
+      <span
+        aria-hidden
+        className="grid h-5 w-5 shrink-0 place-items-center rounded-full border border-brand-300 bg-white text-[9px] leading-none text-brand-700 transition-transform group-open:rotate-180"
+      >
+        ▾
+      </span>
+    </summary>
+  );
+}
+
 function CategoryTrackingCard({
   group,
   shipments,
+  components,
 }: {
   group: CategoryGroupForCard;
   shipments: ShipmentHistoryItem[];
+  /** Magic Box components that belong to THIS category (uniform / bookkit).
+   *  When there's more than one we list each with its own delivered/pending
+   *  badge instead of the opaque box line; a single-component category
+   *  (e.g. bookkit) needs no per-item breakdown — the header says it all. */
+  components?: {
+    name: string;
+    size: string;
+    qty: number;
+    attributes?: { name: string; value: string }[];
+    status?: CategoryStatus | null;
+  }[];
 }) {
   const idx = categoryStageIdx(group.status);
   const accent =
@@ -825,8 +1056,20 @@ function CategoryTrackingCard({
           : group.status === "returned"
             ? "returned"
             : "awaiting dispatch";
-  const counterText =
-    group.status === "pending"
+  // When we list per-component rows (multi-component Magic Box category), the
+  // header counter must reflect the components ("6 / 7 delivered"), not the
+  // parcel-level "1 / 1" — otherwise it contradicts a pending component below.
+  const showComponents = !!components && components.length > 1;
+  const counterText = showComponents
+    ? (() => {
+        const total = components!.reduce((n, c) => n + (c.qty || 1), 0);
+        const delivered = components!.reduce(
+          (n, c) => n + (c.status === "delivered" ? c.qty || 1 : 0),
+          0,
+        );
+        return `${delivered} / ${total} delivered`;
+      })()
+    : group.status === "pending"
       ? `${group.totalQty} ${lineLabel}`
       : `${counter} / ${group.totalQty} ${lineLabel}`;
 
@@ -843,43 +1086,67 @@ function CategoryTrackingCard({
               CATEGORY_STATUS_CLASS[group.status]
             }
           >
-            {group.status}
+            {group.status === "returned" ? "RTO" : group.status}
           </span>
           <span className="text-[11.5px] font-semibold tabular-nums text-ink-500">
             {counterText}
           </span>
         </div>
       </div>
-      <StageBar reachedIdx={idx} accent={accent} />
+      <StageBar
+        reachedIdx={idx}
+        accent={accent}
+        lastLabel={group.status === "returned" ? "RTO" : undefined}
+      />
 
-      {group.items.length > 0 && (
-        <ul className="mt-4 space-y-1.5 border-t border-ink-100 pt-3">
-          {group.items.map((it) => {
-            const itCounter =
-              group.status === "delivered"
-                ? it.deliveredQty
-                : group.status === "returned"
-                  ? it.returnedQty
-                  : group.status === "in transit" ||
-                      group.status === "out for delivery"
-                    ? Math.max(it.pickedQty, it.deliveredQty)
-                    : 0;
-            return (
+      {/* Per-item breakdown. For a Magic Box category with more than one
+          component (e.g. uniform) we list every component with its own
+          delivered/pending badge; a single-component category (bookkit) is
+          left to the header. Non-box categories keep listing their own lines,
+          now with the same delivered/pending badge. */}
+      {components && components.length > 1 ? (
+        <details className="group mt-4 border-t border-ink-100 pt-3">
+          <ItemsToggle count={components.length} />
+          <ul className="mt-3 space-y-1.5">
+            {components.map((c, i) => {
+              const detail =
+                c.attributes && c.attributes.length > 0
+                  ? c.attributes.map((a) => a.value).join(" · ")
+                  : c.size;
+              return (
+                <li
+                  key={`${c.name}-${i}`}
+                  className="flex items-center justify-between gap-3 text-[12.5px] text-ink-700"
+                >
+                  <span className="truncate pr-1">
+                    {c.name}
+                    {c.qty > 1 ? ` ×${c.qty}` : ""}
+                    {detail ? (
+                      <span className="text-ink-400"> · {detail}</span>
+                    ) : null}
+                  </span>
+                  <ItemStatusPill status={c.status ?? "pending"} />
+                </li>
+              );
+            })}
+          </ul>
+        </details>
+      ) : !components && group.items.length > 0 ? (
+        <details className="group mt-4 border-t border-ink-100 pt-3">
+          <ItemsToggle count={group.items.length} />
+          <ul className="mt-3 space-y-1.5">
+            {group.items.map((it) => (
               <li
                 key={it.id}
-                className="flex items-center justify-between text-[12.5px] text-ink-700"
+                className="flex items-center justify-between gap-3 text-[12.5px] text-ink-700"
               >
-                <span className="truncate pr-3">{it.name}</span>
-                <span className="shrink-0 tabular-nums text-ink-500">
-                  {group.status === "pending"
-                    ? `× ${it.qty}`
-                    : `${itCounter} / ${it.qty} ${lineLabel}`}
-                </span>
+                <span className="truncate pr-1">{it.name}</span>
+                <ItemStatusPill status={it.status ?? group.status} />
               </li>
-            );
-          })}
-        </ul>
-      )}
+            ))}
+          </ul>
+        </details>
+      ) : null}
 
       {shipments.length > 0 && (
         <div className="mt-5 space-y-4 border-t border-ink-100 pt-4">

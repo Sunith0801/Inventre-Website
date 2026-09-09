@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import bcrypt from "@node-rs/bcrypt";
+import { permissionsFor } from "@/lib/fees-auth";
+import { isFeesScopedPermission } from "@/lib/fees-users";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { users } from "@/db/schema";
@@ -48,6 +50,24 @@ export async function POST(req: Request) {
       { error: "Invalid credentials" },
       { status: 401 }
     );
+
+  // Fee-ledger accounts have their own session and their own door. Issuing
+  // them an admin cookie here would put them back inside /admin, where ~60
+  // pages carry no permission guard of their own.
+  const perms = await permissionsFor(user.id);
+  let staff = false;
+  for (const p of perms) {
+    if (!isFeesScopedPermission(p)) {
+      staff = true;
+      break;
+    }
+  }
+  if (!staff && perms.size > 0) {
+    return NextResponse.json(
+      { error: "This is a fee-ledger account — sign in at /fees/login" },
+      { status: 403 }
+    );
+  }
 
   await createAdminSession(user.id, user.role, user.schoolId);
   return NextResponse.json({ ok: true });

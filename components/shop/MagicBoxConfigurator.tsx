@@ -137,6 +137,11 @@ export function MagicBoxConfigurator({
   const [adding, setAdding] = useState(false);
   const [added, setAdded] = useState(false);
   const [err, setErr] = useState<string>();
+  // Set when the add is blocked because this Magic Box is already placed for
+  // the student — carries the existing order to link to ("view").
+  const [alreadyPlaced, setAlreadyPlaced] = useState<
+    { message: string; orderNumber: string | null } | null
+  >(null);
   const [showErrors, setShowErrors] = useState(false);
   const [prefilledFromCart, setPrefilledFromCart] = useState(false);
   // True when seedItems() applied at least one pick from the saved draft
@@ -511,6 +516,7 @@ export function MagicBoxConfigurator({
     setColorWarn(null);
     setAdding(true);
     setErr(undefined);
+    setAlreadyPlaced(null);
     try {
       const selections = items.flatMap((it) => {
         if (!it.pickedVariantId) return [];
@@ -535,7 +541,24 @@ export function MagicBoxConfigurator({
           bundleSelections: selections,
         }),
       });
-      if (!res.ok) throw new Error();
+      if (!res.ok) {
+        // A 409 "rule.block" means the student already has this Magic Box.
+        // Surface the server's clear message + a link to the existing order
+        // instead of the generic failure text.
+        if (res.status === 409) {
+          const data = (await res.json().catch(() => null)) as
+            | { error?: string; orderNumber?: string | null }
+            | null;
+          setAlreadyPlaced({
+            message:
+              data?.error ??
+              "A Magic Box has already been placed for this student.",
+            orderNumber: data?.orderNumber ?? null,
+          });
+          return;
+        }
+        throw new Error();
+      }
       await refresh();
       setAdded(true);
       setPrefilledFromCart(false);
@@ -835,6 +858,25 @@ export function MagicBoxConfigurator({
         <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 flex items-start gap-2.5">
           <AlertCircle className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
           <p className="text-[13px] font-semibold text-red-700">{err}</p>
+        </div>
+      )}
+
+      {alreadyPlaced && (
+        <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 flex items-start gap-2.5">
+          <ShoppingBag className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+          <div className="text-[13px] leading-relaxed text-amber-800">
+            <p className="font-semibold">
+              This Magic Box has already been ordered for this student.
+            </p>
+            {alreadyPlaced.orderNumber && (
+              <a
+                href={`/shop/orders/${encodeURIComponent(alreadyPlaced.orderNumber)}`}
+                className="mt-1 inline-flex items-center gap-1 font-bold text-amber-900 underline underline-offset-2 hover:text-brand"
+              >
+                Order already placed — click here to view
+              </a>
+            )}
+          </div>
         </div>
       )}
 

@@ -3,6 +3,7 @@
 import "server-only";
 import crypto from "node:crypto";
 import { revalidatePath } from "next/cache";
+import { headers } from "next/headers";
 import { and, eq, ilike, inArray, isNull, lt, or, sql, type SQL } from "drizzle-orm";
 import { db } from "@/db/client";
 import {
@@ -11,6 +12,15 @@ import {
   websiteCartCouponUsages,
 } from "@/db/schema";
 import { getCurrentUser } from "@/lib/session";
+import { logActivityBatch } from "@/lib/activity";
+
+/** Best-effort client IP for server actions (no Request object → read headers). */
+async function clientIpFromHeaders(): Promise<string | null> {
+  const h = await headers();
+  const xff = h.get("x-forwarded-for");
+  if (xff) return xff.split(",")[0]!.trim();
+  return h.get("x-real-ip") ?? null;
+}
 
 // Crockford-style alphabet — drops 0/O/1/I/L so admins reading codes off
 // a printed list don't fat-finger them. 31 chars ^ 6 ≈ 887 million codes
@@ -96,6 +106,7 @@ export async function bulkGenerateCoupons(
       : [{ schoolErpName: null, schoolId: null }];
 
   const createdCodes: string[] = [];
+  const createdRows: Array<{ id: string; code: string }> = [];
 
   for (const t of targets) {
     for (let i = 0; i < qty; i++) {
@@ -105,20 +116,24 @@ export async function bulkGenerateCoupons(
       for (let attempt = 0; attempt < 5 && !inserted; attempt++) {
         const code = genRandomCode();
         try {
-          await db.insert(websiteCartCoupons).values({
-            couponCode: code,
-            isActive: true,
-            schoolId: t.schoolId,
-            schoolErpName: t.schoolErpName,
-            startDatetime: start,
-            endDatetime: end,
-            oneTimeUse: input.oneTimeUse,
-            canUseMultipleTimes: false,
-            discountType: "Fixed",
-            discount: String(fee),
-            maximumDiscountAmount: 0,
-          });
+          const [row] = await db
+            .insert(websiteCartCoupons)
+            .values({
+              couponCode: code,
+              isActive: true,
+              schoolId: t.schoolId,
+              schoolErpName: t.schoolErpName,
+              startDatetime: start,
+              endDatetime: end,
+              oneTimeUse: input.oneTimeUse,
+              canUseMultipleTimes: false,
+              discountType: "Fixed",
+              discount: String(fee),
+              maximumDiscountAmount: 0,
+            })
+            .returning({ id: websiteCartCoupons.id });
           createdCodes.push(code);
+          createdRows.push({ id: row.id, code });
           inserted = true;
         } catch (e) {
           // Postgres unique_violation = 23505. Retry on collision, bail otherwise.
@@ -135,6 +150,24 @@ export async function bulkGenerateCoupons(
         };
     }
   }
+
+  // Audit trail — one coupon.create per minted code so each coupon's History
+  // tab shows who generated it and when. Batched into a single insert.
+  const ip = await clientIpFromHeaders();
+  void logActivityBatch(
+    createdRows.map((r) => ({
+      actorId: me.id,
+      actorEmail: me.email,
+      actorName: me.name,
+      actorRole: me.role,
+      action: "coupon.create",
+      entityType: "coupon",
+      entityId: r.id,
+      summary: `Generated coupon ${r.code} (₹${fee}${schoolPairs.length > 0 ? ", school-scoped" : ", universal"})`,
+      remarks: "Bulk-generated",
+      ip,
+    })),
+  );
 
   revalidatePath("/admin/discounts");
   return { ok: true, created: createdCodes.length, codes: createdCodes };
@@ -203,7 +236,7 @@ export async function bulkExtendExpiry(
   );
 
   const matchedRows = await db
-    .select({ id: websiteCartCoupons.id })
+    .select({ id: websiteCartCoupons.id, code: websiteCartCoupons.couponCode, endDatetime: websiteCartCoupons.endDatetime })
     .from(websiteCartCoupons)
     .where(where.length ? and(...where) : undefined);
   const matched = matchedRows.length;
@@ -217,6 +250,32 @@ export async function bulkExtendExpiry(
     .set({ endDatetime: newEnd })
     .where(inArray(websiteCartCoupons.id, ids))
     .returning({ id: websiteCartCoupons.id });
+
+  // Audit trail — one coupon.update per extended coupon, capturing the
+  // expiry Old → New so each coupon's History tab shows who extended it.
+  const ip = await clientIpFromHeaders();
+  void logActivityBatch(
+    matchedRows.map((r) => ({
+      actorId: me.id,
+      actorEmail: me.email,
+      actorName: me.name,
+      actorRole: me.role,
+      action: "coupon.update",
+      entityType: "coupon",
+      entityId: r.id,
+      summary: `Extended expiry of ${r.code}`,
+      changes: [
+        {
+          field: "endDatetime",
+          label: "Expiry",
+          old: r.endDatetime ? new Date(r.endDatetime).toISOString() : null,
+          new: newEnd.toISOString(),
+        },
+      ],
+      remarks: "Bulk expiry extension",
+      ip,
+    })),
+  );
 
   revalidatePath("/admin/discounts");
   return { ok: true, matched, updated: res.length };

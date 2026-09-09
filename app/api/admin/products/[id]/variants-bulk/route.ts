@@ -11,6 +11,7 @@ import {
 import { eq, inArray } from "drizzle-orm";
 import { isResponse, requirePermission } from "@/lib/admin-guard";
 import { getDefaultWarehouseId, applyStockChange } from "@/lib/repos/inventory";
+import { logAdminActivity } from "@/lib/activity";
 
 /**
  * Bulk-create variants for a product as the cartesian product of attribute values.
@@ -146,6 +147,14 @@ export async function POST(
 
     created.push({ variantId: variant.id, sku, combo });
   }
+
+  void logAdminActivity(guard, {
+    action: "product.variants.bulk",
+    entityType: "product",
+    entityId: productId,
+    summary: `Bulk-created ${created.length} variant(s)`,
+    req,
+  });
 
   return NextResponse.json({ created: created.length, variants: created });
 }

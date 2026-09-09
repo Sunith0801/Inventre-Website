@@ -4,9 +4,20 @@ import { db } from "@/db/client";
 import { guardians, parents, schools, studentGuardianLinks, students } from "@/db/schema";
 import { and, eq, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
+import { headers } from "next/headers";
 import { getCurrentUser } from "@/lib/session";
+import { logAdminActivity } from "@/lib/activity";
+
+/** Best-effort client IP for server actions (no Request object → read headers). */
+async function clientIpFromHeaders(): Promise<string | null> {
+  const h = await headers();
+  const xff = h.get("x-forwarded-for");
+  if (xff) return xff.split(",")[0]!.trim();
+  return h.get("x-real-ip") ?? null;
+}
 import {
   mcbBranchToSchoolCode,
+  mcbBranchNeedsStudentLookup,
   mcbGenderToLabel,
   mcbGradeToCbse,
   targetedToMcbDisplay,
@@ -77,9 +88,33 @@ export async function grantMcbAccess(formData: FormData): Promise<GrantResult> {
   const schoolName = mcbRow?.school_name;
   if (!schoolName) return { ok: false, error: "Student not found in MCB cache" };
 
-  const schoolCode = mcbBranchToSchoolCode(schoolName);
-  if (!schoolCode) {
-    return { ok: false, error: `No school mapping for "${schoolName}"` };
+  // Most branches map 1:1 to an Inventre school. The Crimson Anisha
+  // campuses do not — one MCB branch spans CBSE, CIE and the pre-school —
+  // so their school comes from the student's existing record, matched on
+  // enrolment number. See lib/mcb/mappings.ts for why guessing is unsafe.
+  let schoolCode: string | null;
+  if (mcbBranchNeedsStudentLookup(schoolName)) {
+    const [known] = await db
+      .select({ code: schools.schoolCode })
+      .from(students)
+      .innerJoin(schools, eq(schools.id, students.schoolId))
+      .where(eq(students.enrollmentNumber, enrolmentNumber))
+      .limit(1);
+    schoolCode = known?.code ?? null;
+    if (!schoolCode) {
+      return {
+        ok: false,
+        error:
+          `${enrolmentNumber} has no existing Inventre record, and "${schoolName}" ` +
+          `covers more than one school (CBSE / CIE / pre-school). MCB does not say ` +
+          `which. Create the student against the right school first, then grant access.`,
+      };
+    }
+  } else {
+    schoolCode = mcbBranchToSchoolCode(schoolName);
+    if (!schoolCode) {
+      return { ok: false, error: `No school mapping for "${schoolName}"` };
+    }
   }
 
   const [school] = await db
@@ -272,6 +307,24 @@ export async function grantMcbAccess(formData: FormData): Promise<GrantResult> {
     `);
   });
 
+  // Audit trail — record WHO granted MyClassBoard website access against the
+  // promoted student so it surfaces on the student's History tab.
+  {
+    const [stu] = await db
+      .select({ id: students.id })
+      .from(students)
+      .where(eq(students.erpName, erpName))
+      .limit(1);
+    void logAdminActivity(me, {
+      action: "student.mcb_access.grant",
+      entityType: "student",
+      entityId: stu?.id ?? null,
+      summary: `Granted MyClassBoard website access (enrolment ${enrolmentNumber})`,
+      remarks: fullName || null,
+      ip: await clientIpFromHeaders(),
+    });
+  }
+
   revalidatePath("/admin/mcb");
   return { ok: true };
 }
@@ -394,6 +447,23 @@ export async function revokeMcbAccess(formData: FormData): Promise<GrantResult> 
       WHERE enrolment_number = ${enrolmentNumber}
     `);
   });
+
+  // Audit trail — record WHO revoked MyClassBoard website access.
+  {
+    const [stu] = await db
+      .select({ id: students.id })
+      .from(students)
+      .where(eq(students.erpName, erpName))
+      .limit(1);
+    void logAdminActivity(me, {
+      action: "student.mcb_access.revoke",
+      entityType: "student",
+      entityId: stu?.id ?? null,
+      summary: `Revoked MyClassBoard website access (enrolment ${enrolmentNumber})`,
+      ip: await clientIpFromHeaders(),
+    });
+  }
+
   revalidatePath("/admin/mcb");
   return { ok: true };
 }

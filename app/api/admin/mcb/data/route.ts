@@ -13,6 +13,8 @@ const SCHOOLS: { school_code: string; mcb_branch: string }[] = [
   { school_code: "SMSAW", mcb_branch: "St. MICHAELS SCHOOL[ALWAL]" },
   { school_code: "WMAJK", mcb_branch: "Winmore Academy Jakkur" },
   { school_code: "WMAWF", mcb_branch: "Winmore Academy Whitefield" },
+  { school_code: "CAGSM", mcb_branch: "Crimson Anisha Global School Marunji" },
+  { school_code: "CAGSU", mcb_branch: "Crimson Anisha Global School Undri" },
 ];
 
 function rowsOf<T>(res: unknown): T[] {

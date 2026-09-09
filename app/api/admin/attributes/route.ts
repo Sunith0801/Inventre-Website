@@ -5,6 +5,7 @@ import { db } from "@/db/client";
 import { productAttributes } from "@/db/schema";
 import { isResponse, requirePermission } from "@/lib/admin-guard";
 import { normalizeAttributeName } from "@/lib/normalize-attribute-name";
+import { logAdminActivity } from "@/lib/activity";
 
 const Body = z.object({
   name: z.string().min(1),
@@ -68,5 +69,14 @@ export async function POST(req: Request) {
       sortOrder: body.sortOrder,
     })
     .returning();
+
+  void logAdminActivity(guard, {
+    action: "attribute.create",
+    entityType: "attribute",
+    entityId: created.id,
+    summary: `Created attribute ${created.name}`,
+    req,
+  });
+
   return NextResponse.json({ attribute: created });
 }

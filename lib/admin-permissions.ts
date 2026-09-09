@@ -53,6 +53,14 @@ export const ADMIN_PAGES: AdminPage[] = [
   { slug: "customers",            label: "Customers (Parents)",   group: "People" },
   { slug: "students",             label: "Students",              group: "People" },
   { slug: "mcb",                  label: "MCB",                   group: "People" },
+  // Lives outside /admin (see PAGE_HREF_OVERRIDES): a standalone dashboard
+  // with its own art direction and no admin chrome. It exists as its own
+  // permission so a fee-desk account can be given the ledger and NOTHING
+  // else — "mcb.read" would also open MCB master data.
+  { slug: "fees",                 label: "Fee ledger",            group: "People" },
+  // Account management for the fee ledger only — NOT settings-users, which
+  // reaches every staff admin. See lib/fees-users.ts.
+  { slug: "fees-users",           label: "Fee ledger access",     group: "People" },
   { slug: "guardians",            label: "Guardians",             group: "People" },
   { slug: "catalog",              label: "Catalog",               group: "Catalog" },
   { slug: "discounts",            label: "Discounts",             group: "Pricing & Tax" },
@@ -127,6 +135,54 @@ export function canSeePage(
   slug: string,
 ): boolean {
   return perms.has(readKey(slug)) || perms.has(writeKey(slug));
+}
+
+/**
+ * Slug → URL for the handful of pages whose route path doesn't match
+ * `/admin/<slug>`. Everything else falls through to the default below.
+ */
+const PAGE_HREF_OVERRIDES: Readonly<Record<string, string>> = {
+  "spoc-exchange": "/admin/exchanges/new",
+  "delivery-fees": "/admin/delivery-fee-rules",
+  tax: "/admin/tax/rates",
+  "payments-ccavenue": "/admin/payments/ccavenue",
+  "settings-users": "/admin/settings/users",
+  "settings-otp": "/admin/settings/otp",
+  "settings-erp-bridge": "/admin/settings/erp-bridge",
+  fees: "/fees",
+  "fees-users": "/fees/users",
+};
+
+/** The admin URL for a page slug (e.g. "orders" → "/admin/orders"). */
+export function pageHref(slug: string): string {
+  return PAGE_HREF_OVERRIDES[slug] ?? `/admin/${slug}`;
+}
+
+/**
+ * Slugs that are NOT valid landing targets: action-only pages reached from
+ * elsewhere (e.g. "Raise exchange" opens from an order detail with an
+ * ?orderId=… param and shows a dead-end placeholder without it). They hold
+ * a permission but have no sidebar entry, so a user should never be dropped
+ * on them as their post-login home.
+ */
+const NON_LANDING_SLUGS: ReadonlySet<string> = new Set(["spoc-exchange"]);
+
+/**
+ * Path of the first browsable page (in ADMIN_PAGES order) this admin is
+ * allowed to see. Used as the post-login landing and as the safe fallback
+ * when a user hits a page they can't access — so a restricted admin is
+ * never redirected to a page that redirects them straight back (the
+ * /admin/dashboard self-redirect loop) or to a dead-end action page.
+ * Returns null when the admin can see no landable pages at all.
+ */
+export function firstAccessiblePath(
+  perms: ReadonlySet<string>,
+): string | null {
+  for (const p of ADMIN_PAGES) {
+    if (NON_LANDING_SLUGS.has(p.slug)) continue;
+    if (canSeePage(perms, p.slug)) return pageHref(p.slug);
+  }
+  return null;
 }
 
 /** "Can this admin mutate on the page?" — true iff they hold .write. */

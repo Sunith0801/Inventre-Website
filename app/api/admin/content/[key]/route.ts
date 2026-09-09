@@ -7,6 +7,7 @@ import { db } from "@/db/client";
 import { contentBlocks } from "@/db/schema";
 import { isResponse, requirePermission } from "@/lib/admin-guard";
 import { invalidate } from "@/lib/cache";
+import { logAdminActivity } from "@/lib/activity";
 
 const Body = z.object({
   data: z.unknown(),
@@ -52,5 +53,12 @@ export async function PATCH(
   // Plus revalidatePath so Next's SSR cache for "/" is dropped.
   await invalidate(`content:${decoded}`, `media:${decoded}`, "home:all");
   revalidatePath("/");
+  void logAdminActivity(guard, {
+    action: "content.update",
+    entityType: "content",
+    entityId: decoded,
+    summary: `Updated content block ${decoded}`,
+    req,
+  });
   return NextResponse.json({ ok: true });
 }

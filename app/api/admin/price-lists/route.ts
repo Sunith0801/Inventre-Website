@@ -4,6 +4,7 @@ import { z } from "zod";
 import { db } from "@/db/client";
 import { priceLists } from "@/db/schema";
 import { isResponse, requirePermission } from "@/lib/admin-guard";
+import { logAdminActivity } from "@/lib/activity";
 import { eq } from "drizzle-orm";
 
 const Body = z.object({
@@ -34,5 +35,14 @@ export async function POST(req: Request) {
       .where(eq(priceLists.isDefault, true));
   }
   const [created] = await db.insert(priceLists).values(body).returning();
+
+  void logAdminActivity(guard, {
+    action: "price_list.create",
+    entityType: "price_list",
+    entityId: created.id,
+    summary: `Created price list ${created.name}`,
+    req,
+  });
+
   return NextResponse.json({ priceList: created });
 }

@@ -4,6 +4,7 @@ import { eq, sql } from "drizzle-orm";
 import { db, schema } from "@/db/client";
 import { isResponse, requirePermission } from "@/lib/admin-guard";
 import { parseJson } from "@/lib/api-handler";
+import { logAdminActivity } from "@/lib/activity";
 
 const Row = z.object({
   grade: z.string().min(1),
@@ -31,5 +32,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       sections: body.sections ?? null,
     })
     .returning({ id: schema.schoolGradeMappings.id });
+  void logAdminActivity(guard, {
+    action: "school.grade_mapping.add",
+    entityType: "school",
+    entityId: schoolId,
+    summary: `Added grade mapping ${body.grade}`,
+    req,
+  });
   return NextResponse.json({ id: row.id });
 }

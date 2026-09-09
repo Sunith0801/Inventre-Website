@@ -87,6 +87,18 @@ export type CurrentParent = {
       logoUrl: string | null;
     };
   }[];
+  /** Students on this family's phone graph whose website access is
+   *  switched off (`students.enabled = false`, status still active).
+   *  Deliberately SEPARATE from `students`: nothing may shop, cart,
+   *  checkout or push ERP for these — they exist so the storefront can
+   *  tell the parent a child is closed instead of quietly hiding them. */
+  closedStudents: {
+    id: string;
+    name: string;
+    grade: string | null;
+    section: string | null;
+    enrollmentNumber: string | null;
+  }[];
 };
 
 export type CurrentAdmin = {
@@ -357,6 +369,51 @@ export const getCurrentParent = cache(async (): Promise<CurrentParent | null> =>
     if (name) firstGuardianByStudent.set(sid, name);
   }
 
+  // ── Switched-off students ────────────────────────────────────────
+  // Same family graph as above, but the rows the query deliberately
+  // excludes: enabled = false. These are NOT part of `students` — nothing
+  // downstream (cart, checkout, catalog, ERP push) may act on them, and
+  // keeping them out is what guarantees that. They travel separately so
+  // the storefront can SAY a child is switched off instead of silently
+  // dropping them from the picker, which read as a bug to admins who'd
+  // just unticked Enabled and saw the sibling carry on as normal.
+  //
+  // status is left unfiltered-for-'active' on purpose: "Remove from
+  // family" flips status AND enabled, and a removed student should stay
+  // invisible rather than advertise itself as closed.
+  const closedRows = (await db.execute(sql`
+    WITH RECURSIVE family_phones AS (
+      SELECT ${myPhone10}::text AS p, 0 AS depth
+      UNION
+      SELECT DISTINCT right(regexp_replace(coalesce(gl2.phone_no, ''), '\D', '', 'g'), 10), fp.depth + 1
+      FROM family_phones fp
+      JOIN student_guardian_links gl1
+        ON right(regexp_replace(coalesce(gl1.phone_no, ''), '\D', '', 'g'), 10) = fp.p
+      JOIN student_guardian_links gl2 ON gl2.student_id = gl1.student_id
+      WHERE fp.depth < 4
+    )
+    SELECT s.id, s.name, s.grade, s.section, s.enrollment_number
+    FROM students s
+    WHERE s.enabled = false
+      AND s.status = 'active'
+      AND (
+        s.parent_id = ${parent.id}
+        OR EXISTS (
+          SELECT 1 FROM student_guardian_links gl
+           WHERE gl.student_id = s.id
+             AND right(regexp_replace(coalesce(gl.phone_no, ''), '\D', '', 'g'), 10)
+                 IN (SELECT p FROM family_phones)
+        )
+      )
+    ORDER BY s.enrollment_number ASC, s.id ASC
+  `)) as unknown as Array<{
+    id: string;
+    name: string;
+    grade: string | null;
+    section: string | null;
+    enrollment_number: string | null;
+  }>;
+
   return {
     kind: "parent",
     id: parent.id,
@@ -388,6 +445,13 @@ export const getCurrentParent = cache(async (): Promise<CurrentParent | null> =>
         logoUrl: r.school.logoUrl,
         schoolLogoUrl: resolveErpUrl(r.school.schoolLogoUrl),
       },
+    })),
+    closedStudents: closedRows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      grade: r.grade,
+      section: r.section,
+      enrollmentNumber: r.enrollment_number,
     })),
   };
 });

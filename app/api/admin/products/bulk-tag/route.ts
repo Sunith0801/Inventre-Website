@@ -6,6 +6,7 @@ import { productSchool, productGrades, products, schools } from "@/db/schema";
 import { isResponse, requirePermission } from "@/lib/admin-guard";
 import { parseJson } from "@/lib/api-handler";
 import { invalidateCatalog } from "@/lib/cache";
+import { logAdminActivity } from "@/lib/activity";
 
 /**
  * Bulk-tag a set of products to a single (school, grade) tuple.
@@ -151,6 +152,14 @@ export async function POST(req: Request) {
   // race with the in-flight writes and repopulate the cache from stale data.
   await invalidateCatalog();
 
+  void logAdminActivity(guard, {
+    action: "product.bulk_tag",
+    entityType: "product",
+    entityId: null,
+    summary: `Tagged ${body.rows.length} product(s) to grade ${body.grade}`,
+    req,
+  });
+
   return NextResponse.json({ ok: true, ...result });
 }
 
@@ -218,6 +227,14 @@ export async function DELETE(req: Request) {
   });
 
   await invalidateCatalog();
+
+  void logAdminActivity(guard, {
+    action: "product.bulk_tag",
+    entityType: "product",
+    entityId: null,
+    summary: `Untagged ${result.untagged} product(s) from grade ${body.grade}`,
+    req,
+  });
 
   return NextResponse.json({ ok: true, ...result });
 }

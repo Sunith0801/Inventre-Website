@@ -4,6 +4,7 @@ import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { db, schema } from "@/db/client";
 import { isResponse, requirePermission } from "@/lib/admin-guard";
+import { logAdminActivity } from "@/lib/activity";
 import { parseJson } from "@/lib/api-handler";
 import { emitStudentEvent } from "@/lib/erp-bridge";
 import { invalidateCatalog } from "@/lib/cache";
@@ -107,5 +108,14 @@ export async function POST(req: Request) {
   await invalidateCatalog();
 
   void emitStudentEvent(created.id);
+
+  void logAdminActivity(guard, {
+    action: "student.create",
+    entityType: "student",
+    entityId: created.id,
+    summary: `Created student ${name}`,
+    req,
+  });
+
   return NextResponse.json({ id: created.id });
 }

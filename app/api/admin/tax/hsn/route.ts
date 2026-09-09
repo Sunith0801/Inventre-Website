@@ -4,6 +4,7 @@ import { z } from "zod";
 import { db } from "@/db/client";
 import { hsnCodes } from "@/db/schema";
 import { isResponse, requirePermission } from "@/lib/admin-guard";
+import { logAdminActivity } from "@/lib/activity";
 import { eq } from "drizzle-orm";
 
 const Body = z.object({
@@ -43,5 +44,12 @@ export async function POST(req: Request) {
         category: body.category ?? null,
       },
     });
+  void logAdminActivity(guard, {
+    action: "tax_rate.hsn_create",
+    entityType: "tax_rate",
+    entityId: body.code,
+    summary: `Saved HSN code ${body.code}`,
+    req,
+  });
   return NextResponse.json({ ok: true });
 }

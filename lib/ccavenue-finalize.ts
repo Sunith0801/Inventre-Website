@@ -35,7 +35,11 @@ import { generateInvoiceForOrder } from "@/lib/repos/invoices";
 import { recordCouponUsage } from "@/lib/cart-coupon";
 import type { NormalizedGatewayResult } from "@/lib/ccavenue";
 
-export type FinalizeSource = "callback" | "status-poll" | "cron-reconcile";
+export type FinalizeSource =
+  | "callback"
+  | "status-poll"
+  | "cron-reconcile"
+  | "settlement-reconcile";
 
 export type FinalizeResult =
   | {
@@ -164,6 +168,7 @@ export async function finalizeOrderPayment(args: {
         paymentStatus: "failed",
       };
     }
+    const failNow = new Date();
     await db
       .update(payments)
       .set({
@@ -177,10 +182,66 @@ export async function finalizeOrderPayment(args: {
         lastStatusPollAt: source === "callback" ? undefined : new Date(),
       })
       .where(eq(payments.orderId, orderId));
-    await db
-      .update(orders)
-      .set({ paymentStatus: "failed" })
-      .where(eq(orders.id, orderId));
+
+    // Fan the failure out to the whole basket — symmetric with the paid
+    // path below. Historically the failed path only marked the primary
+    // order, so siblings of a failed shared-basket payment kept
+    // paymentStatus='pending' with no payments row, and showed a blank
+    // payment status on the website + audit (only 1 of N siblings reflected
+    // FAILED — the "— on the sibling" reports). Mark every sibling failed
+    // (never downgrade an already-paid sibling), copy the gateway fields
+    // onto a per-sibling failed payments row, and push each to audit.
+    const [failGrp] = await db
+      .select({ orderGroupId: orders.orderGroupId })
+      .from(orders)
+      .where(eq(orders.id, orderId))
+      .limit(1);
+    if (failGrp?.orderGroupId) {
+      await db
+        .update(orders)
+        .set({ paymentStatus: "failed" })
+        .where(
+          and(
+            eq(orders.orderGroupId, failGrp.orderGroupId),
+            ne(orders.paymentStatus, "paid")
+          )
+        );
+      await db.execute(sql`
+        INSERT INTO payments (
+          order_id, provider, gateway_provider, gateway_order_id,
+          internal_payment_reference, amount, status, payment_flow,
+          method, payment_mode, payment_date, paid_amount, paid_currency,
+          gateway_tracking_id, gateway_response_message, payment_finalized,
+          refund_status, payment_attempt_count, payment_retry_count, raw
+        )
+        SELECT
+          sib.id, 'ccavenue', 'CCAVENUE', sib.order_number,
+          ${`sibling-of:${orderId}`}, sib.total, 'failed'::payment_status, 'ONLINE',
+          'ccavenue', ${normalized.paymentMode ?? "CCAvenue"},
+          ${normalized.paymentDate ?? formatPaymentDate(failNow)},
+          '0', 'INR',
+          ${normalized.trackingId ?? null},
+          ${`sibling-of:${orderId} ccavenue_failed (via ${source})`},
+          true, 'NOT_REQUESTED', 1, 0,
+          ${normalized.rawResponse != null ? JSON.stringify(normalized.rawResponse) : null}::jsonb
+        FROM orders sib
+        WHERE sib.order_group_id = ${failGrp.orderGroupId}
+          AND sib.id <> ${orderId}
+          AND NOT EXISTS (SELECT 1 FROM payments p WHERE p.order_id = sib.id)
+      `);
+      const sibs = await db
+        .select({ id: orders.id })
+        .from(orders)
+        .where(eq(orders.orderGroupId, failGrp.orderGroupId));
+      // Awaited, not `void` — see the note on the paid-path enqueue below.
+      for (const s of sibs) await enqueueOrderEvent(s.id, "order.updated");
+    } else {
+      await db
+        .update(orders)
+        .set({ paymentStatus: "failed" })
+        .where(eq(orders.id, orderId));
+      await enqueueOrderEvent(orderId, "order.updated");
+    }
     return {
       kind: "marked-failed",
       orderId,
@@ -394,16 +455,25 @@ export async function finalizeOrderPayment(args: {
   // sibling orders sharing an orderGroupId (see the update block above).
   // Audit needs to learn about each sibling, not just the primary; missing
   // siblings used to silently vanish from audit.inventre.in.
+  // MUST be awaited, not `void`, for the same reason notifyOrderConfirmed is
+  // (see above): the enqueue is an async INSERT, and every caller tears down
+  // the moment finalize resolves — the Next runtime drops a still-pending
+  // floating promise once the response is returned, and the tsx ops CLIs call
+  // process.exit(0) outright. A `void` here meant the queue row was never
+  // written and the order silently never reached audit (confirmed in prod
+  // 2026-07-18: healing SAL-ORD-2026-32011 via the settlement-reconcile CLI
+  // left erp_outbound_queue with ZERO rows for it). enqueueOrderEvent swallows
+  // its own errors and returns null, so awaiting can't downgrade the order.
   if (primary?.orderGroupId) {
     const siblings = await db
       .select({ id: orders.id })
       .from(orders)
       .where(eq(orders.orderGroupId, primary.orderGroupId));
     for (const sib of siblings) {
-      void enqueueOrderEvent(sib.id, "order.created");
+      await enqueueOrderEvent(sib.id, "order.created");
     }
   } else {
-    void enqueueOrderEvent(orderId, "order.created");
+    await enqueueOrderEvent(orderId, "order.created");
   }
   // Auto-generate the GST invoice now that payment is confirmed. Wrapped
   // in fire-and-forget so a transient invoice-gen failure (e.g. tax

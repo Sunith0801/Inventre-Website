@@ -6,6 +6,7 @@ import { db } from "@/db/client";
 import { faqs } from "@/db/schema";
 import { isResponse, requirePermission } from "@/lib/admin-guard";
 import { invalidate } from "@/lib/cache";
+import { logAdminActivity } from "@/lib/activity";
 
 const Body = z.object({
   question: z.string().min(1),
@@ -24,5 +25,12 @@ export async function POST(req: Request) {
   const [created] = await db.insert(faqs).values(body).returning();
   await invalidate("home:all");
   revalidatePath("/");
+  void logAdminActivity(guard, {
+    action: "faq.create",
+    entityType: "faq",
+    entityId: created.id,
+    summary: `Created FAQ ${created.question}`,
+    req,
+  });
   return NextResponse.json({ faq: created });
 }

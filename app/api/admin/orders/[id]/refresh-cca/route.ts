@@ -6,6 +6,7 @@ import { orders, payments } from "@/db/schema";
 import { requirePermission, isResponse, assertSchoolAccess } from "@/lib/admin-guard";
 import { fetchCCAvenueOrderStatus } from "@/lib/ccavenue";
 import { finalizeOrderPayment } from "@/lib/ccavenue-finalize";
+import { logAdminActivity } from "@/lib/activity";
 
 /**
  * Live-refresh the CCAvenue reference for a single order. Hits
@@ -24,7 +25,7 @@ import { finalizeOrderPayment } from "@/lib/ccavenue-finalize";
  * Auth: super or ops. Read-only against ERP but mutates `payments`.
  */
 export async function POST(
-  _: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const guard = await requirePermission("orders.write");
@@ -89,6 +90,13 @@ export async function POST(
     revalidatePath(`/admin/orders/${encodeURIComponent(order.orderNumber)}`);
     revalidatePath(`/admin/orders/${order.id}`);
     revalidatePath("/admin/orders");
+    void logAdminActivity(guard, {
+      action: "order.refresh_cca",
+      entityType: "order",
+      entityId: order.id,
+      summary: `Refreshed from CCAvenue → finalized (${fin.kind}); status ${result.rawStatus}`,
+      req,
+    });
     return NextResponse.json({
       ok: true,
       refreshedAt: new Date().toISOString(),
@@ -99,6 +107,47 @@ export async function POST(
       paidAmount: result.paidAmount,
       paymentMode: result.paymentMode,
       paymentDate: result.paymentDate,
+    });
+  }
+
+  // GUARD: never let a non-paid poll clobber an already-CAPTURED payment.
+  // CCAvenue's Status API keyed on order_no returns the LATEST transaction —
+  // for an order the parent retried, that's the ABORTED retry, not the earlier
+  // successful capture we finalised against (which carries a different
+  // reference_no). Overwriting a `paid` row's tracking id / amount / date with
+  // that aborted result made healed orders keep flipping back to "Aborted"
+  // (ref 114584087161) on every Refresh click, even though payment_status
+  // stayed `paid`. When the local row is already paid and the gateway poll is
+  // NOT paid, record only that a poll happened — keep the captured values.
+  if (paymentRow && paymentRow.status === "paid" && result.status !== "paid") {
+    await db
+      .update(payments)
+      .set({ lastStatusPollAt: new Date() })
+      .where(eq(payments.id, paymentRow.id));
+    revalidatePath(`/admin/orders/${encodeURIComponent(order.orderNumber)}`);
+    revalidatePath(`/admin/orders/${order.id}`);
+    revalidatePath("/admin/orders");
+    void logAdminActivity(guard, {
+      action: "order.refresh_cca",
+      entityType: "order",
+      entityId: order.id,
+      summary: `Refreshed from CCAvenue; poll=${result.rawStatus} but payment already captured — kept ref ${paymentRow.gatewayTrackingId}`,
+      req,
+    });
+    return NextResponse.json({
+      ok: true,
+      refreshedAt: new Date().toISOString(),
+      status: "paid",
+      // Show a reassuring label in the admin chip. The gateway's order_no
+      // poll returns the aborted retry (result.rawStatus), but the payment
+      // is captured — don't surface the scary "Aborted" word. The detail
+      // is kept in `note` for API consumers.
+      rawStatus: "Paid (captured)",
+      note: `gateway poll returned ${result.rawStatus} (aborted retry) — captured payment left intact`,
+      trackingId: paymentRow.gatewayTrackingId,
+      paidAmount: paymentRow.paidAmount,
+      paymentMode: paymentRow.paymentMode,
+      paymentDate: paymentRow.paymentDate,
     });
   }
 
@@ -139,6 +188,14 @@ export async function POST(
   revalidatePath(`/admin/orders/${encodeURIComponent(order.orderNumber)}`);
   revalidatePath(`/admin/orders/${order.id}`);
   revalidatePath("/admin/orders");
+
+  void logAdminActivity(guard, {
+    action: "order.refresh_cca",
+    entityType: "order",
+    entityId: order.id,
+    summary: `Refreshed from CCAvenue; status ${result.rawStatus}`,
+    req,
+  });
 
   return NextResponse.json({
     ok: true,

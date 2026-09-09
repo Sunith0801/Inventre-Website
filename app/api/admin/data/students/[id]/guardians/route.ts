@@ -4,6 +4,7 @@ import { z } from "zod";
 import { and, eq, ne, sql } from "drizzle-orm";
 import { db, schema } from "@/db/client";
 import { isResponse, requirePermission } from "@/lib/admin-guard";
+import { logAdminActivity } from "@/lib/activity";
 import { parseJson } from "@/lib/api-handler";
 import { emitGuardianEvent, emitStudentEvent } from "@/lib/erp-bridge";
 import { upsertGuardianLink } from "@/lib/repos/guardians";
@@ -179,6 +180,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     revalidatePath("/admin/guardians");
     void emitGuardianEvent(row.id);
     void emitStudentEvent(studentId);
+    void logAdminActivity(guard, {
+      action: "student.guardian.add",
+      entityType: "student",
+      entityId: studentId,
+      summary: `Added guardian ${body.guardianName}`,
+      req,
+    });
     return NextResponse.json({ id: row.id });
   }
 
@@ -279,6 +287,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   revalidatePath("/admin/guardians");
   void emitGuardianEvent(linkId);
   void emitStudentEvent(studentId);
+
+  void logAdminActivity(guard, {
+    action: "student.guardian.add",
+    entityType: "student",
+    entityId: studentId,
+    summary: `Added guardian ${body.guardianName}${cleanPhone ? ` (${cleanPhone})` : ""}`,
+    req,
+  });
 
   return NextResponse.json({ id: linkId });
 }

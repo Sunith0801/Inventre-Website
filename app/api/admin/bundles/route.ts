@@ -11,6 +11,7 @@ import {
 } from "@/db/schema";
 import { eq, desc } from "drizzle-orm";
 import { isResponse, requirePermission } from "@/lib/admin-guard";
+import { logAdminActivity } from "@/lib/activity";
 
 export async function GET() {
   const guard = await requirePermission("catalog.read");
@@ -48,5 +49,14 @@ export async function POST(req: Request) {
       fixedPrice: body.fixedPrice ?? null,
     })
     .returning();
+
+  void logAdminActivity(guard, {
+    action: "bundle.create",
+    entityType: "bundle",
+    entityId: created.id,
+    summary: `Created ${created.bundleType} bundle`,
+    req,
+  });
+
   return NextResponse.json({ bundle: created });
 }

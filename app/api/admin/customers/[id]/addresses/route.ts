@@ -5,6 +5,7 @@ import { eq, and, desc } from "drizzle-orm";
 import { db } from "@/db/client";
 import { addresses, students } from "@/db/schema";
 import { requirePermission, isResponse } from "@/lib/admin-guard";
+import { logAdminActivity } from "@/lib/activity";
 
 const Body = z.object({
   label: z.string().nullable().optional(),
@@ -81,5 +82,12 @@ export async function POST(
       isDefault: body.isDefault ?? false,
     })
     .returning();
+  void logAdminActivity(guard, {
+    action: "customer.address.add",
+    entityType: "customer",
+    entityId: id,
+    summary: `Added ${created.addressType} address: ${created.receiverName}, ${created.city}`,
+    req,
+  });
   return NextResponse.json({ address: created });
 }

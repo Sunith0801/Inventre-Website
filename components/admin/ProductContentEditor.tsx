@@ -31,12 +31,14 @@ export function ProductContentEditor({
   initialSpecs,
   initialSizeTable,
   initialSizeChartUrl,
+  initialImageNote,
 }: {
   productId: string;
   initialDescription: string[] | null;
   initialSpecs: SpecRow[] | null;
   initialSizeTable: SizeRow[] | null;
   initialSizeChartUrl: string | null;
+  initialImageNote: string | null;
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -59,6 +61,7 @@ export function ProductContentEditor({
   const [sizeChartUrl, setSizeChartUrl] = useState<string | null>(
     initialSizeChartUrl
   );
+  const [imageNote, setImageNote] = useState<string>(initialImageNote ?? "");
   const [uploadingChart, setUploadingChart] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -80,6 +83,7 @@ export function ProductContentEditor({
           specs: cleanSpecs.length > 0 ? cleanSpecs : null,
           sizeTable: cleanSizeTable.length > 0 ? cleanSizeTable : null,
           sizeChartUrl: sizeChartUrl || null,
+          imageNote: imageNote.trim() || null,
         }),
       });
       if (!res.ok) {
@@ -196,6 +200,24 @@ export function ProductContentEditor({
             </p>
           ) : null}
         </div>
+      </Card>
+
+      {/* Note under image */}
+      <Card>
+        <CardHeader
+          title="Note under image"
+          description="Free-text note shown directly under the product image on the product page. Leave empty to show nothing. Blank lines start a new paragraph."
+        />
+        <textarea
+          value={imageNote}
+          onChange={(e) => {
+            setImageNote(e.target.value);
+            dirty();
+          }}
+          rows={4}
+          placeholder="e.g. Care: machine wash cold. Genuine Inventre product — QC tested."
+          className="w-full rounded-lg border border-ink-200 bg-white p-3 text-[13px] outline-none focus:border-ink-400 focus:ring-2 focus:ring-brand-300/30 resize-y"
+        />
       </Card>
 
       {/* Specs */}

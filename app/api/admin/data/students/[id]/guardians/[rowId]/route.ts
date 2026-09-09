@@ -4,6 +4,7 @@ import { and, eq, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db, schema } from "@/db/client";
 import { isResponse, requirePermission } from "@/lib/admin-guard";
+import { logAdminActivity, diffFields } from "@/lib/activity";
 import { parseJson } from "@/lib/api-handler";
 import { emitGuardianEvent, emitStudentEvent } from "@/lib/erp-bridge";
 import { recomputeStudentParent } from "@/lib/repos/guardians";
@@ -214,10 +215,41 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   void emitGuardianEvent(rowId);
   void emitStudentEvent(studentId);
 
+  const changes = diffFields(
+    {
+      phoneNo: existing.phoneNo,
+      guardianName: existing.guardianName,
+      relation: existing.relation,
+      email: existing.email,
+    },
+    {
+      phoneNo: phoneNoForLink,
+      guardianName: newGuardianName,
+      relation: newRelation ?? null,
+      email: cleanEmail ?? null,
+    },
+    {
+      phoneNo: "Phone",
+      guardianName: "Guardian name",
+      relation: "Relation",
+      email: "Email",
+    }
+  );
+  if (changes.length > 0) {
+    void logAdminActivity(guard, {
+      action: "student.guardian.update",
+      entityType: "student",
+      entityId: studentId,
+      summary: `Updated guardian ${changes.map((c) => c.label ?? c.field).join(", ")}`,
+      changes,
+      req,
+    });
+  }
+
   return NextResponse.json({ ok: true, phoneChanged });
 }
 
-export async function DELETE(_: Request, { params }: { params: Promise<{ id: string; rowId: string }> }) {
+export async function DELETE(req: Request, { params }: { params: Promise<{ id: string; rowId: string }> }) {
   const guard = await requirePermission("students.write");
   if (isResponse(guard)) return guard;
   const { id: studentId, rowId } = await params;
@@ -312,6 +344,14 @@ export async function DELETE(_: Request, { params }: { params: Promise<{ id: str
   revalidatePath("/admin/students");
   revalidatePath(`/admin/students/${studentId}`);
   revalidatePath("/admin/guardians");
+
+  void logAdminActivity(guard, {
+    action: "student.guardian.delete",
+    entityType: "student",
+    entityId: studentId,
+    summary: `Removed guardian ${target?.guardianName ?? target?.phoneNo ?? rowId}`,
+    req,
+  });
 
   return NextResponse.json({ ok: true });
 }

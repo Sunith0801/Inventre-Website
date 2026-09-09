@@ -12,6 +12,7 @@ import { ProductGrid } from "@/components/shop/ProductGrid";
 import { MiniCart } from "@/components/shop/MiniCart";
 import { CompleteTheKit } from "@/components/shop/CompleteTheKit";
 import { OrderUpdatesBanner } from "@/components/shop/OrderUpdatesBanner";
+import AccessClosed from "@/components/shop/AccessClosed";
 import { useCart } from "@/lib/cart";
 import type { Product } from "@/lib/products";
 import type { ProductCardDto } from "@/lib/repos/products";
@@ -56,6 +57,13 @@ function ShopInner() {
   const [products, setProducts] = useState<Product[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [feedError, setFeedError] = useState<string | null>(null);
+  // Set when the catalog API answers 403 { closed: true } — this child's
+  // website access is switched off (or every child on the account is).
+  const [closed, setClosed] = useState<{
+    title: string;
+    subtitle: string;
+    studentName?: string | null;
+  } | null>(null);
 
   const loadCatalog = useCallback(async () => {
     const url = studentId
@@ -65,14 +73,28 @@ function ShopInner() {
       const r = await fetch(url, { cache: "no-store" });
       const data = await r.json().catch(() => ({}));
       if (!r.ok) {
-        // The shop catalog API returns 400 with a human-readable `error`
-        // for predictable states (no student attached, no gender set, grade
-        // unrecognised). Surface the message instead of rendering an empty
-        // grid with the misleading "No items match your filters" text.
+        // 403 { closed: true } is the switched-off case — show the closure
+        // screen, not an error. Everything else: the API returns 400 with a
+        // human-readable `error` for predictable states (no student
+        // attached, no gender set, grade unrecognised). Surface the message
+        // instead of rendering an empty grid with the misleading "No items
+        // match your filters" text.
+        if (data?.closed) {
+          setClosed({
+            title: data.title as string,
+            subtitle: data.subtitle as string,
+            studentName: (data.studentName as string) ?? null,
+          });
+          setFeedError(null);
+          setProducts([]);
+          return;
+        }
+        setClosed(null);
         setFeedError(data?.error ?? "Couldn't load your catalog.");
         setProducts([]);
         return;
       }
+      setClosed(null);
       setFeedError(null);
       const prods = (data.products as ProductCardDto[]).map(dtoToProduct);
       setProducts(prods);
@@ -134,6 +156,19 @@ function ShopInner() {
       <Nav />
       <StudentBar />
       <OrderUpdatesBanner />
+      {closed ? (
+        <AccessClosed
+          title={closed.title}
+          subtitle={closed.subtitle}
+          studentName={closed.studentName}
+          actions={
+            <p className="text-[13px] text-ink-500">
+              Pick another student above to continue shopping for them.
+            </p>
+          }
+        />
+      ) : (
+        <>
       <ShopHeader
         count={filtered.length}
         query={query}
@@ -171,6 +206,8 @@ function ShopInner() {
       </div>
 
       <CompleteTheKit items={missingRequired} />
+        </>
+      )}
       <Footer />
       <MiniCart />
     </main>
@@ -187,13 +224,19 @@ function CatalogError({ message }: { message: string }) {
   // student attached" — a parent who self-registered before admin linked
   // them to a school. Give them a concrete next step.
   const isNoStudent = /no student/i.test(message);
+  // Offline-only schools (no storefront catalog) aren't an error — say so.
+  const isOfflineSchool = /online ordering isn't available/i.test(message);
   return (
     <div className="rounded-2xl border border-ink-100 bg-white p-10 text-center">
       <div className="mx-auto h-12 w-12 grid place-items-center rounded-full bg-amber-50 border border-amber-200 mb-4">
         <span className="text-amber-700 text-xl">!</span>
       </div>
       <h3 className="font-display text-[22px] font-extrabold text-ink-900">
-        {isNoStudent ? "We couldn't find a student on your account" : "Couldn't load your catalog"}
+        {isNoStudent
+          ? "We couldn't find a student on your account"
+          : isOfflineSchool
+          ? "Ordering is handled by your school"
+          : "Couldn't load your catalog"}
       </h3>
       <p className="mt-2 text-[14px] text-ink-600 max-w-md mx-auto">
         {isNoStudent ? (

@@ -159,7 +159,6 @@ const DAMAGE_LOC_UNIFORM: readonly DamageLocationOption[] = [
 
 const DAMAGE_LOC_BOOK: readonly DamageLocationOption[] = [
   { value: "cover", label: "Cover" },
-  { value: "spine", label: "Spine" },
   { value: "pages", label: "Inner pages" },
   { value: "binding", label: "Binding" },
   { value: "other", label: "Other / unsure" },
@@ -205,7 +204,6 @@ function options(
           ...(hasSiblings ? [{ value: "wrong_size_delivered" as ExchangeReason, label: "Wrong Size Delivered" }] : []),
           { value: "wrong_item", label: "Wrong Item Delivered" },
           { value: "damaged", label: "Item Arrived Damaged" },
-          { value: "defective", label: "Item Defective" },
         ],
         subReasonsByReason: {
           wrong_size_delivered: SIZE_SUB,
@@ -231,7 +229,6 @@ function options(
           ...(hasSiblings ? [{ value: "wrong_size_delivered" as ExchangeReason, label: "Wrong Size Delivered" }] : []),
           { value: "wrong_item", label: "Wrong Item Delivered" },
           { value: "damaged", label: "Item Arrived Damaged" },
-          { value: "defective", label: "Item Defective" },
         ],
         subReasonsByReason: {
           wrong_size_delivered: SIZE_SUB,
@@ -257,7 +254,6 @@ function options(
         reasons: [
           { value: "wrong_item", label: "Kit contents don't match what was ordered" },
           { value: "damaged", label: "Kit arrived damaged" },
-          { value: "defective", label: "One of the items inside is defective" },
           { value: "other", label: "Other (please describe)" },
         ],
         subReasonsByReason: {
@@ -293,7 +289,6 @@ function options(
         reasons: [
           { value: "wrong_item", label: "Wrong item delivered" },
           { value: "damaged", label: "Item arrived damaged" },
-          { value: "defective", label: "Item has a defect" },
           { value: "other", label: "Other (please describe)" },
         ],
         subReasonsByReason: {
@@ -319,7 +314,6 @@ function options(
         reasons: [
           { value: "wrong_item", label: "Wrong item / wrong quantity" },
           { value: "damaged", label: "Item arrived damaged" },
-          { value: "defective", label: "Item is defective" },
           { value: "other", label: "Other (please describe)" },
         ],
         subReasonsByReason: {
@@ -347,7 +341,6 @@ function options(
           ...(hasSiblings ? [{ value: "wrong_size_delivered" as ExchangeReason, label: "Wrong Size Delivered" }] : []),
           { value: "wrong_item", label: "Wrong Item Delivered" },
           { value: "damaged", label: "Item Arrived Damaged" },
-          { value: "defective", label: "Item Defective" },
         ],
         subReasonsByReason: {
           wrong_size_delivered: SIZE_SUB,

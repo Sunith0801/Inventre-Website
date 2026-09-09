@@ -1,4 +1,4 @@
-import { and, eq, asc, inArray } from "drizzle-orm";
+import { and, eq, asc, desc, inArray } from "drizzle-orm";
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import { db } from "@/db/client";
@@ -32,18 +32,15 @@ export default async function ProductVariantsPage({
     .limit(1);
   if (!product) notFound();
 
-  // Only load active variants — see note in the PATCH route about the
-  // soft-delete resurrection loop.
+  // Load ALL variants (active + soft-off) so the On/Off toggle is
+  // round-trippable — a hidden variant must still appear here to be
+  // switched back on. Active rows sort first.
   const variants = await db
     .select()
     .from(productVariants)
-    .where(
-      and(
-        eq(productVariants.productId, id),
-        eq(productVariants.isActive, true)
-      )
-    )
-    .orderBy(asc(productVariants.size));
+    .where(eq(productVariants.productId, id))
+    .orderBy(desc(productVariants.isActive), asc(productVariants.size));
+  const activeCount = variants.filter((v) => v.isActive).length;
 
   // Decode each variant's colour from its variant attributes (type='color')
   // and gather the colour options for the editable dropdown.
@@ -106,8 +103,10 @@ export default async function ProductVariantsPage({
           { label: "Variants" },
         ]}
         title={`${product.name} — variants`}
-        description={`${variants.length} variant${
-          variants.length === 1 ? "" : "s"
+        description={`${activeCount} shown${
+          variants.length > activeCount
+            ? ` · ${variants.length - activeCount} hidden`
+            : ""
         } · slug: ${product.slug}`}
         actions={
           <Link href={`/admin/products/${product.id}`}>
@@ -136,6 +135,7 @@ export default async function ProductVariantsPage({
           stockQty: v.stockQty,
           colorValueId: colourByVariant.get(v.id) ?? null,
           price: priceByVariant.get(v.id) ?? null,
+          isActive: v.isActive,
         }))}
       />
     </div>

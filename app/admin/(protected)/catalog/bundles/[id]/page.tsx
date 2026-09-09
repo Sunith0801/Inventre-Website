@@ -10,6 +10,7 @@ import {
 import { eq, asc } from "drizzle-orm";
 import { PageHeader, Card, Badge, Money } from "@/components/admin/ui/primitives";
 import { BundleEditor } from "@/components/admin/BundleEditor";
+import { RecordHistory } from "@/components/admin/RecordHistory";
 
 export const dynamic = "force-dynamic";
 
@@ -110,6 +111,10 @@ export default async function BundleDetailPage({
           variants={allVariants}
         />
       </Card>
+
+      <div className="mt-5">
+        <RecordHistory entityType="bundle" entityId={id} title="Bundle history" />
+      </div>
     </div>
   );
 }

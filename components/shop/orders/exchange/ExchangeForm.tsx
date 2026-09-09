@@ -21,6 +21,14 @@ import {
   type ExchangeReason,
 } from "@/lib/exchange-shared";
 import { getReasonOptions } from "@/lib/exchange-reasons";
+import { fetchOrNetworkError, errorMessageFor } from "@/lib/client-fetch";
+import { snapshotPhoto } from "@/lib/photo-snapshot";
+import {
+  clampRequestedQty,
+  exceedsQtyCeiling,
+  qtyCapMessage,
+} from "@/lib/return-qty";
+import { useQtyCapToast } from "@/components/shop/orders/QtyCapToast";
 
 type SiblingLite = {
   id: string;
@@ -70,17 +78,22 @@ export type Unit = {
   locked?: boolean;
   lockReturnNumber?: string | null;
   // Kit-parent only: some (but not all) components inside the box are already
-  // in a request. The box stays open for the rest, but the "whole box" scope
-  // option is disabled (you can't send back the whole box while part is out).
+  // in a request. The box stays open for the rest; drives the explanatory note
+  // on the kit card. (Whole-box exchange itself is retired — see kitGroupCard.)
   someComponentsLocked?: boolean;
   // Bookkit book whose parcel hasn't arrived yet — greyed with a "not delivered
   // yet" note; becomes selectable automatically once the parcel is delivered.
   notDelivered?: boolean;
-  // Kit-parent only: some components aren't delivered yet → "whole box" disabled.
+  // Kit-parent only: some components aren't delivered yet.
   someComponentsUndelivered?: boolean;
-  // True when this item is past its own 10-day exchange window (item-wise).
-  // Rendered greyed / not-selectable with the "request period expired" note.
-  expired?: boolean;
+  /** How many of this line are still requestable when an earlier,
+   *  non-rejected request already covers part of a multi-qty line. Absent =
+   *  nothing outstanding → the ceiling is the full ordered `qty`. (Today the
+   *  per-component lock takes a line out entirely, so the page doesn't set
+   *  this; the picker honours it the moment it does.) */
+  remainingQty?: number | null;
+  /** The RTN-/MIS- number that covers the rest, named in the cap toast. */
+  remainingCoveredByRef?: string | null;
 };
 
 type StagedPhoto = {
@@ -132,6 +145,11 @@ type TabState = {
    *  "Crown 50 Pages … × 2" but only one is damaged). 0 = unset → the full
    *  ordered qty. */
   qty: number;
+  /** What's literally in the Qty box. `null` = untouched (show the numeric
+   *  value). Held separately so a half-typed or EMPTY box survives until
+   *  blur — a purely numeric controlled input stamps "1" back the instant
+   *  the customer clears it, and their next digit lands as "1X". */
+  qtyText: string | null;
   notes: string;
 };
 
@@ -147,14 +165,30 @@ const emptyTab = (): TabState => ({
   currentVariantId: "",
   replacementDescribe: "",
   qty: 0,
+  qtyText: null,
   notes: "",
 });
 
+/**
+ * The most this line may be exchanged for: the outstanding remainder when an
+ * earlier request already covers part of it, else the ordered quantity.
+ * Never below 1 — a unit that's fully covered isn't selectable at all.
+ */
+function qtyCeiling(unit: Unit): number {
+  const remaining =
+    typeof unit.remainingQty === "number" && unit.remainingQty > 0
+      ? unit.remainingQty
+      : null;
+  return Math.max(1, Math.floor(remaining ?? unit.qty ?? 1));
+}
+
 /** Effective exchange quantity for a line: the tab's chosen qty (clamped to
- *  1..ordered), or the full ordered qty when unset (0). */
+ *  1..ceiling), or the full ceiling when unset (0). Applied again at submit
+ *  so a stale / tampered tab state can't build an over-qty payload. */
 function effectiveQty(unit: Unit, tab: TabState): number {
-  if (tab.qty && tab.qty > 0) return Math.min(unit.qty, Math.max(1, Math.floor(tab.qty)));
-  return unit.qty;
+  const ceiling = qtyCeiling(unit);
+  if (tab.qty && tab.qty > 0) return clampRequestedQty(tab.qty, ceiling);
+  return ceiling;
 }
 
 function categoryLabel(kind: string): string {
@@ -255,14 +289,24 @@ export function ExchangeForm({
   const setRequestedColor = (v: string) => updateActive({ requestedColor: v });
   const setRequestedSize = (v: string) => updateActive({ requestedSize: v });
   const setCurrentVariantId = (v: string) => updateActive({ currentVariantId: v });
-  const setQty = (v: number) => updateActive({ qty: v });
+  // Keeps the box's text in step with the ± buttons.
+  const setQty = (v: number) => updateActive({ qty: v, qtyText: String(v) });
   const setNotes = (v: string) => updateActive({ notes: v });
+
+  // Explains a quantity clamp ("Only 1 of \"SMS Caps\" was ordered.") — a
+  // silent jump-back reads as a broken input.
+  const { toast: qtyToast, showQtyCapToast } = useQtyCapToast();
 
   const [staging, setStaging] = useState<string>("");
   const [photos, setPhotos] = useState<StagedPhoto[]>([]);
   const [step, setStep] = useState<"edit" | "confirm">("edit");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Photos already staged by an attempt whose create call then failed.
+   *  Set once the upload leg succeeds so a retry skips straight to create. */
+  const uploadedPhotosRef = useRef<
+    { url: string; key: string; category: string }[] | null
+  >(null);
 
   // ── Kit / Magic Box grouping ──────────────────────────────────
   // A kit order item arrives as one "parent" unit (whole-box exchange)
@@ -308,10 +352,10 @@ export function ExchangeForm({
     setOpenCategories((p) => ({ ...p, [catKey]: !p[catKey] }));
 
   // A unit can't be selected/deselected when it's locked (already in a
-  // request), expired (past its window), or not yet delivered.
+  // request) or not yet delivered.
   const isUnitDisabled = (i: number): boolean => {
     const u = units[i];
-    return !!u && (!!u.locked || !!u.expired || !!u.notDelivered);
+    return !!u && (!!u.locked || !!u.notDelivered);
   };
 
   const setCategorySelected = (idxs: number[], selected: boolean) => {
@@ -347,6 +391,42 @@ export function ExchangeForm({
     activeUnitIdx !== null && Number.isFinite(activeUnitIdx)
       ? units[activeUnitIdx] ?? null
       : null;
+
+  /** Ceiling for the active tab's Qty box (remainder, else ordered qty). */
+  const activeCeiling = activeUnit ? qtyCeiling(activeUnit) : 1;
+
+  /**
+   * Single entry point for a typed / pasted / blurred quantity.
+   *
+   * Two things a bare `max=` can't do:
+   *  1. Reject the value — the browser accepts 5 in a max=1 box, which is how
+   *     an exchange for 2 × "SMS Caps" got raised on a × 1 line.
+   *  2. Re-sync the DOM. React skips writing `value` when the clamped number
+   *     equals the state it already holds, so the typed "5" would stay on
+   *     screen while state said 1. Write it back on the node directly (keeps
+   *     the caret / focus, unlike a remount).
+   */
+  const applyQtyInput = (
+    el: HTMLInputElement,
+    unit: Unit,
+    phase: "change" | "blur",
+  ) => {
+    const ceiling = qtyCeiling(unit);
+    const raw = el.value;
+    const over = exceedsQtyCeiling(raw, ceiling);
+    const clamped = clampRequestedQty(raw, ceiling);
+    if (over) {
+      showQtyCapToast(
+        qtyCapMessage(unit.name, ceiling, unit.remainingCoveredByRef ?? null),
+      );
+    }
+    // A mid-edit value (empty, "0") is left alone until blur; only an
+    // over-the-cap value is corrected on the spot — that's the one the
+    // customer needs told about.
+    const rewrite = over || phase === "blur";
+    if (rewrite && el.value !== String(clamped)) el.value = String(clamped);
+    updateActive({ qty: clamped, qtyText: rewrite ? String(clamped) : raw });
+  };
 
   const reasonOpts = useMemo(() => {
     if (!activeUnit) return getReasonOptions("other", false);
@@ -406,10 +486,29 @@ export function ExchangeForm({
     ];
     const wantColor = color || variantAxes.origColor;
     const wantSize = size || (activeUnit.size ?? "");
-    const hit = cands.find(
-      (c) => (!axis || c.color === wantColor) && (!variantAxes.sizes.length || c.size === wantSize),
+    // Size first, then colour — so an unknown colour can't nullify a size that
+    // genuinely exists.
+    const bySize = cands.filter(
+      (c) => !variantAxes.sizes.length || c.size === wantSize,
     );
-    return hit?.id ?? "";
+    if (bySize.length === 0) return "";
+    if (!axis) return bySize[0]!.id;
+    // Known colour → exact match, but treat a sibling with NO colour binding as
+    // compatible (the catalog row simply lacks the attribute; the variant is
+    // still the right one).
+    if (wantColor) {
+      const hit =
+        bySize.find((c) => c.color === wantColor) ?? bySize.find((c) => !c.color);
+      return hit?.id ?? "";
+    }
+    // Colour genuinely unknown (a legacy/backfilled bundle_selection with no
+    // `attributes` snapshot AND no catalog binding). Resolve only when it is
+    // UNAMBIGUOUS — a single-colour product like the Belt or the Hoodie. With
+    // several colours we must not guess, or a Yellow-house child could be sent
+    // Red: leave it unresolved so the form asks for a colour instead.
+    const distinct = Array.from(new Set(bySize.map((c) => c.color).filter(Boolean)));
+    if (distinct.length > 1) return "";
+    return bySize[0]!.id;
   };
 
   // Picking a colour/size updates the chosen variant id so the request carries
@@ -460,7 +559,7 @@ export function ExchangeForm({
   }, [reason, reasonOpts]);
 
   // ── Photo handling ────────────────────────────────────────────
-  const stageFiles = (category: string, files: FileList | null) => {
+  const stageFiles = async (category: string, files: FileList | null) => {
     setStaging("");
     if (!files) return;
     setError(null);
@@ -479,13 +578,32 @@ export function ExchangeForm({
         setError(`"${f.name}" exceeds 50 MB and was not added.`);
         return;
       }
-      incoming.push({ file: f, category, previewUrl: URL.createObjectURL(f) });
+      // Copy the bytes NOW. Holding the OS file handle until Submit is what
+      // made uploads fail with a bare "Failed to fetch" on Android — see
+      // lib/photo-snapshot.ts. A photo we can't read is reported here, while
+      // the parent is still on the picker.
+      let snapshot: File;
+      try {
+        snapshot = await snapshotPhoto(f);
+      } catch (e) {
+        setError(
+          e instanceof Error ? e.message : `We couldn't read "${f.name}".`,
+        );
+        return;
+      }
+      incoming.push({
+        file: snapshot,
+        category,
+        previewUrl: URL.createObjectURL(snapshot),
+      });
     }
     // No count cap — each section accepts unlimited photos.
+    uploadedPhotosRef.current = null; // the staged set is now stale
     setPhotos((prev) => [...prev, ...incoming]);
   };
 
   const removePhoto = (idx: number) => {
+    uploadedPhotosRef.current = null; // the staged set is now stale
     setPhotos((prev) => {
       const next = [...prev];
       next.splice(idx, 1);
@@ -587,7 +705,10 @@ export function ExchangeForm({
       const batches: StagedPhoto[][] = [];
       let cur: StagedPhoto[] = [];
       let curBytes = 0;
-      for (const p of photos) {
+      // Already staged on a previous attempt that died on the create call?
+      // Skip straight to the create — re-uploading would only orphan a second
+      // copy of every photo in the bucket.
+      for (const p of uploadedPhotosRef.current ? [] : photos) {
         if (cur.length > 0 && curBytes + p.file.size > BATCH_BYTES) {
           batches.push(cur);
           cur = [];
@@ -602,31 +723,33 @@ export function ExchangeForm({
       for (const batch of batches) {
         const form = new FormData();
         for (const p of batch) form.append("files", p.file, p.file.name);
-        const upRes = await fetch(`/api/returns/upload?orderId=${orderId}`, {
-          method: "POST",
-          body: form,
-        });
+        // Staging files is safe to repeat (each attempt writes under a fresh
+        // timestamped key), so a flaky mobile connection gets a couple of
+        // retries here rather than failing the whole submission.
+        const upRes = await fetchOrNetworkError(
+          `/api/returns/upload?orderId=${orderId}`,
+          { method: "POST", body: form },
+          { retries: 2 },
+        );
         if (!upRes.ok) {
-          const j = await upRes.json().catch(() => ({}));
-          // nginx rejects an over-limit body with 413 before the route runs,
-          // so there's no JSON — surface a clear message in that case.
-          const msg =
-            j.error ??
-            (upRes.status === 413
-              ? "A photo was too large to upload. Please use photos under 50 MB."
-              : `Upload failed (${upRes.status})`);
-          throw new Error(msg);
+          throw new Error(await errorMessageFor(upRes, "Upload failed"));
         }
         const j = (await upRes.json()) as {
           photos: { url: string; key: string }[];
         };
         uploaded.push(...j.photos);
       }
-      const taggedPhotos = uploaded.map((p, i) => ({
-        url: p.url,
-        key: p.key,
-        category: photos[i]?.category ?? "other",
-      }));
+      const taggedPhotos = uploadedPhotosRef.current ??
+        uploaded.map((p, i) => ({
+          url: p.url,
+          key: p.key,
+          category: photos[i]?.category ?? "other",
+        }));
+      // Remember the staged photos so a retry after a dropped connection
+      // re-sends the create call WITHOUT re-uploading every photo — that
+      // second upload was the slowest part of the round trip and the most
+      // likely to drop again.
+      uploadedPhotosRef.current = taggedPhotos;
 
       // Flatten every tab into one perItem[]. One POST = one RTN bundle,
       // even when the customer flagged many components on the same order_item.
@@ -697,19 +820,27 @@ export function ExchangeForm({
         perItem,
       };
 
-      const res = await fetch("/api/returns", {
+      // NOT retried: this mints an RTN. If the connection drops after the
+      // server committed, a silent retry would create a second request for
+      // the same order. The parent retries by tapping Submit again — the
+      // staged photos are reused and the server's per-order duplicate guard
+      // answers 409 if the first attempt did land.
+      const res = await fetchOrNetworkError("/api/returns", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
       if (!res.ok) {
-        const j = await res.json().catch(() => ({}));
-        throw new Error(j.error ?? `Submit failed (${res.status})`);
+        throw new Error(await errorMessageFor(res, "Submit failed"));
       }
       const { id } = (await res.json()) as { id: string };
       router.push(`/shop/orders/${orderId}/exchange/${id}`);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Something went wrong.");
+      setError(
+        e instanceof Error && e.message
+          ? e.message
+          : "Something went wrong. Please tap Submit again.",
+      );
       setSubmitting(false);
     }
   };
@@ -751,7 +882,7 @@ export function ExchangeForm({
         selectedSibling,
         replacementDescribe: tab.replacementDescribe,
         qty: unit ? effectiveQty(unit, tab) : 1,
-        orderedQty: unit?.qty ?? 1,
+        orderedQty: unit ? qtyCeiling(unit) : 1,
         notes: tab.notes,
       };
     });
@@ -774,9 +905,8 @@ export function ExchangeForm({
   const unitRow = (u: Unit, idx: number) => {
     const active = selectedIdxs.includes(idx);
     const locked = !!u.locked;
-    const expired = !!u.expired;
     const notDelivered = !!u.notDelivered;
-    const disabled = locked || expired || notDelivered;
+    const disabled = locked || notDelivered;
     const toggle = () => {
       if (disabled) return;
       setSelectionConfirmed(false);
@@ -834,12 +964,7 @@ export function ExchangeForm({
                   {u.lockReturnNumber ? ` (${u.lockReturnNumber})` : ""}
                 </span>
               )}
-              {expired && !locked && (
-                <span className="text-amber-700">
-                  {" "}· Request period expired (10 days from delivery)
-                </span>
-              )}
-              {notDelivered && !locked && !expired && (
+              {notDelivered && !locked && (
                 <span className="text-amber-700">
                   {" "}· Pending delivery — Exchange request is not available yet
                 </span>
@@ -875,10 +1000,9 @@ export function ExchangeForm({
     // chooser is gone. Kept as a constant so the existing selection/border
     // machinery below keeps working unchanged.
     const scope = "items" as const;
-    // "locked" here means DISABLED for any reason — an active request on this
-    // box (parent.locked) OR its 10-day window has expired (parent.expired).
-    // Both collapse the card to a greyed, non-pickable state with a note.
-    const locked = !!parent.locked || !!parent.expired;
+    // "locked" here means DISABLED — an active request already covers this box
+    // (parent.locked), collapsing the card to a greyed, non-pickable state.
+    const locked = !!parent.locked;
     const compCount = g.compIdxs.length;
     return (
       <li key={`kit:${orderItemId}`}>
@@ -908,11 +1032,6 @@ export function ExchangeForm({
                 {parent.someComponentsLocked && !parent.locked && (
                   <span className="text-amber-700">
                     {" "}· Some items already in a request — pick from the rest
-                  </span>
-                )}
-                {parent.expired && !parent.locked && (
-                  <span className="text-amber-700">
-                    {" "}· Request period expired (10 days from delivery)
                   </span>
                 )}
               </p>
@@ -948,9 +1067,9 @@ export function ExchangeForm({
                 // One category accordion (kit → category → book).
                 const catLi = (catKey: string, cat: { name: string; idxs: number[] }) => {
                   // "Whole category" acts only on SELECTABLE books — a locked /
-                  // expired / not-yet-delivered book stays untouched so the
-                  // category checkbox can't sneak an ineligible item into the
-                  // request. The count still shows the full category size.
+                  // not-yet-delivered book stays untouched so the category
+                  // checkbox can't sneak an ineligible item into the request.
+                  // The count still shows the full category size.
                   const selectable = cat.idxs.filter((i) => !isUnitDisabled(i));
                   const allSelected =
                     selectable.length > 0 && selectable.every((i) => selectedIdxs.includes(i));
@@ -1050,6 +1169,7 @@ export function ExchangeForm({
   // ── Render: edit step ─────────────────────────────────────────
   return (
     <div className="rounded-2xl border border-ink-100 bg-white p-5 lg:p-6 space-y-5">
+      {qtyToast}
       {/* Order header */}
       <div className="flex items-center justify-between pb-4 border-b border-ink-100">
         <div>
@@ -1154,7 +1274,7 @@ export function ExchangeForm({
                 >
                   <span className="truncate max-w-[180px]">{u.name}</span>
                   <span className="shrink-0 rounded-full border border-ink-200 bg-cream-50 px-1.5 py-0.5 text-[9.5px] uppercase tracking-wider text-ink-500">
-                    {u.isKitParent ? "Whole box" : categoryLabel(u.kind)}
+                    {categoryLabel(u.kind)}
                   </span>
                   {done ? (
                     <span className="text-emerald-600 text-[12px]">✓</span>
@@ -1182,71 +1302,71 @@ export function ExchangeForm({
                 Inside {activeUnit.parentName}
               </p>
             )}
-            {activeUnit.isKitParent && (
-              <p className="mt-0.5 text-[11.5px] text-ink-500">
-                Whole box — every item inside will be exchanged together.
-              </p>
-            )}
           </div>
 
-          {/* Quantity — only when this line was ordered more than once (e.g.
-              "Crown 50 Pages … × 2"). Lets the customer exchange just the
-              damaged one(s) instead of the whole quantity. */}
-          {activeUnit.qty > 1 && (
-            <div>
-              <label className="block text-[12px] font-semibold uppercase tracking-wider text-ink-700">
-                How many need exchanging?
-              </label>
-              <p className="mt-1 text-[11.5px] text-ink-500">
-                You ordered {activeUnit.qty} of this. Enter how many have the
-                problem — the rest stay with you.
-              </p>
-              <div className="mt-2 flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() =>
-                    setQty(Math.max(1, effectiveQty(activeUnit, cur) - 1))
-                  }
-                  className="h-9 w-9 rounded-lg border border-ink-200 text-[18px] text-ink-700 hover:border-ink-400 disabled:opacity-40"
-                  disabled={effectiveQty(activeUnit, cur) <= 1}
-                  aria-label="Decrease quantity"
-                >
-                  −
-                </button>
-                <input
-                  type="number"
-                  min={1}
-                  max={activeUnit.qty}
-                  value={effectiveQty(activeUnit, cur)}
-                  onChange={(e) =>
-                    setQty(
-                      Math.max(
-                        1,
-                        Math.min(activeUnit.qty, Number(e.target.value) || 1)
-                      )
-                    )
-                  }
-                  className="w-16 rounded-lg border border-ink-200 bg-white px-3 py-2 text-[14px] text-center"
-                />
-                <button
-                  type="button"
-                  onClick={() =>
-                    setQty(
-                      Math.min(activeUnit.qty, effectiveQty(activeUnit, cur) + 1)
-                    )
-                  }
-                  className="h-9 w-9 rounded-lg border border-ink-200 text-[18px] text-ink-700 hover:border-ink-400 disabled:opacity-40"
-                  disabled={effectiveQty(activeUnit, cur) >= activeUnit.qty}
-                  aria-label="Increase quantity"
-                >
-                  +
-                </button>
-                <span className="text-[12.5px] text-ink-500">
-                  of {activeUnit.qty}
-                </span>
-              </div>
+          {/* Quantity. Always shown — even on a × 1 line — so the ceiling
+              ("of 1") is visible BEFORE the customer hits it. Every entry
+              path clamps to that ceiling: the ± buttons, the typed value,
+              blur, and once more when the payload is built. */}
+          <div>
+            <label
+              htmlFor="exchange-qty"
+              className="block text-[12px] font-semibold uppercase tracking-wider text-ink-700"
+            >
+              How many need exchanging?
+            </label>
+            <p className="mt-1 text-[11.5px] text-ink-500">
+              {activeCeiling > 1
+                ? `You ordered ${activeCeiling} of this. Enter how many have the problem — the rest stay with you.`
+                : `You ordered ${activeCeiling} of this, so this request covers ${activeCeiling}.`}
+            </p>
+            <div className="mt-2 flex items-center gap-2">
+              <span className="text-[12.5px] text-ink-500">Qty</span>
+              <button
+                type="button"
+                onClick={() =>
+                  setQty(Math.max(1, effectiveQty(activeUnit, cur) - 1))
+                }
+                className="h-9 w-9 rounded-lg border border-ink-200 text-[18px] text-ink-700 hover:border-ink-400 disabled:opacity-40"
+                disabled={effectiveQty(activeUnit, cur) <= 1}
+                aria-label="Decrease quantity"
+              >
+                −
+              </button>
+              <input
+                id="exchange-qty"
+                type="number"
+                min={1}
+                max={activeCeiling}
+                value={cur.qtyText ?? String(effectiveQty(activeUnit, cur))}
+                aria-label={`Quantity to exchange for ${activeUnit.name}, at most ${activeCeiling}`}
+                // Select-on-focus (+ mouseup guard so the browser doesn't
+                // collapse it to a caret) so click-then-type REPLACES the
+                // number rather than appending to it.
+                onFocus={(e) => e.target.select()}
+                onMouseUp={(e) => e.preventDefault()}
+                onChange={(e) => applyQtyInput(e.target, activeUnit, "change")}
+                onBlur={(e) => applyQtyInput(e.target, activeUnit, "blur")}
+                className="w-16 rounded-lg border border-ink-200 bg-white px-3 py-2 text-[14px] text-center"
+              />
+              <button
+                type="button"
+                onClick={() =>
+                  setQty(
+                    Math.min(activeCeiling, effectiveQty(activeUnit, cur) + 1)
+                  )
+                }
+                className="h-9 w-9 rounded-lg border border-ink-200 text-[18px] text-ink-700 hover:border-ink-400 disabled:opacity-40"
+                disabled={effectiveQty(activeUnit, cur) >= activeCeiling}
+                aria-label="Increase quantity"
+              >
+                +
+              </button>
+              <span className="text-[12.5px] text-ink-500">
+                of {activeCeiling}
+              </span>
             </div>
-          )}
+          </div>
 
           {/* Current size — only for box components whose ordered size
               wasn't recorded. We ask so the swap is unambiguous. */}
@@ -1384,16 +1504,8 @@ export function ExchangeForm({
                     onSelect={() =>
                       setReplacementMode((m) => (m === "same_fresh" ? "" : "same_fresh"))
                     }
-                    title={
-                      activeUnit?.isKitParent
-                        ? "A fresh replacement box"
-                        : "Same item, fresh piece"
-                    }
-                    hint={
-                      activeUnit?.isKitParent
-                        ? "We'll send a complete fresh box with everything inside."
-                        : "We'll send a fresh copy of the same variant."
-                    }
+                    title="Same item, fresh piece"
+                    hint="We'll send a fresh copy of the same variant."
                   />
                 )}
                 {siblingAvailable && (
@@ -1577,7 +1689,14 @@ export function ExchangeForm({
             accept={[...ALLOWED, ...ALLOWED_EXT].join(",")}
             multiple
             className="hidden"
-            onChange={(e) => stageFiles(staging || "other", e.target.files)}
+            onChange={(e) => {
+              const input = e.currentTarget;
+              // Reset after staging so re-picking the same photo still fires
+              // `change` (the bytes are already copied by then).
+              void stageFiles(staging || "other", input.files).finally(() => {
+                input.value = "";
+              });
+            }}
           />
         </div>
       )}
@@ -1679,11 +1798,6 @@ function ConfirmStep({
           {s.unit?.isKitComponent && (
             <p className="text-[11.5px] text-ink-500">Inside {s.unit.parentName}</p>
           )}
-          {s.unit?.isKitParent && (
-            <p className="text-[11.5px] text-ink-500">
-              Whole box — all items inside are exchanged together.
-            </p>
-          )}
 
           {s.replacementMode === "sibling" && s.selectedSibling ? (
             <p className="text-[12.5px] text-ink-700">
@@ -1715,8 +1829,9 @@ function ConfirmStep({
       </div>
 
       <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-3 text-[12.5px] text-emerald-900">
-        Once approved, please visit your school on the upcoming Saturday (at least 7 days
-        from today) to collect. We&apos;ll text you the exact date.
+        Once approved, the exchange will be sent to your school. The school
+        will inform you once it has been received there, and you can collect it
+        then.
       </div>
 
       {error && (

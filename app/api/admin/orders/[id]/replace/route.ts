@@ -7,6 +7,7 @@ import { orders, orderItems } from "@/db/schema";
 import { requirePermission, isResponse, assertSchoolAccess } from "@/lib/admin-guard";
 import { generateOrderNumber } from "@/lib/repos/orders";
 import { financialYearOf } from "@/lib/invoice-numbering";
+import { logAdminActivity } from "@/lib/activity";
 
 /**
  * Create a replacement Sales Order from an existing one (audit §3.4
@@ -116,6 +117,14 @@ export async function POST(
       gstTreatmentSnapshot: it.orig.gstTreatmentSnapshot,
     }))
   );
+
+  void logAdminActivity(guard, {
+    action: "order.replace",
+    entityType: "order",
+    entityId: originalOrderId,
+    summary: `Created replacement order ${orderNumber} for ${original.orderNumber}`,
+    req,
+  });
 
   return NextResponse.json({
     id: replacement.id,

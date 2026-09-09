@@ -4,6 +4,7 @@ import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { db, schema } from "@/db/client";
 import { isResponse, requirePermission } from "@/lib/admin-guard";
+import { logAdminActivity, diffFields } from "@/lib/activity";
 import { parseJson } from "@/lib/api-handler";
 import { emitStudentEvent } from "@/lib/erp-bridge";
 import { invalidateCatalog } from "@/lib/cache";
@@ -42,9 +43,23 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const body = await parseJson(req, Patch);
   if (body instanceof NextResponse) return body;
 
+  // Snapshot the row before applying the update so the activity log can
+  // record per-field Old → New changes.
+  const [before] = await db
+    .select()
+    .from(schema.students)
+    .where(eq(schema.students.id, id))
+    .limit(1);
+
   // Start with a blind copy of supplied ERP-mirror fields.
   const update: Record<string, unknown> = { syncedAt: new Date() };
   for (const [k, v] of Object.entries(body)) if (v !== undefined) update[k] = v;
+
+  // Re-admitting a student by hand during a site-wide closure is a
+  // deliberate exception, so drop the closure mark: when the store
+  // re-opens, this row must not be "restored" a second time, and if a
+  // later closure runs it should be marked fresh. See lib/site-access.ts.
+  if (body.enabled === true) update.disabledByClosure = false;
 
   // The shop reads from a *different* set of columns than the admin editor
   // writes to:
@@ -172,17 +187,82 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   revalidatePath(`/admin/students/${id}`);
   void emitStudentEvent(id);
 
+  if (before) {
+    // Exclude the bookkeeping syncedAt timestamp from the diff so it
+    // doesn't show up as a change on every save. Also drop `class` — it's an
+    // internal mirror of `grade` (set together above), so logging it would
+    // duplicate the Grade row with an identical Old → New.
+    const { syncedAt: _syncedAt, class: _class, ...afterForDiff } = update;
+    const changes = diffFields(
+      before as unknown as Record<string, unknown>,
+      afterForDiff,
+      {
+        enabled: "Enabled",
+        isNewStudent: "New student",
+        isVerified: "Verified",
+        schoolCode: "School code",
+        schoolId: "School",
+        enrollmentNumber: "Enrollment number",
+        firstName: "First name",
+        middleName: "Middle name",
+        lastName: "Last name",
+        name: "Name",
+        grade: "Grade",
+        section: "Section",
+        joiningDate: "Joining date",
+        houseColor: "House colour",
+        medium: "Medium",
+        curriculum: "Curriculum",
+        shoeSize: "Shoe size",
+        shirtSize: "Shirt size",
+        trouserSize: "Trouser size",
+        studentEmailId: "Student email",
+        studentMobileNumber: "Student mobile",
+        dateOfBirth: "Date of birth",
+        bloodGroup: "Blood group",
+        gender: "Gender",
+        nationality: "Nationality",
+      }
+    );
+    if (changes.length > 0) {
+      void logAdminActivity(guard, {
+        action: "student.update",
+        entityType: "student",
+        entityId: id,
+        summary: `Updated ${changes.map((c) => c.label ?? c.field).join(", ")}`,
+        changes,
+        req,
+      });
+    }
+  }
+
   return NextResponse.json({ ok: true });
 }
 
-export async function DELETE(_: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const guard = await requirePermission("students.write");
   if (isResponse(guard)) return guard;
   const { id } = await params;
+
+  // Capture an identifying field before the row is gone.
+  const [before] = await db
+    .select({ name: schema.students.name, enrollmentNumber: schema.students.enrollmentNumber })
+    .from(schema.students)
+    .where(eq(schema.students.id, id))
+    .limit(1);
+
   await db.delete(schema.students).where(eq(schema.students.id, id));
 
   revalidatePath("/admin/students");
   revalidatePath(`/admin/students/${id}`);
+
+  void logAdminActivity(guard, {
+    action: "student.delete",
+    entityType: "student",
+    entityId: id,
+    summary: `Deleted student ${before?.name ?? before?.enrollmentNumber ?? id}`,
+    req,
+  });
 
   return NextResponse.json({ ok: true });
 }

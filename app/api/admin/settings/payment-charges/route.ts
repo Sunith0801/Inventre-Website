@@ -3,6 +3,7 @@ import { z } from "zod";
 import { db } from "@/db/client";
 import { systemSettings } from "@/db/schema";
 import { isResponse, requirePermission } from "@/lib/admin-guard";
+import { logAdminActivity } from "@/lib/activity";
 import { parseBody } from "@/lib/parse-body";
 import {
   PAYMENT_CHARGES_KEY,
@@ -47,5 +48,12 @@ export async function PUT(req: Request) {
       set: { value: parsed, updatedAt: new Date() },
     });
 
+  void logAdminActivity(guard, {
+    action: "settings.update",
+    entityType: "settings",
+    entityId: "payment-charges",
+    summary: "Updated payment charges",
+    req,
+  });
   return NextResponse.json({ ok: true });
 }

@@ -725,7 +725,7 @@ export function ProductImages({
                   <img
                     src={img.url}
                     alt={img.alt ?? ""}
-                    className="h-16 w-16 rounded-lg object-cover bg-cream-50 border border-ink-100"
+                    className="h-16 w-16 rounded-lg object-contain bg-cream-50 border border-ink-100"
                   />
                   <span
                     className={cn(

@@ -6,6 +6,7 @@ import {
   generateInvoiceForOrder,
   listInvoices,
 } from "@/lib/repos/invoices";
+import { logAdminActivity } from "@/lib/activity";
 
 export async function GET(req: Request) {
   const guard = await requirePermission("invoices.read");
@@ -40,6 +41,15 @@ export async function POST(req: Request) {
       orderId: body.orderId,
       postingDate: body.postingDate ? new Date(body.postingDate) : undefined,
     });
+    if (!result.alreadyExisted) {
+      void logAdminActivity(guard, {
+        action: "invoice.create",
+        entityType: "order",
+        entityId: body.orderId,
+        summary: `Created invoice ${result.invoiceNumber}`,
+        req,
+      });
+    }
     return NextResponse.json(result);
   } catch (e) {
     return NextResponse.json(

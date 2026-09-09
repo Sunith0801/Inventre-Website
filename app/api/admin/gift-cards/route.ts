@@ -3,6 +3,7 @@ import { parseBody } from "@/lib/parse-body";
 import { z } from "zod";
 import { isResponse, requirePermission } from "@/lib/admin-guard";
 import { issueGiftCard, listGiftCards } from "@/lib/repos/gift-cards";
+import { logAdminActivity } from "@/lib/activity";
 
 export async function GET(req: Request) {
   const guard = await requirePermission("gift-cards.read");
@@ -36,6 +37,13 @@ export async function POST(req: Request) {
     expiresAt: body.expiresAt ? new Date(body.expiresAt) : undefined,
     notes: body.notes ?? undefined,
     createdBy: guard.id,
+  });
+  void logAdminActivity(guard, {
+    action: "gift_card.create",
+    entityType: "gift_card",
+    entityId: result.id,
+    summary: `Issued gift card ${result.code} — ₹${body.amountRupees}`,
+    req,
   });
   return NextResponse.json(result);
 }

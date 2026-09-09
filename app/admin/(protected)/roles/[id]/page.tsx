@@ -6,6 +6,7 @@ import { ChevronLeft } from "lucide-react";
 import { requirePermission, isResponse } from "@/lib/admin-guard";
 import { ADMIN_PAGES, ADMIN_PERMISSION_GROUPS } from "@/lib/admin-permissions";
 import { RoleEditor } from "@/components/admin/RoleEditor";
+import { RecordHistory } from "@/components/admin/RecordHistory";
 
 export const dynamic = "force-dynamic";
 
@@ -53,6 +54,10 @@ export default async function EditRolePage({ params }: { params: Promise<{ id: s
         groups={[...ADMIN_PERMISSION_GROUPS]}
         granted={[...granted]}
       />
+
+      <div className="mt-5">
+        <RecordHistory entityType="admin_role" entityId={id} title="Role history" />
+      </div>
     </div>
   );
 }

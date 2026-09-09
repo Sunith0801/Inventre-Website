@@ -48,6 +48,8 @@ export type ProductDetailDto = ProductCardDto & {
   specs: { label: string; value: string }[] | null;
   sizeTable: { size: string; chest: string; length: string; sleeve: string }[] | null;
   sizeChartUrl: string | null;
+  /** Free-text note shown under the product image on the PDP. */
+  imageNote: string | null;
   variants: {
     id: string;
     size: string;
@@ -1021,6 +1023,7 @@ export async function getProductBySlug(
           | { size: string; chest: string; length: string; sleeve: string }[]
           | null) ?? null,
       sizeChartUrl: safeImgUrl(product.sizeChartUrl ?? null),
+      imageNote: (product.imageNote as string | null) ?? null,
       variants: variants.map((v) => {
         const r = resolved.get(v.id);
         const pricePaise = r?.pricePaise ?? resolvedPricePaise;

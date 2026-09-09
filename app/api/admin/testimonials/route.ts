@@ -6,6 +6,7 @@ import { db } from "@/db/client";
 import { testimonials } from "@/db/schema";
 import { isResponse, requirePermission } from "@/lib/admin-guard";
 import { invalidate } from "@/lib/cache";
+import { logAdminActivity } from "@/lib/activity";
 
 const Body = z.object({
   principalName: z.string().min(1),
@@ -39,5 +40,12 @@ export async function POST(req: Request) {
     .returning();
   await invalidate("home:all");
   revalidatePath("/");
+  void logAdminActivity(guard, {
+    action: "testimonial.create",
+    entityType: "testimonial",
+    entityId: created.id,
+    summary: `Created testimonial ${created.principalName}`,
+    req,
+  });
   return NextResponse.json({ testimonial: created });
 }

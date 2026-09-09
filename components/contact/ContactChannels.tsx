@@ -19,7 +19,7 @@ const channels = [
     label: "Schools",
     image: "https://pub-d46aef8f98ef4da0a1834fb6f554ae2c.r2.dev/images/school.png",
     helper: "Partnership, onboarding and brand consultations.",
-    phone: "+91 81212 58383",
+    phone: "+91 90599 90804",
     email: "connect@inventre.in",
   },
   {
@@ -28,7 +28,7 @@ const channels = [
     label: "Business",
     image: "https://pub-d46aef8f98ef4da0a1834fb6f554ae2c.r2.dev/images/business.png",
     helper: "Wholesale, distributor and B2B inquiries.",
-    phone: "+91 81212 58383",
+    phone: "+91 90599 90804",
     email: "connect@inventre.in",
   },
 ];

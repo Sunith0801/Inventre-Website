@@ -4,6 +4,7 @@ import { z } from "zod";
 import { db } from "@/db/client";
 import { systemSettings } from "@/db/schema";
 import { isResponse, requirePermission } from "@/lib/admin-guard";
+import { logAdminActivity } from "@/lib/activity";
 import {
   SMS_REAL_SEND_KEY,
   EMAIL_REAL_SEND_KEY,
@@ -46,5 +47,12 @@ export async function PUT(req: Request) {
       set: { value: body.emailRealSend, updatedAt: new Date() },
     });
 
+  void logAdminActivity(guard, {
+    action: "settings.update",
+    entityType: "settings",
+    entityId: "otp",
+    summary: "Updated OTP settings",
+    req,
+  });
   return NextResponse.json({ ok: true });
 }

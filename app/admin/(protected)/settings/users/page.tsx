@@ -1,9 +1,16 @@
 import { asc, eq } from "drizzle-orm";
+import { redirect } from "next/navigation";
 import { db } from "@/db/client";
 import { users, schools } from "@/db/schema";
+import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
 import { UserList } from "@/components/admin/UserList";
 
 export default async function AdminUsersPage() {
+  // This page lists every admin account and its email. It had no guard at
+  // all — any admin session could read it, whatever their permissions.
+  const guard = await requireAnyPermission("settings-users.read", "settings-users.write");
+  if (isResponse(guard)) redirect("/admin");
+
   const rows = await db
     .select({ user: users, school: schools })
     .from(users)

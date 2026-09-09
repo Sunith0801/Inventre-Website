@@ -12,6 +12,7 @@ import {
   warehouses,
 } from "@/db/schema";
 import { isResponse, requirePermission } from "@/lib/admin-guard";
+import { logAdminActivity } from "@/lib/activity";
 import { applyStockChange } from "@/lib/repos/inventory";
 import { nextNumber, financialYear, pad } from "@/lib/numbering";
 
@@ -180,6 +181,14 @@ export async function POST(req: Request) {
       createdBy: guard.id,
     });
   }
+
+  void logAdminActivity(guard, {
+    action: "purchase_receipt.create",
+    entityType: "purchase_receipt",
+    entityId: created.id,
+    summary: `Received goods ${receiptNumber} against PO ${po.poNumber}`,
+    req,
+  });
 
   return NextResponse.json({ id: created.id, receiptNumber });
 }

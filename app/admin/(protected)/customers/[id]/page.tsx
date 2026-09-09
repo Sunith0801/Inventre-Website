@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { ArrowLeft, Phone, Mail, GraduationCap, Edit2 } from "lucide-react";
 import { getCustomerDetail } from "@/lib/repos/customers";
 import { AddressBook } from "@/components/admin/AddressBook";
+import { RecordHistory } from "@/components/admin/RecordHistory";
 import {
   PageHeader,
   Card,
@@ -200,6 +201,10 @@ export default async function CustomerDetailPage({
             </table>
           )}
         </Card>
+      </div>
+
+      <div className="mt-5">
+        <RecordHistory entityType="customer" entityId={id} title="Customer history" />
       </div>
     </div>
   );

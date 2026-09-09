@@ -3,6 +3,7 @@ import { parseBody } from "@/lib/parse-body";
 import { z } from "zod";
 import { isResponse, requirePermission } from "@/lib/admin-guard";
 import { getBalance, getLedger, adjust } from "@/lib/repos/loyalty";
+import { logAdminActivity } from "@/lib/activity";
 
 export async function GET(
   _: Request,
@@ -38,6 +39,13 @@ export async function POST(
     delta: body.delta,
     notes: body.notes,
     createdBy: guard.id,
+  });
+  void logAdminActivity(guard, {
+    action: "loyalty.adjust",
+    entityType: "customer",
+    entityId: parentId,
+    summary: `Loyalty ${body.delta >= 0 ? "+" : ""}${body.delta} — ${body.notes}`,
+    req,
   });
   return NextResponse.json({ ok: true });
 }

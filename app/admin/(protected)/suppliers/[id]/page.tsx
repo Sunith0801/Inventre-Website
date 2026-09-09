@@ -16,6 +16,7 @@ import {
   EmptyState,
   statusTone,
 } from "@/components/admin/ui/primitives";
+import { RecordHistory } from "@/components/admin/RecordHistory";
 
 export const dynamic = "force-dynamic";
 
@@ -148,6 +149,10 @@ export default async function SupplierDetailPage({
             </Card>
           ) : null}
         </div>
+      </div>
+
+      <div className="mt-5">
+        <RecordHistory entityType="supplier" entityId={id} title="Supplier history" />
       </div>
     </div>
   );

@@ -11,6 +11,7 @@ import {
 } from "@/db/schema";
 import { isResponse, requirePermission } from "@/lib/admin-guard";
 import { invalidateCatalog } from "@/lib/cache";
+import { logAdminActivity } from "@/lib/activity";
 
 const Body = z.object({
   components: z
@@ -119,11 +120,25 @@ export async function PATCH(
   // that include this bundle as a child, so we can't safely narrow the key scope.
   await invalidateCatalog();
 
+  const sections: string[] = [];
+  if (body.components) sections.push(`${body.components.length} component(s)`);
+  if (body.selectors) sections.push(`${body.selectors.length} selector(s)`);
+  if (body.configs) sections.push(`${body.configs.length} config(s)`);
+  if (sections.length > 0) {
+    void logAdminActivity(guard, {
+      action: "bundle.update",
+      entityType: "bundle",
+      entityId: id,
+      summary: `Updated bundle: ${sections.join(", ")}`,
+      req,
+    });
+  }
+
   return NextResponse.json({ ok: true });
 }
 
 export async function DELETE(
-  _: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const guard = await requirePermission("catalog.write");
@@ -133,5 +148,14 @@ export async function DELETE(
   // Same broad bust as PATCH — a removed bundle can affect any kit that
   // referenced it as a child.
   await invalidateCatalog();
+
+  void logAdminActivity(guard, {
+    action: "bundle.delete",
+    entityType: "bundle",
+    entityId: id,
+    summary: `Deleted bundle ${id}`,
+    req,
+  });
+
   return NextResponse.json({ ok: true });
 }

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { db, schema } from "@/db/client";
 import { isResponse, requirePermission } from "@/lib/admin-guard";
 import { parseJson } from "@/lib/api-handler";
+import { logAdminActivity } from "@/lib/activity";
 
 const Body = z.object({
   gradeName: z.string().min(1),
@@ -23,5 +24,12 @@ export async function POST(req: Request) {
       status: body.status,
     })
     .returning({ id: schema.grades.id });
+  void logAdminActivity(guard, {
+    action: "grade.create",
+    entityType: "grade",
+    entityId: created.id,
+    summary: `Created grade ${body.gradeName}`,
+    req,
+  });
   return NextResponse.json({ id: created.id });
 }

@@ -4,6 +4,7 @@ import { db, schema } from "@/db/client";
 import { and, eq, inArray } from "drizzle-orm";
 import { isResponse, requirePermission } from "@/lib/admin-guard";
 import { parseJson } from "@/lib/api-handler";
+import { logAdminActivity } from "@/lib/activity";
 
 const Body = z.object({
   schoolCode: z.string().min(1).max(40),
@@ -107,6 +108,13 @@ export async function POST(req: Request) {
         booksDetailsCheckbox: body.booksDetailsCheckbox ?? false,
       })
       .returning({ id: schema.schools.id });
+    void logAdminActivity(guard, {
+      action: "school.create",
+      entityType: "school",
+      entityId: created.id,
+      summary: `Created school ${body.schoolName} (${body.schoolCode})`,
+      req,
+    });
     return NextResponse.json({ id: created.id });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

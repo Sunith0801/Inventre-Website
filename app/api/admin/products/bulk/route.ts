@@ -5,6 +5,7 @@ import { db } from "@/db/client";
 import { products } from "@/db/schema";
 import { isResponse, requirePermission } from "@/lib/admin-guard";
 import { invalidateCatalog } from "@/lib/cache";
+import { logAdminActivity } from "@/lib/activity";
 
 /**
  * Bulk operations across products. Today only status change is supported —
@@ -38,6 +39,14 @@ export async function PATCH(req: Request) {
     .returning({ id: products.id });
 
   await invalidateCatalog();
+
+  void logAdminActivity(guard, {
+    action: "product.bulk_update",
+    entityType: "product",
+    entityId: null,
+    summary: `Set status to "${body.status}" on ${updated.length} product(s)`,
+    req,
+  });
 
   return NextResponse.json({ ok: true, updated: updated.length });
 }

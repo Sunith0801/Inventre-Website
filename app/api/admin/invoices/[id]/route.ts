@@ -6,6 +6,7 @@ import { db } from "@/db/client";
 import { invoices } from "@/db/schema";
 import { requirePermission, isResponse } from "@/lib/admin-guard";
 import { getInvoiceDetail, generateCreditNote } from "@/lib/repos/invoices";
+import { logAdminActivity } from "@/lib/activity";
 
 export async function GET(
   _: Request,
@@ -53,6 +54,13 @@ export async function POST(
       .update(invoices)
       .set({ status: "cancelled", updatedAt: new Date() })
       .where(eq(invoices.id, id));
+    void logAdminActivity(guard, {
+      action: "invoice.update",
+      entityType: "invoice",
+      entityId: id,
+      summary: "Cancelled invoice",
+      req,
+    });
     return NextResponse.json({ ok: true });
   }
 
@@ -66,6 +74,13 @@ export async function POST(
     const result = await generateCreditNote({
       parentInvoiceId: id,
       returnedItems: body.returnedItems,
+    });
+    void logAdminActivity(guard, {
+      action: "invoice.update",
+      entityType: "invoice",
+      entityId: id,
+      summary: `Issued credit note ${result.invoiceNumber}`,
+      req,
     });
     return NextResponse.json(result);
   }

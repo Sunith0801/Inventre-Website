@@ -5,6 +5,7 @@ import { eq, inArray, and, notInArray } from "drizzle-orm";
 import { db } from "@/db/client";
 import { productAttributeValues } from "@/db/schema";
 import { isResponse, requirePermission } from "@/lib/admin-guard";
+import { logAdminActivity } from "@/lib/activity";
 
 /**
  * Bulk replace the value list for an attribute (mirrors the ERP "Save"
@@ -89,6 +90,14 @@ export async function PUT(
         });
     }
   }
+
+  void logAdminActivity(guard, {
+    action: "attribute.value.bulk",
+    entityType: "attribute",
+    entityId: attributeId,
+    summary: `Saved ${values.length} attribute value(s)`,
+    req,
+  });
 
   return NextResponse.json({ ok: true, count: values.length });
 }

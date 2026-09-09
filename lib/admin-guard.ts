@@ -51,6 +51,32 @@ export async function requireAnyPermission(
 }
 
 /**
+ * Require the current admin to hold ANY write permission (any "<slug>.write").
+ * Use for cross-area utility endpoints — e.g. media upload — where the real
+ * per-area authorization is enforced by the endpoint that consumes the result
+ * (the catalog image route needs catalog.write, the content block route needs
+ * content.write, …). A pure read-only admin is still rejected; anyone trusted
+ * to mutate *something* may push bytes to storage.
+ */
+export async function requireAnyWritePermission(): Promise<
+  CurrentAdmin | NextResponse
+> {
+  const me = await getCurrentUser();
+  if (!me || me.kind !== "admin")
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  let hasWrite = false;
+  for (const p of me.permissions) {
+    if (p.endsWith(".write")) {
+      hasWrite = true;
+      break;
+    }
+  }
+  if (!hasWrite)
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  return me;
+}
+
+/**
  * Boolean check for use inside server components and route handlers that
  * have already resolved `me`. Use `requirePermission` for the gate; use
  * `hasPermission` for branching (e.g. "render the Save button only if…").

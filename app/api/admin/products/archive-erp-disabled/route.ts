@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db, schema } from "@/db/client";
 import { and, eq, sql } from "drizzle-orm";
 import { isResponse, requirePermission } from "@/lib/admin-guard";
+import { logAdminActivity } from "@/lib/activity";
 
 /**
  * Admin-driven bulk action: archive every product currently marked
@@ -35,7 +36,7 @@ export async function GET() {
   });
 }
 
-export async function POST() {
+export async function POST(req: Request) {
   const guard = await requirePermission("catalog.write");
   if (isResponse(guard)) return guard;
   const result = await db
@@ -55,5 +56,14 @@ export async function POST() {
     const keys = await redis.keys("products:school:*");
     if (keys.length > 0) await redis.del(...keys);
   } catch {}
+
+  void logAdminActivity(guard, {
+    action: "product.archive_erp_disabled",
+    entityType: "product",
+    entityId: null,
+    summary: `Archived ${result.length} ERP-disabled product(s)`,
+    req,
+  });
+
   return NextResponse.json({ archived: result.length });
 }

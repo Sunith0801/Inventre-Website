@@ -11,6 +11,7 @@ import {
 } from "@/db/schema";
 import { requirePermission, isResponse } from "@/lib/admin-guard";
 import { allocPaymentNumber } from "@/lib/numbering";
+import { logAdminActivity } from "@/lib/activity";
 
 const Body = z.object({
   direction: z.enum(["received", "paid"]),
@@ -170,6 +171,14 @@ export async function POST(req: Request) {
     }
 
     return [row];
+  });
+
+  void logAdminActivity(guard, {
+    action: "payment.record",
+    entityType: body.orderId ? "order" : "payment",
+    entityId: body.orderId ?? created.id,
+    summary: `Recorded ${body.direction} payment ${paymentNumber} — ₹${(body.amount / 100).toFixed(2)} (${body.method})`,
+    req,
   });
 
   return NextResponse.json({

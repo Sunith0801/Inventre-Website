@@ -7,6 +7,7 @@ import { db } from "@/db/client";
 import { testimonials } from "@/db/schema";
 import { isResponse, requirePermission } from "@/lib/admin-guard";
 import { invalidate } from "@/lib/cache";
+import { logAdminActivity, diffFields } from "@/lib/activity";
 
 const Body = z.object({
   principalName: z.string().optional(),
@@ -39,19 +40,62 @@ export async function PATCH(
     if (body[k] !== undefined)
       update[k] = body[k] === "" ? null : body[k];
   }
+  const [before] = await db
+    .select()
+    .from(testimonials)
+    .where(eq(testimonials.id, id))
+    .limit(1);
   await db.update(testimonials).set(update).where(eq(testimonials.id, id));
   await bust();
+  if (before) {
+    const changes = diffFields(
+      before as unknown as Record<string, unknown>,
+      update,
+      {
+        principalName: "Principal Name",
+        role: "Role",
+        shortLabel: "Short Label",
+        quote: "Quote",
+        photoUrl: "Photo URL",
+        isFeatured: "Featured",
+        sortOrder: "Sort Order",
+        schoolId: "School",
+      }
+    );
+    if (changes.length > 0) {
+      void logAdminActivity(guard, {
+        action: "testimonial.update",
+        entityType: "testimonial",
+        entityId: id,
+        summary: `Updated ${changes.map((c) => c.label ?? c.field).join(", ")}`,
+        changes,
+        req,
+      });
+    }
+  }
   return NextResponse.json({ ok: true });
 }
 
 export async function DELETE(
-  _: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const guard = await requirePermission("testimonials.write");
   if (isResponse(guard)) return guard;
   const { id } = await params;
+  const [before] = await db
+    .select()
+    .from(testimonials)
+    .where(eq(testimonials.id, id))
+    .limit(1);
   await db.delete(testimonials).where(eq(testimonials.id, id));
   await bust();
+  void logAdminActivity(guard, {
+    action: "testimonial.delete",
+    entityType: "testimonial",
+    entityId: id,
+    summary: `Deleted testimonial ${before?.principalName ?? id}`,
+    req,
+  });
   return NextResponse.json({ ok: true });
 }

@@ -458,3 +458,228 @@ export async function emptyContainerProductIds(
   for (const r of rows) empty.add(r.id);
   return empty;
 }
+
+/**
+ * Recover a magic box's BOOK side when `bundle_selections` stored the
+ * uniforms but not the bookkit.
+ *
+ * Why this exists (2026-08-10, reported on SAL-ORD-2026-33270): the picker
+ * treats a NON-EMPTY `bundle_selections` as the authoritative composition —
+ * `fallbackBundleComponents` above only fires when the list is completely
+ * empty. But a list can be PARTIAL. On this order the 11 uniform components
+ * were recovered from the packing rows (`backfilledFromPacking: true`) while
+ * the bookkit, which ships as one parcel with a BLANK `item_code`, matched
+ * nothing and was never written back. The box's definition carries
+ * "SAS Keesara Grade 7 Bookkit" (kind `kit`); the order's selections do not.
+ * So the parent saw every uniform in the exchange / missing picker and not a
+ * single book — with no way to report a book at all.
+ *
+ * Deliberately narrow. We add a defined component back ONLY when:
+ *   - it is mandatory (`is_visible`, not optional, no selector group) — an
+ *     optional / one-of-N pick is a genuine choice we can't reconstruct; and
+ *   - it is book-side (`kit` / `sub_bundle` / `book` / `consumable`); and
+ *   - the stored selections contain NO book-side component whatsoever.
+ *
+ * That last clause is the safety rail: it fires only for boxes whose book
+ * half is entirely absent from the record (196 order lines on prod), never
+ * for one where the parent's picks are partially present — there, a stored
+ * list IS evidence of what was chosen (a language-template bookkit resolves
+ * to a different product than the one the box names, and must not be
+ * "topped up" with the generic one).
+ *
+ * The entry carries EVERY active variant of the component product, because a
+ * bookkit is usually a LANGUAGE TEMPLATE — "SAS Keesara Grade 7 Bookkit" has
+ * a "Hindi 2nd Lan" and a "Telugu 2nd Lan" variant, and the record doesn't
+ * say which one this student got (125 of the 196 affected lines are this
+ * shape). `loadBookkitCategoryTreeUnion` below unions their trees: on Grade 7
+ * that's 26 identical books plus 3 Hindi and 3 Telugu ones, each already
+ * sitting under its own language-named category, so the parent simply picks
+ * from the language group they actually have.
+ */
+export type RecoveredSelection = {
+  /** The component's sole variant, or "" when it has none or several. */
+  variantId: string;
+  /** Every active variant of the component product (language templates). */
+  variantIds: string[];
+  componentProductId: string;
+  name: string;
+  qty: number;
+  size: string;
+  attributes: never[];
+  /** Marks the entry as re-derived from the catalog, not stored at checkout. */
+  recoveredFromDefinition: true;
+};
+
+const BOOK_SIDE_KINDS = new Set(["kit", "sub_bundle", "book", "consumable"]);
+
+export async function recoverMissingBookkitSelections(
+  items: Array<{ id: string; variantId: string | null; bundleSelections: unknown }>,
+): Promise<Map<string, RecoveredSelection[]>> {
+  const out = new Map<string, RecoveredSelection[]>();
+  // Only boxes that stored SOMETHING (an empty list already has its own path).
+  const candidates = items.filter(
+    (it) =>
+      it.variantId &&
+      Array.isArray(it.bundleSelections) &&
+      it.bundleSelections.length > 0,
+  );
+  if (candidates.length === 0) return out;
+
+  // Which stored components are book-side? Resolve each selection's product
+  // via its variantId, falling back to the componentProductId legacy rows
+  // carry. Any hit disqualifies the whole order item (see the safety rail).
+  const storedProductIds = new Set<string>();
+  for (const it of candidates)
+    for (const c of it.bundleSelections as Array<Record<string, unknown>>) {
+      const vid = typeof c?.variantId === "string" ? c.variantId : "";
+      const pid =
+        typeof c?.componentProductId === "string" ? c.componentProductId : "";
+      if (/^[0-9a-f-]{36}$/i.test(vid)) storedProductIds.add(vid);
+      if (/^[0-9a-f-]{36}$/i.test(pid)) storedProductIds.add(pid);
+    }
+  const bookSideIds = new Set<string>();
+  if (storedProductIds.size > 0) {
+    const rows = (await db.execute(sql`
+      SELECT id::text AS id FROM (
+        SELECT p.id, p.kind FROM products p
+         WHERE p.id IN (${sql.join(
+           [...storedProductIds].map((i) => sql`${i}::uuid`),
+           sql`, `,
+         )})
+        UNION ALL
+        SELECT pv.id, p.kind
+          FROM product_variants pv
+          JOIN products p ON p.id = pv.product_id
+         WHERE pv.id IN (${sql.join(
+           [...storedProductIds].map((i) => sql`${i}::uuid`),
+           sql`, `,
+         )})
+      ) t
+      WHERE t.kind IN ('kit','sub_bundle','book','consumable')
+    `)) as unknown as Array<{ id: string }>;
+    for (const r of rows) bookSideIds.add(r.id);
+  }
+
+  const needsBooks = candidates.filter((it) => {
+    for (const c of it.bundleSelections as Array<Record<string, unknown>>) {
+      const vid = typeof c?.variantId === "string" ? c.variantId : "";
+      const pid =
+        typeof c?.componentProductId === "string" ? c.componentProductId : "";
+      if (bookSideIds.has(vid) || bookSideIds.has(pid)) return false;
+    }
+    return true;
+  });
+  if (needsBooks.length === 0) return out;
+
+  // The mandatory book-side components the box DEFINES, plus the component
+  // product's sole variant (null when it has more than one).
+  const rows = (await db.execute(sql`
+    SELECT oi.id::text                AS order_item_id,
+           bc.product_id::text        AS product_id,
+           COALESCE(bc.qty, 1)        AS qty,
+           p.name                     AS name,
+           p.kind::text               AS kind,
+           -- The component's ONLY variant, or NULL when it has several
+           -- (a multi-size product's variant is not recoverable — see above).
+           (SELECT min(pv2.id::text)
+              FROM product_variants pv2
+             WHERE pv2.product_id = p.id
+            HAVING count(*) = 1)      AS sole_variant_id,
+           -- Every active variant: a language-template bookkit's tree is
+           -- unioned across these (see loadBookkitCategoryTreeUnion).
+           (SELECT array_agg(pv3.id::text ORDER BY pv3.id::text)
+              FROM product_variants pv3
+             WHERE pv3.product_id = p.id
+               AND pv3.is_active = true) AS variant_ids
+      FROM order_items oi
+      JOIN product_variants pv ON pv.id = oi.variant_id
+      JOIN product_bundles  pb ON pb.product_id = pv.product_id
+      JOIN bundle_components bc ON bc.bundle_id = pb.id
+      JOIN products p ON p.id = bc.product_id
+     WHERE oi.id IN (${sql.join(
+       needsBooks.map((it) => sql`${it.id}::uuid`),
+       sql`, `,
+     )})
+       AND bc.is_visible = true
+       AND bc.is_optional = false
+       AND bc.selector_group_key IS NULL
+       AND p.kind IN ('kit','sub_bundle','book','consumable')
+     ORDER BY oi.id, p.name, bc.id
+  `)) as unknown as Array<{
+    order_item_id: string;
+    product_id: string;
+    qty: number;
+    name: string | null;
+    kind: string | null;
+    sole_variant_id: string | null;
+    variant_ids: string[] | null;
+  }>;
+
+  for (const r of rows) {
+    if (!BOOK_SIDE_KINDS.has(r.kind ?? "")) continue;
+    const list = out.get(r.order_item_id) ?? [];
+    list.push({
+      variantId: r.sole_variant_id ?? "",
+      variantIds: r.variant_ids ?? [],
+      componentProductId: r.product_id,
+      name: r.name ?? "Books",
+      qty: r.qty ?? 1,
+      size: "",
+      attributes: [],
+      recoveredFromDefinition: true,
+    });
+    out.set(r.order_item_id, list);
+  }
+  return out;
+}
+
+/**
+ * `loadBookkitCategoryTree` over SEVERAL variants of the same bookkit,
+ * merged into one category → book tree.
+ *
+ * Needed only for the recovery path above: when the record doesn't say which
+ * language template a student received, the parent should still be able to
+ * find their book. The categories are language-named ("SAS Grade 7 Hindi" /
+ * "SAS Grade 7 Telugu"), so a merged tree reads as "pick your language group"
+ * rather than a jumble — and the 26 books both templates share appear once.
+ *
+ * Dedup key is categoryKey + book name: the same leaf resolved from two
+ * variants is one book, and componentIndex is re-numbered across the whole
+ * merged tree so `comp:${orderItemId}:${idx}` stays unique (the unitKey
+ * contract the pickers rely on).
+ */
+export async function loadBookkitCategoryTreeUnion(
+  variantIds: string[],
+  schoolId: string | null,
+): Promise<BookkitCategory[]> {
+  const ids = [...new Set(variantIds.filter((v) => /^[0-9a-f-]{36}$/i.test(v)))];
+  if (ids.length === 0) return [];
+  const merged = new Map<string, BookkitCategory>();
+  const seen = new Set<string>();
+  for (const vid of ids) {
+    let cats: BookkitCategory[] = [];
+    try {
+      cats = await loadBookkitCategoryTree(vid, schoolId);
+    } catch {
+      continue;
+    }
+    for (const cat of cats) {
+      const bucket =
+        merged.get(cat.categoryKey) ??
+        { categoryKey: cat.categoryKey, categoryName: cat.categoryName, items: [] };
+      for (const leaf of cat.items) {
+        const key = `${cat.categoryKey}::${leaf.name}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        bucket.items.push(leaf);
+      }
+      merged.set(cat.categoryKey, bucket);
+    }
+  }
+  // Re-number across the merged tree so the unitKeys stay unique.
+  let idx = 0;
+  const out = [...merged.values()].filter((c) => c.items.length > 0);
+  for (const cat of out)
+    for (const leaf of cat.items) leaf.componentIndex = idx++;
+  return out;
+}

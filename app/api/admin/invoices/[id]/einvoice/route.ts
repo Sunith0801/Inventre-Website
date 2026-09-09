@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requirePermission, isResponse } from "@/lib/admin-guard";
 import { submitIrn } from "@/lib/einvoice";
+import { logAdminActivity } from "@/lib/activity";
 
 /**
  * Submit a sales invoice to the NIC IRP and persist the IRN + signed QR.
@@ -8,7 +9,7 @@ import { submitIrn } from "@/lib/einvoice";
  * effectively becomes a one-shot per invoice.
  */
 export async function POST(
-  _: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const guard = await requirePermission("invoices.write");
@@ -16,6 +17,13 @@ export async function POST(
   const { id } = await params;
   try {
     const result = await submitIrn(id);
+    void logAdminActivity(guard, {
+      action: "invoice.einvoice",
+      entityType: "invoice",
+      entityId: id,
+      summary: "Submitted e-invoice (IRN)",
+      req,
+    });
     return NextResponse.json(result);
   } catch (e) {
     return NextResponse.json(

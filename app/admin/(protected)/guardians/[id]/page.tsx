@@ -7,6 +7,7 @@ import {
   PageHeader, Card, CardHeader, Th, Td, Tr, EmptyState,
 } from "@/components/admin/ui/primitives";
 import { GuardianEditor } from "@/components/admin/GuardianEditor";
+import { RecordHistory } from "@/components/admin/RecordHistory";
 
 export const dynamic = "force-dynamic";
 
@@ -83,6 +84,10 @@ export default async function GuardianDetailPage({
           </table>
         )}
       </Card>
+
+      <div className="mt-5">
+        <RecordHistory entityType="guardian" entityId={id} title="Guardian history" />
+      </div>
     </div>
   );
 }

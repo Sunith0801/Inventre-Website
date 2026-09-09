@@ -10,7 +10,7 @@
  *   MCB_API_BASE              https://api.myclassboard.com
  *   MCB_API_KEY               required (api_key header)
  *   MCB_TOKEN_ID              required (TokenID query param)
- *   MCB_BRANCH_IDS            "52,70,230,225,226"  (St Andrews × 2, St
+ *   MCB_BRANCH_IDS            "52,70,230,225,226,102,103"  (St Andrews × 2, St
  *                             Michaels, Winmore × 2 — see GET_Branches)
  *   MCB_ORGANISATION_ID       39
  *   MCB_ACADEMIC_YEAR_IDS     "17,18"  (2025-26 and 2026-27 only)
@@ -33,7 +33,7 @@ import postgres from "postgres";
 const MCB_API_BASE = process.env.MCB_API_BASE || "https://api.myclassboard.com";
 const MCB_API_KEY = process.env.MCB_API_KEY || "";
 const MCB_TOKEN_ID = process.env.MCB_TOKEN_ID || "";
-const MCB_BRANCH_IDS = (process.env.MCB_BRANCH_IDS || "52,70,230,225,226")
+const MCB_BRANCH_IDS = (process.env.MCB_BRANCH_IDS || "52,70,230,225,226,102,103")
   .split(",")
   .map((s) => s.trim())
   .filter(Boolean);
@@ -46,6 +46,8 @@ const MCB_FEE_WINDOW_DAYS = Number(process.env.MCB_FEE_WINDOW_DAYS || "35");
 
 const args = process.argv.slice(2);
 const DEBUG = args.includes("--debug");
+/** Delete receivables MCB stopped returning. Full-window runs only. */
+const PRUNE = args.includes("--prune");
 function flagValue(name: string): string | null {
   const i = args.findIndex((a) => a === name || a.startsWith(name + "="));
   if (i < 0) return null;
@@ -260,6 +262,10 @@ async function main() {
     let feeSkipped = 0;
     let sampleFee: any = null;
     const allFees: any[] = [];
+    /** What each (branch, academic year) actually returned this run — the
+     *  prune below needs it to tell "MCB has nothing here" apart from "MCB
+     *  is down / the window was narrow". */
+    const feeScopes: { branchId: string; ayId: string; fetched: number }[] = [];
 
     for (const branchId of MCB_BRANCH_IDS) {
       for (const ayId of MCB_ACADEMIC_YEAR_IDS) {
@@ -273,6 +279,7 @@ async function main() {
           })
         );
         feesFetched += feesRaw.length;
+        feeScopes.push({ branchId, ayId, fetched: feesRaw.length });
         if (!sampleFee && feesRaw[0]) sampleFee = feesRaw[0];
         console.log(
           `[import-mcb] fees Branch=${branchId} AY=${ayId} ${fromDate}..${toDate} → ${feesRaw.length}`
@@ -384,6 +391,49 @@ async function main() {
     console.log(
       `[import-mcb] fees: fetched=${feesFetched} written=${feeWritten} skipped=${feeSkipped}`
     );
+
+    // ── 2b. Prune receivables MCB no longer bills ──────────────────────
+    // A cancelled or re-issued bill simply stops being returned. The upsert
+    // above can never notice that, so orphans accumulated silently: on
+    // 2026-08-27 there were 1,105 such rows for 631 students still showing
+    // Rs 1.17 Cr as DUE that MCB had dropped.
+    //
+    // Only safe after a FULL-window run — with a narrow window most rows are
+    // legitimately absent and this would delete the year. Hence --prune,
+    // plus a per-scope guard: a scope that returned nothing is skipped
+    // outright, because "empty" is far more likely to be an upstream hiccup
+    // than a branch with no fees at all.
+    if (PRUNE) {
+      let pruned = 0;
+      let skippedScopes = 0;
+      for (const scope of feeScopes) {
+        if (scope.fetched === 0) {
+          skippedScopes++;
+          console.warn(
+            `[import-mcb] prune: SKIPPED branch=${scope.branchId} AY=${scope.ayId} — ` +
+              `it returned 0 rows this run; refusing to delete on an empty answer`
+          );
+          continue;
+        }
+        const gone = await sql`
+          DELETE FROM mcb_fee_payments
+          WHERE raw->>'BranchID' = ${scope.branchId}
+            AND raw->>'AcademicYearID' = ${scope.ayId}
+            AND synced_at < ${startedAt}
+          RETURNING 1
+        `;
+        pruned += gone.length;
+        if (gone.length > 0) {
+          console.log(
+            `[import-mcb] prune: branch=${scope.branchId} AY=${scope.ayId} — ` +
+              `removed ${gone.length} row(s) MCB no longer returns`
+          );
+        }
+      }
+      console.log(
+        `[import-mcb] prune: ${pruned} stale row(s) removed, ${skippedScopes} scope(s) skipped`
+      );
+    }
 
     // ── 3. Backfill last_fee_paid_date / amount on mcb_students ──
     await sql`

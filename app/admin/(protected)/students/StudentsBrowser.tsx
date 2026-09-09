@@ -9,6 +9,9 @@ import {
   ChevronsLeft,
   ChevronsRight,
   Search,
+  Download,
+  Lock,
+  Unlock,
 } from "lucide-react";
 import {
   Card,
@@ -271,6 +274,148 @@ export function StudentsBrowser({
     }
   };
 
+  // ── Website access ────────────────────────────────────────────────
+  // ONE master switch. Closing does both halves in a single call — turns
+  // every student off (that's the actual gate: lib/session.ts only shows
+  // enabled + active students) AND puts up the "Website Access is
+  // Currently Closed" screen. Re-opening restores only the students the
+  // closure turned off, never the ones disabled by hand beforehand.
+  // The per-filter buttons live under Advanced for surgical lockouts.
+  const [accessClosed, setAccessClosed] = useState<boolean | null>(null);
+  const [accessBusy, setAccessBusy] = useState(false);
+  const [accessMsg, setAccessMsg] = useState<string | null>(null);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const r = await fetch("/api/admin/site-closure");
+        if (!r.ok) return;
+        const d = (await r.json()) as { closed?: boolean };
+        if (alive) setAccessClosed(!!d.closed);
+      } catch {
+        // Leave it null — the switch renders as "checking" rather than
+        // claiming the site is open when we couldn't read the flag.
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const toggleSite = async (next: boolean) => {
+    if (
+      next &&
+      !window.confirm(
+        "Close the website for ALL parents?\n\n" +
+          "Every student is switched off and parents see the “Website " +
+          "Access is Currently Closed” screen. Orders already placed are " +
+          "unaffected.\n\nRe-opening restores exactly these students.",
+      )
+    )
+      return;
+    if (next) {
+      const typed = window.prompt("Type CLOSE to shut the website.");
+      if (typed?.trim().toUpperCase() !== "CLOSE") return;
+    }
+    setAccessBusy(true);
+    setAccessMsg(null);
+    try {
+      const r = await fetch("/api/admin/site-closure", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ closed: next }),
+      });
+      const d = (await r.json().catch(() => null)) as
+        | { updated: number }
+        | { error: string }
+        | null;
+      if (!r.ok || !d || "error" in d) {
+        setAccessMsg(
+          (d && "error" in d ? d.error : null) ?? `Failed (HTTP ${r.status})`,
+        );
+        return;
+      }
+      setAccessClosed(next);
+      setAccessMsg(
+        next
+          ? `Website closed — ${d.updated.toLocaleString()} students switched off.`
+          : `Website open — ${d.updated.toLocaleString()} students restored.`,
+      );
+      setFilters((prev) => ({ ...prev }));
+    } catch (e) {
+      setAccessMsg(e instanceof Error ? e.message : "Network error");
+    } finally {
+      setAccessBusy(false);
+    }
+  };
+
+  const runBulkSetEnabled = async (enabled: boolean) => {
+    if (total === 0) return;
+    const noun = `student${total === 1 ? "" : "s"}`;
+    if (
+      !window.confirm(
+        `${enabled ? "Give" : "Remove"} website access ${enabled ? "to" : "from"} all ` +
+          `${total.toLocaleString()} filtered ${noun}?\n\n` +
+          (enabled
+            ? "They will be able to sign in and shop again."
+            : "They will no longer appear on the storefront for their parents. " +
+              "Existing orders and deliveries are unaffected.") +
+          "\n\nOnly students whose current state differs are touched.",
+      )
+    )
+      return;
+    // Anything past a thousand rows is a site-scale action — make the
+    // caller type it out so a stray click can't shut the store.
+    if (total > 1000) {
+      const typed = window.prompt(
+        `This affects ${total.toLocaleString()} ${noun}. Type CONFIRM to proceed.`,
+      );
+      if (typed?.trim().toUpperCase() !== "CONFIRM") return;
+    }
+    setBulkBusy(true);
+    setBulkMsg(null);
+    try {
+      const r = await fetch("/api/admin/students/bulk-set-enabled", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          enabled,
+          filters: {
+            q: filters.q || undefined,
+            schoolCode: filters.schoolCode || undefined,
+            grade: filters.grade || undefined,
+            enabled: filters.enabled || undefined,
+            verified: filters.verified || undefined,
+            newStudent: filters.newStudent || undefined,
+            recent: filters.recent || undefined,
+          },
+        }),
+      });
+      const data = (await r.json().catch(() => null)) as
+        | { updated: number }
+        | { error: string }
+        | null;
+      if (!r.ok || !data || "error" in data) {
+        setBulkMsg(
+          (data && "error" in data ? data.error : null) ?? `Failed (HTTP ${r.status})`,
+        );
+      } else {
+        setBulkMsg(
+          `${enabled ? "Enabled" : "Disabled"} ${data.updated.toLocaleString()} student${
+            data.updated === 1 ? "" : "s"
+          }.`,
+        );
+        setFilters((prev) => ({ ...prev }));
+      }
+    } catch (e) {
+      setBulkMsg(e instanceof Error ? e.message : "Network error");
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
   const selectClass =
     "h-9 px-2.5 rounded-lg border border-ink-200 text-[13px] bg-white disabled:opacity-70 disabled:cursor-not-allowed";
   const navBtn =
@@ -364,6 +509,16 @@ export function StudentsBrowser({
           <option value="30d">Last 30 days</option>
           <option value="90d">Last 90 days</option>
         </select>
+        {/* Export honours the current filter set (page is irrelevant — the
+            route emits every matching row, not just this slice). */}
+        <a
+          href={`/api/admin/students/export?${buildQs({ ...filters, page: 1 })}`}
+          className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border border-ink-200 bg-white text-[13px] font-semibold text-ink-800 hover:bg-cream-50 transition-colors"
+          title={`Download the ${total.toLocaleString()} filtered student${total === 1 ? "" : "s"} as Excel`}
+        >
+          <Download className="h-3.5 w-3.5" />
+          Export Excel
+        </a>
       </Toolbar>
 
       {total > 0 && (filters.newStudent === "1" || filters.newStudent === "0") && (
@@ -407,6 +562,138 @@ export function StudentsBrowser({
           )}
         </div>
       )}
+
+      {/* Website access — one switch. Everything surgical is behind
+          Advanced so the common case is unmistakable. */}
+      <div
+        className={
+          "mb-3 rounded-xl border px-4 py-3.5 " +
+          (accessClosed
+            ? "border-brand-300 bg-brand-50/70"
+            : "border-ink-100 bg-white")
+        }
+      >
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
+          {accessClosed ? (
+            <Lock className="h-5 w-5 text-brand-700 shrink-0" />
+          ) : (
+            <Unlock className="h-5 w-5 text-emerald-600 shrink-0" />
+          )}
+          <div className="min-w-0">
+            <div className="text-[13px] font-semibold text-ink-900">
+              Website is{" "}
+              {accessClosed === null ? (
+                <span className="text-ink-400">…</span>
+              ) : accessClosed ? (
+                <span className="text-brand-700">CLOSED</span>
+              ) : (
+                <span className="text-emerald-700">OPEN</span>
+              )}
+            </div>
+            <div className="text-[12px] text-ink-500">
+              {accessClosed === null
+                ? "Checking…"
+                : accessClosed
+                  ? "Parents see the “Website Access is Currently Closed” screen. Nobody can shop."
+                  : "Parents can sign in and shop as normal."}
+            </div>
+          </div>
+
+          <div className="ml-auto flex items-center gap-3">
+            {accessMsg && (
+              <span className="text-[12px] text-ink-700">{accessMsg}</span>
+            )}
+            {/* The switch itself. Reads as a physical toggle so there is
+                nothing to interpret — left is open, right is closed. */}
+            <button
+              type="button"
+              role="switch"
+              aria-checked={!!accessClosed}
+              aria-label="Close the website"
+              disabled={accessBusy || accessClosed === null}
+              onClick={() => toggleSite(!accessClosed)}
+              className={
+                "relative h-8 w-[68px] rounded-full transition-colors shrink-0 " +
+                (accessBusy || accessClosed === null
+                  ? "bg-ink-200 cursor-not-allowed"
+                  : accessClosed
+                    ? "bg-brand-600 hover:bg-brand-700"
+                    : "bg-emerald-500 hover:bg-emerald-600")
+              }
+            >
+              <span
+                className={
+                  "absolute top-1 h-6 w-6 rounded-full bg-white shadow transition-all " +
+                  (accessClosed ? "left-[38px]" : "left-1")
+                }
+              />
+              <span
+                className={
+                  "absolute top-0 h-8 text-[10px] font-bold uppercase tracking-wide text-white leading-8 " +
+                  (accessClosed ? "left-2.5" : "right-2")
+                }
+              >
+                {accessBusy ? "…" : accessClosed ? "Off" : "On"}
+              </span>
+            </button>
+          </div>
+        </div>
+
+        {/* Surgical, filter-scoped access — the old two buttons. Folded
+            away because 99% of the time the master switch is what's
+            wanted, and an unnoticed filter made them dangerous. */}
+        <div className="mt-2.5 border-t border-ink-100 pt-2.5">
+          <button
+            type="button"
+            onClick={() => setShowAdvanced((v) => !v)}
+            className="text-[12px] font-semibold text-ink-500 hover:text-ink-800 transition-colors"
+          >
+            {showAdvanced ? "Hide" : "Advanced"} — access for the{" "}
+            {total.toLocaleString()} filtered student{total === 1 ? "" : "s"}
+          </button>
+          {showAdvanced && (
+            <div className="mt-2.5 flex flex-wrap items-center gap-2">
+              <span className="text-[12px] text-ink-500">
+                Applies to your current filters only (school, grade, search) —
+                use this to shut one school without touching the rest.
+              </span>
+              <div className="ml-auto flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  disabled={bulkBusy || total === 0}
+                  onClick={() => runBulkSetEnabled(false)}
+                  className={
+                    "inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border text-[13px] font-semibold transition-colors " +
+                    (bulkBusy || total === 0
+                      ? "border-ink-100 text-ink-400 cursor-not-allowed"
+                      : "border-ink-200 bg-white text-ink-800 hover:bg-cream-50")
+                  }
+                >
+                  <Lock className="h-3.5 w-3.5" />
+                  Disable these ({total.toLocaleString()})
+                </button>
+                <button
+                  type="button"
+                  disabled={bulkBusy || total === 0}
+                  onClick={() => runBulkSetEnabled(true)}
+                  className={
+                    "inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border text-[13px] font-semibold transition-colors " +
+                    (bulkBusy || total === 0
+                      ? "border-ink-100 text-ink-400 cursor-not-allowed"
+                      : "border-ink-200 bg-white text-ink-800 hover:bg-cream-50")
+                  }
+                >
+                  <Unlock className="h-3.5 w-3.5" />
+                  Enable these
+                </button>
+              </div>
+              {bulkMsg && (
+                <div className="w-full text-[12px] text-ink-700">{bulkMsg}</div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
 
       <div className="mb-1 h-4 text-[11px] text-ink-400">
         {busy ? "Searching…" : `${total.toLocaleString()} match${total === 1 ? "" : "es"} · page ${filters.page} / ${lastPage}`}

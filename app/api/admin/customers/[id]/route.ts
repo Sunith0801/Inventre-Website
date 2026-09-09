@@ -6,6 +6,7 @@ import { db } from "@/db/client";
 import { parents } from "@/db/schema";
 import { requirePermission, isResponse } from "@/lib/admin-guard";
 import { getCustomerDetail } from "@/lib/repos/customers";
+import { logAdminActivity, diffFields } from "@/lib/activity";
 
 export async function GET(
   _: Request,
@@ -48,6 +49,35 @@ export async function PATCH(
   for (const [k, v] of Object.entries(body)) {
     if (v !== undefined) update[k] = v;
   }
+  const [before] = await db
+    .select()
+    .from(parents)
+    .where(eq(parents.id, id))
+    .limit(1);
   await db.update(parents).set(update).where(eq(parents.id, id));
+  if (before) {
+    const changes = diffFields(
+      before as unknown as Record<string, unknown>,
+      update,
+      {
+        name: "Name",
+        email: "Email",
+        status: "Status",
+        customerGroup: "Customer group",
+        tags: "Tags",
+        notes: "Notes",
+      }
+    );
+    if (changes.length > 0) {
+      void logAdminActivity(guard, {
+        action: "customer.update",
+        entityType: "customer",
+        entityId: id,
+        summary: `Updated ${changes.map((c) => c.label ?? c.field).join(", ")}`,
+        changes,
+        req,
+      });
+    }
+  }
   return NextResponse.json({ ok: true });
 }

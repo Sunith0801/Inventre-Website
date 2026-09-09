@@ -28,16 +28,27 @@ export async function GET(req: NextRequest) {
   // Only allow relative redirects.
   const safeNext = next.startsWith("/") && !next.startsWith("//") ? next : "/shop";
 
-  const target = req.nextUrl.clone();
-  target.pathname = safeNext;
-  target.search = "";
+  // Build the redirect against the configured PUBLIC base URL, not req.nextUrl:
+  // behind nginx the container only sees its internal bind (0.0.0.0:3000), so
+  // req.nextUrl would bounce the agent to http://0.0.0.0:3000/... . Fall back to
+  // the forwarded host/proto, then req.nextUrl, only when the env is unset.
+  const fwdProto = req.headers.get("x-forwarded-proto");
+  const fwdHost = req.headers.get("x-forwarded-host");
+  const base = (
+    process.env.SUPPORT_VIEW_BASE_URL ||
+    `${fwdProto ?? req.nextUrl.protocol.replace(/:$/, "")}://${
+      fwdHost ?? req.nextUrl.host
+    }`
+  ).replace(/\/+$/, "");
+  const target = new URL(safeNext, base);
+  const isHttps = target.protocol === "https:";
 
   const res = NextResponse.redirect(target);
   const ttlSeconds = Math.max(60, view.exp - Math.floor(Date.now() / 1000));
   res.cookies.set(SUPPORT_VIEW_COOKIE, token, {
     httpOnly: true,
     sameSite: "lax",
-    secure: req.nextUrl.protocol === "https:",
+    secure: isHttps,
     path: "/",
     maxAge: ttlSeconds,
   });

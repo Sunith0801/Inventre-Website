@@ -8,7 +8,8 @@
  */
 
 import { CheckCircle2, AlertCircle, Clock, Package } from "lucide-react";
-import { formatPickupLabel } from "@/lib/exchange-shared";
+import { resolveDuplicateOf } from "@/lib/return-duplicates";
+import { DuplicateOfNote } from "@/components/shop/orders/DuplicateOfNote";
 
 type ActiveExchange = {
   id: string;
@@ -16,6 +17,14 @@ type ActiveExchange = {
   status: string;
   pickupDate: string | null;
   createdAt: string;
+  // True when the order's school collects exchanges at the Inventre store,
+  // not the school office (KLINK / QLPHP) — swaps the banner wording.
+  atStore?: boolean;
+  // Present on rejected requests: the free-text reason and the structured
+  // list of other RTN(s) this one duplicates. Drive the "another request
+  // already exists" callout on the rejected banner.
+  rejectionReason?: string | null;
+  duplicateOf?: unknown;
 };
 
 export function ExchangeStatusBanner({
@@ -27,9 +36,26 @@ export function ExchangeStatusBanner({
 }) {
   if (!activeExchange) return null;
 
-  const { id, returnNumber, status, pickupDate } = activeExchange;
+  const { id, returnNumber, status, atStore } = activeExchange;
 
   const link = `/shop/orders/${orderId}/exchange/${id}`;
+
+  // Bold store-name fragments for the KLINK/QLPHP (atStore) copy.
+  const storeName = (
+    <span className="font-semibold">Inventre Experience Store, Ashoka Mall, Kukatpally</span>
+  );
+  const storeTeam = (
+    <span className="font-semibold">Inventre Experience Store team</span>
+  );
+
+  const dups =
+    status === "rejected"
+      ? resolveDuplicateOf(
+          activeExchange.duplicateOf,
+          activeExchange.rejectionReason,
+          returnNumber
+        )
+      : [];
 
   if (status === "requested") {
     return (
@@ -52,7 +78,6 @@ export function ExchangeStatusBanner({
   }
 
   if (status === "approved") {
-    const pickupLabel = pickupDate ? formatPickupLabel(pickupDate) : null;
     return (
       <a
         href={link}
@@ -64,12 +89,10 @@ export function ExchangeStatusBanner({
             Exchange approved{returnNumber ? ` · ${returnNumber}` : ""}
           </p>
           <p className="text-emerald-800 mt-0.5">
-            Please visit your school on{" "}
-            <span className="font-semibold">
-              {pickupLabel ?? "the scheduled Saturday"}
-            </span>{" "}
-            to collect the exchange. Carry a photo of this order so the school
-            can verify.
+            Your exchange is on its way to{" "}
+            {atStore ? <>the {storeName}</> : "your school"}.{" "}
+            {atStore ? <>The {storeTeam} will</> : "The school will"} inform you
+            once it has been received, and you can collect it then.
           </p>
         </div>
       </a>
@@ -91,6 +114,7 @@ export function ExchangeStatusBanner({
           <p className="text-rose-800 mt-0.5">
             Tap to see why and what to do next.
           </p>
+          <DuplicateOfNote dups={dups} />
         </div>
       </a>
     );
@@ -109,8 +133,8 @@ export function ExchangeStatusBanner({
             {returnNumber ? ` · ${returnNumber}` : ""}
           </p>
           <p className="text-ink-600 mt-0.5">
-            The exchange was handed over at school. Thanks for shopping with
-            Inventre.
+            The exchange was handed over at {atStore ? <>the {storeName}</> : "school"}.
+            Thanks for shopping with Inventre.
           </p>
         </div>
       </a>

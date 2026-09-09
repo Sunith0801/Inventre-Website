@@ -30,6 +30,31 @@ export function mcbBranchToSchoolCode(branchName: string | null | undefined): st
   return BRANCH_TO_SCHOOL_CODE[branchName] ?? null;
 }
 
+/**
+ * MCB branches whose students CANNOT be mapped to an Inventre school by
+ * branch name, because one MCB branch spans several Inventre schools.
+ *
+ * The two Crimson Anisha campuses (added 2026-08-27) are each split in
+ * Inventre by board and by pre-school: Marunji covers CASLRCBSE, CASLRCIE
+ * and TTTLR; Undri covers CASNIBMCBSE, CASNIBMCIE and TTTNIBM. MCB carries
+ * no board field — `ClassGroupName` is a house name (Capella / Libertas /
+ * Sirius), not a curriculum — so the branch alone cannot decide, and
+ * guessing would file a CIE student under CBSE.
+ *
+ * These resolve per STUDENT instead, from the existing Inventre record
+ * matched on enrolment number (both systems use the same `…CAG1…` /
+ * `…CAG2…` codes). A student with no existing record cannot be resolved at
+ * all and must be refused rather than guessed.
+ */
+export const MCB_BRANCHES_RESOLVED_PER_STUDENT: ReadonlySet<string> = new Set([
+  "Crimson Anisha Global School Marunji",
+  "Crimson Anisha Global School Undri",
+]);
+
+export function mcbBranchNeedsStudentLookup(branchName: string | null | undefined): boolean {
+  return Boolean(branchName && MCB_BRANCHES_RESOLVED_PER_STUDENT.has(branchName));
+}
+
 export const MCB_SCHOOL_CODES = Object.values(BRANCH_TO_SCHOOL_CODE);
 
 /**

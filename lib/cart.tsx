@@ -79,9 +79,9 @@ type CartCtx = {
    */
   revision: number;
   /** Add/remove via UI. Looks up variant by size. */
-  add: (product: Product, size: string, qty?: number) => Promise<{ ok: boolean; error?: string }>;
+  add: (product: Product, size: string, qty?: number) => Promise<{ ok: boolean; error?: string; orderNumber?: string | null }>;
   /** Add directly by variantId — skips the extra getVariantId round-trip. */
-  addByVariantId: (variantId: string, qty?: number) => Promise<{ ok: boolean; error?: string }>;
+  addByVariantId: (variantId: string, qty?: number) => Promise<{ ok: boolean; error?: string; orderNumber?: string | null }>;
   setQty: (variantId: string, qty: number) => Promise<{ ok: boolean; error?: string }>;
   remove: (id: string, size: string) => Promise<void>;
   refresh: () => Promise<void>;
@@ -188,7 +188,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
   }, [refresh]);
 
   const add = useCallback(
-    async (product: Product, size: string, qty = 1): Promise<{ ok: boolean; error?: string }> => {
+    async (product: Product, size: string, qty = 1): Promise<{ ok: boolean; error?: string; orderNumber?: string | null }> => {
       const variantId = await getVariantId(product.id, size);
       if (!variantId) return { ok: false, error: "Size not available" };
       const r = await fetch("/api/cart", {
@@ -201,8 +201,8 @@ export function CartProvider({ children }: { children: ReactNode }) {
         }),
       });
       if (!r.ok) {
-        const data = await r.json().catch(() => null) as { error?: string } | null;
-        return { ok: false, error: data?.error ?? "Could not add to cart" };
+        const data = await r.json().catch(() => null) as { error?: string; orderNumber?: string | null } | null;
+        return { ok: false, error: data?.error ?? "Could not add to cart", orderNumber: data?.orderNumber ?? null };
       }
       await refresh();
       return { ok: true };
@@ -211,15 +211,15 @@ export function CartProvider({ children }: { children: ReactNode }) {
   );
 
   const addByVariantId = useCallback(
-    async (variantId: string, qty = 1): Promise<{ ok: boolean; error?: string }> => {
+    async (variantId: string, qty = 1): Promise<{ ok: boolean; error?: string; orderNumber?: string | null }> => {
       const r = await fetch("/api/cart", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ variantId, qty, studentId: studentId || undefined }),
       });
       if (!r.ok) {
-        const data = await r.json().catch(() => null) as { error?: string } | null;
-        return { ok: false, error: data?.error ?? "Could not add to cart" };
+        const data = await r.json().catch(() => null) as { error?: string; orderNumber?: string | null } | null;
+        return { ok: false, error: data?.error ?? "Could not add to cart", orderNumber: data?.orderNumber ?? null };
       }
       await refresh();
       return { ok: true };

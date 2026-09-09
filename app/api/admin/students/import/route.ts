@@ -8,6 +8,7 @@ import {
   schools,
 } from "@/db/schema";
 import { requirePermission, isResponse } from "@/lib/admin-guard";
+import { logAdminActivity } from "@/lib/activity";
 import { upsertGuardianLink } from "@/lib/repos/guardians";
 import { last10 } from "@/lib/phone";
 
@@ -48,6 +49,15 @@ const Row = z.object({
   guardianMobile: z.string().min(1, "guardianMobile is required"),
   guardianEmail: z.string().optional().nullable(),
   guardianRelation: z.string().optional().nullable(),
+  // Optional SECOND guardian (e.g. Mother). When a valid number is
+  // supplied here, it gets its own guardian link and can sign in — with
+  // OTP on its own number, or the family's shared password — and see the
+  // student, exactly like the primary guardian. Left blank = single
+  // guardian, unchanged behaviour.
+  guardianName2: z.string().optional().nullable(),
+  guardianMobile2: z.string().optional().nullable(),
+  guardianEmail2: z.string().optional().nullable(),
+  guardianRelation2: z.string().optional().nullable(),
 });
 type ImportRow = z.infer<typeof Row>;
 
@@ -128,7 +138,45 @@ export async function POST(req: Request) {
         continue;
       }
 
+      // Optional second guardian number. Validate up front so a malformed
+      // value fails the row (admin fixes + re-uploads) rather than silently
+      // dropping the second contact. Empty = no second guardian.
+      const mobile2Raw = row.guardianMobile2?.trim() || "";
+      const guardianPhone2 = mobile2Raw ? last10(mobile2Raw) : null;
+      if (mobile2Raw && !guardianPhone2) {
+        errors.push({
+          row: idx,
+          message: `guardianMobile2 must be a 10-digit number (got "${row.guardianMobile2}")`,
+        });
+        continue;
+      }
+
       const enrollment = row.enrollmentNumber.trim();
+
+      // Attach both guardian links to a student id. Idempotent — the helper
+      // dedupes on (student, phone) and reuses an existing parent for the
+      // number (siblings). Skips the second link when it's absent or the
+      // same number as the primary (one number → one link).
+      const linkBothGuardians = async (studentId: string) => {
+        await upsertGuardianLink({
+          studentId,
+          phone: guardianPhone,
+          name: row.guardianName.trim(),
+          relation: row.guardianRelation?.trim() || "Father",
+          email: row.guardianEmail?.trim() || null,
+          sourceGuardianErpName: `ADMIN-${sc}-${enrollment}-G1`,
+        });
+        if (guardianPhone2 && guardianPhone2 !== guardianPhone) {
+          await upsertGuardianLink({
+            studentId,
+            phone: guardianPhone2,
+            name: row.guardianName2?.trim() || null,
+            relation: row.guardianRelation2?.trim() || "Mother",
+            email: row.guardianEmail2?.trim() || null,
+            sourceGuardianErpName: `ADMIN-${sc}-${enrollment}-G2`,
+          });
+        }
+      };
 
       // Skip duplicates by (schoolCode, enrollmentNumber). Same rule the
       // ERP-sync adoption path uses, so re-running the import is safe.
@@ -159,6 +207,12 @@ export async function POST(req: Request) {
             .set({ enrollmentNumber: enrollment })
             .where(eq(students.id, dupe.id));
         }
+        // The student already exists, but a re-upload may be adding a
+        // guardian number that wasn't captured before (e.g. the mother's
+        // number for students imported earlier with only one contact).
+        // Ensure both links exist — idempotent, so existing links are
+        // untouched and only a genuinely new number is added.
+        await linkBothGuardians(dupe.id);
         skipped++;
         continue;
       }
@@ -249,14 +303,9 @@ export async function POST(req: Request) {
         // Phone is the canonical guardian key — see lib/repos/guardians.
         // upsertGuardianLink dedupes across re-imports and auto-attaches
         // the student to an existing parent if one exists on this phone.
-        await upsertGuardianLink({
-          studentId: studentRow.id,
-          phone: guardianPhone,
-          name: row.guardianName.trim(),
-          relation: row.guardianRelation?.trim() || "Father",
-          email: row.guardianEmail?.trim() || null,
-          sourceGuardianErpName: `ADMIN-${sc}-${enrollment}-G1`,
-        });
+        // Links BOTH the primary and (when supplied) the second guardian
+        // number, so either parent can sign in and see this student.
+        await linkBothGuardians(studentRow.id);
       }
 
       inserted++;
@@ -268,6 +317,14 @@ export async function POST(req: Request) {
       });
     }
   }
+
+  void logAdminActivity(guard, {
+    action: "student.import",
+    entityType: "student",
+    entityId: null,
+    summary: `Imported students: ${inserted} created, ${skipped} skipped, ${errors.length} failed`,
+    req,
+  });
 
   return NextResponse.json({
     inserted,

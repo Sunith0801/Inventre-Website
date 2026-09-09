@@ -7,6 +7,7 @@ import { db } from "@/db/client";
 import { productSchool } from "@/db/schema";
 import { isResponse, requirePermission } from "@/lib/admin-guard";
 import { invalidateCatalog } from "@/lib/cache";
+import { logAdminActivity } from "@/lib/activity";
 
 const Body = z.object({
   assigned: z.boolean(),
@@ -68,5 +69,16 @@ export async function PUT(
   }
 
   await invalidateCatalog();
+
+  void logAdminActivity(guard, {
+    action: "product.school.set",
+    entityType: "product",
+    entityId: productId,
+    summary: body.assigned
+      ? `Assigned to school`
+      : `Unassigned from school`,
+    req,
+  });
+
   return NextResponse.json({ ok: true });
 }
