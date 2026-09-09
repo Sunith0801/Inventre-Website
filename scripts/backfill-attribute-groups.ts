@@ -77,7 +77,7 @@ const ITEM_GROUP_TO_SIZE_LABEL: Record<string, string> = {
 };
 
 async function main() {
-  const csvPath = path.resolve(process.cwd(), "Item (1).csv");
+  const csvPath = path.resolve(process.cwd(), "data/imports/Item (1).csv");
   console.log("Reading", csvPath);
   const rows = parseCsv(fs.readFileSync(csvPath, "utf8"));
   const hdr = rows[0];

@@ -36,7 +36,7 @@ const CSV_PATH = path.resolve(
   "BOM.csv"
 );
 // Prefer the explicit project copy if present
-const ALT_PATH = path.resolve(process.cwd(), "BOM.csv");
+const ALT_PATH = path.resolve(process.cwd(), "data/imports/BOM.csv");
 
 function pickCsv(): string {
   for (const p of [ALT_PATH, CSV_PATH]) {

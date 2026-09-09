@@ -54,7 +54,7 @@ function parseCsv(text: string): string[][] {
 }
 
 async function main() {
-  const csvPath = path.resolve(process.cwd(), "Item (1).csv");
+  const csvPath = path.resolve(process.cwd(), "data/imports/Item (1).csv");
   const rows = parseCsv(fs.readFileSync(csvPath, "utf8"));
   const hdr = rows[0];
   const ixCode = hdr.indexOf("Item Code");

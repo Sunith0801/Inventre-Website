@@ -120,3 +120,17 @@ Screenshot *.png
 Inventre_Platform_Overview.pptx
 Inventre_Platform_Overview.pdf
 inventre_deck_builder.py
+
+# ── Data artefacts (moved out of the repo root 2026-09-09) ──────────
+# Reports, ad-hoc CSV exports, vendor PDFs and decks. Not source, and
+# ~70 MB of it was sitting in the root and in the Docker build context.
+# data/imports/ is the exception: BOM.csv, Item (1).csv and
+# Item Attribute.csv are read by the backfill scripts via
+# path.resolve(process.cwd(), "data/imports/..."), so they stay tracked
+# and a fresh clone still works.
+/data/*
+!/data/imports/
+
+# Carries a root SSH password for the audit host. Rotate the credential
+# and remove it from the script before this is ever committed.
+/scripts/push-catalogue-to-audit.sh

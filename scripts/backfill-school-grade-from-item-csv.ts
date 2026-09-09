@@ -81,7 +81,7 @@ function parseSchoolCode(raw: string | undefined): string | null {
 }
 
 async function main() {
-  const csvPath = path.resolve(process.cwd(), "Item (1).csv");
+  const csvPath = path.resolve(process.cwd(), "data/imports/Item (1).csv");
   if (!fs.existsSync(csvPath)) {
     console.error("Missing Item (1).csv in project root");
     process.exit(1);

@@ -26,7 +26,7 @@ import { eq, sql as drz } from "drizzle-orm";
 import * as schema from "../db/schema";
 
 const csvPath =
-  process.argv[2] ?? path.resolve(process.cwd(), "Item Attribute.csv");
+  process.argv[2] ?? path.resolve(process.cwd(), "data/imports/Item Attribute.csv");
 
 if (!fs.existsSync(csvPath)) {
   console.error(`CSV not found at ${csvPath}`);

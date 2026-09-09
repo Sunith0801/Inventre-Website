@@ -56,7 +56,7 @@ function parseCsv(text: string): string[][] {
 async function pass1Attributes() {
   console.log("PASS 1: variant attribute name/value from Item.csv");
   const rows = parseCsv(
-    fs.readFileSync(path.resolve(process.cwd(), "Item (1).csv"), "utf8")
+    fs.readFileSync(path.resolve(process.cwd(), "data/imports/Item (1).csv"), "utf8")
   );
   const hdr = rows[0];
   const ixCode = hdr.indexOf("Item Code");
@@ -85,7 +85,7 @@ async function pass1Attributes() {
 async function pass2Rates() {
   console.log("PASS 2: bundle_components.rate_paise from BOM.csv");
   const rows = parseCsv(
-    fs.readFileSync(path.resolve(process.cwd(), "BOM.csv"), "utf8")
+    fs.readFileSync(path.resolve(process.cwd(), "data/imports/BOM.csv"), "utf8")
   );
 
   let currentParentName: string | null = null;
