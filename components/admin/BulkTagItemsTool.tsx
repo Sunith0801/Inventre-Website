@@ -287,7 +287,7 @@ export function BulkTagItemsTool({
               No products match the current filters.
             </div>
             <div className="text-[12px] mt-1">
-              Try changing "Show" to <em>All products</em> or clearing the search.
+              Try changing &quot;Show&quot; to <em>All products</em> or clearing the search.
             </div>
           </div>
         ) : (

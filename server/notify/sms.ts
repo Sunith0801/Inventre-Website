@@ -47,7 +47,7 @@ export async function sendOtpSms(
   const text = `Your OTP for Inventre Login is ${otp}. Please do not share this OTP with anyone. It is valid for 5 minutes. - INVENTRE EDUSERVICES PVT. LTD`;
 
   if (!username || !password) {
-    // eslint-disable-next-line no-console
+     
     console.log(`\n📱 [DEV SMS to +91${phone}] → ${text}\n`);
     return { ok: true, transactionId: "dev", dev: true };
   }
@@ -128,7 +128,7 @@ export async function sendOrderConfirmationSms(
   const text = `Dear ${var1}, Your Order has been successful with Order ID ${var2}. You will receive updates once it is processed. You can also track your order here ${var3} -INVENTRE EDU SERVICES PVT LTD`;
 
   if (!username || !password) {
-    // eslint-disable-next-line no-console
+     
     console.log(`\n📱 [DEV SMS to +91${phone}] → ${text}\n`);
     return { ok: true, transactionId: "dev", dev: true, text };
   }

@@ -270,7 +270,7 @@ export function NewSchoolWizard({ masterGrades }: { masterGrades: MasterGrade[] 
           <div className="grid grid-cols-[24px_1fr_1fr_120px] gap-3 px-2 pb-1.5 text-[11px] font-semibold tracking-[0.12em] uppercase text-ink-500 border-b border-ink-100">
             <div></div>
             <div>Grade</div>
-            <div>School's custom label</div>
+            <div>School&apos;s custom label</div>
             <div>Sections</div>
           </div>
           <div className="max-h-[440px] overflow-y-auto pr-1 divide-y divide-ink-100/70">

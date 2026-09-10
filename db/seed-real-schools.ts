@@ -1,4 +1,4 @@
-/* eslint-disable no-console */
+ 
 /**
  * Seed real production schools, categories, attributes, and bundle templates
  * from the audit doc (`inventre-erp-complete-audit.md`).

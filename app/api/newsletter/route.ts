@@ -32,7 +32,7 @@ export async function POST(req: Request) {
     );
   }
 
-  // eslint-disable-next-line no-console
+   
   console.log(`📨 Newsletter signup: ${body.email}`);
   return NextResponse.json({ ok: true });
 }

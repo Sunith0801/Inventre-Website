@@ -221,7 +221,7 @@ export default async function CatalogPreviewDetailPage({
                   ))}
                 </div>
                 <p className="mt-2 text-[11.5px] text-ink-400">
-                  School-aware: prices and images reflect the active school's overrides where set.
+                  School-aware: prices and images reflect the active school&apos;s overrides where set.
                 </p>
               </div>
             </Card>

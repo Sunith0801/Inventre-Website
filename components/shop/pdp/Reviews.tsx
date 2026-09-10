@@ -118,7 +118,7 @@ export function Reviews({ product }: { product: Product }) {
                       </div>
                     </div>
                     <p className="mt-4 text-[14.5px] leading-relaxed text-ink-700">
-                      "{r.body}"
+                      &quot;{r.body}&quot;
                     </p>
                   </li>
                 ))}

@@ -153,3 +153,9 @@ inventre_deck_builder.py
 # Local backup output: nightly pg_dump, the source bundles and their logs.
 # Never committed — the dumps carry PII and the bundles are 20 MB apiece.
 db_backups/
+
+# esbuild bundle of db/migrate.ts, 2,252 lines of generated code. Both the
+# Dockerfile (RUN npx esbuild … --outfile=.next/standalone/db/migrate.js) and
+# scripts/deploy.sh regenerate it at build time, and scripts/start.sh runs the
+# generated copy at /app/db/migrate.js — nothing reads the tracked one.
+db/migrate.js

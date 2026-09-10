@@ -210,7 +210,7 @@ export function TestimonialList({
                     {r.schoolName && ` · ${r.schoolName}`}
                   </p>
                   <p className="mt-2 text-[13px] text-ink-700 line-clamp-2">
-                    "{r.quote}"
+                    &quot;{r.quote}&quot;
                   </p>
                 </div>
                 <button

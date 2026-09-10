@@ -3,14 +3,14 @@ import postgres from "postgres";
 import * as schema from "./schema";
 
 declare global {
-  // eslint-disable-next-line no-var
+   
   var __pg__: ReturnType<typeof postgres> | undefined;
-  // eslint-disable-next-line no-var
+   
   var __db__: ReturnType<typeof drizzle<typeof schema>> | undefined;
   // Separate pool for cron / background work — see getCronDb() below.
-  // eslint-disable-next-line no-var
+   
   var __pg_cron__: ReturnType<typeof postgres> | undefined;
-  // eslint-disable-next-line no-var
+   
   var __db_cron__: ReturnType<typeof drizzle<typeof schema>> | undefined;
 }
 

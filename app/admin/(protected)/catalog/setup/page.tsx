@@ -124,7 +124,7 @@ export default async function CatalogSetupPage() {
         title="Setup"
         description={
           <>
-            One screen for the full lifecycle of a school's catalog. See where each
+            One screen for the full lifecycle of a school&apos;s catalog. See where each
             active school is in its setup, click a row to drill into per-grade gaps,
             and follow the action links to the right editor. To onboard a brand new
             school, use{" "}

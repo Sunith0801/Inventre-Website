@@ -116,7 +116,7 @@ export function PrincipalsHero({ testimonials }: { testimonials?: T[] }) {
                 <figcaption className="absolute bottom-0 inset-x-0 p-5 sm:p-6 text-white">
                   <Quote className="h-5 w-5 text-brand-300 mb-3" />
                   <blockquote className="text-[14px] sm:text-[15px] leading-relaxed font-medium">
-                    "{p.quote}"
+                    &quot;{p.quote}&quot;
                   </blockquote>
                 </figcaption>
               </div>

@@ -3,7 +3,7 @@ import { S3Client, PutObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s
 import crypto from "crypto";
 
 declare global {
-  // eslint-disable-next-line no-var
+   
   var __s3__: S3Client | undefined;
 }
 

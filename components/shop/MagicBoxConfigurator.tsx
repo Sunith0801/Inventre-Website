@@ -321,7 +321,7 @@ export function MagicBoxConfigurator({
     );
     setPrefilledFromCart(true);
     setAdded(true);
-  }, [lines, items, boxVariantId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [lines, items, boxVariantId]);  
 
   const stillLoading = items.some((it) => it.loading);
   const choosable = items.filter((it) => it.variants.length > 0);

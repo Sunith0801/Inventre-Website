@@ -1,7 +1,7 @@
 import Redis from "ioredis";
 
 declare global {
-  // eslint-disable-next-line no-var
+   
   var __redis__: Redis | undefined;
 }
 
@@ -48,11 +48,11 @@ function getRedis(): Redis {
   // Surface persistent connect errors in container logs (default ioredis
   // logs every retry which is noisy). One log line per state change.
   client.on("error", (e) => {
-    // eslint-disable-next-line no-console
+     
     console.error("[redis] error:", e.message);
   });
   client.on("reconnecting", (delay: unknown) => {
-    // eslint-disable-next-line no-console
+     
     console.warn(`[redis] reconnecting in ${delay}ms`);
   });
   // Cache the singleton on globalThis ALWAYS — was previously gated on

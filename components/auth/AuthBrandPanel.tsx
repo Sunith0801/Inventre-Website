@@ -15,7 +15,7 @@ export function AuthBrandPanel({
     <aside className="relative hidden lg:flex lg:w-[55%] flex-col overflow-hidden bg-ink-900 text-white">
       {/* photo or video background */}
       {isVideo ? (
-        // eslint-disable-next-line jsx-a11y/media-has-caption
+         
         <video
           src={imageUrl}
           autoPlay

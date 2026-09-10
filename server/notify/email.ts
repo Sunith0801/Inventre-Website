@@ -120,7 +120,7 @@ export async function sendEmail(msg: EmailMessage): Promise<{
     return sendViaResend(msg);
   }
   if (process.env.NODE_ENV !== "production") {
-    // eslint-disable-next-line no-console
+     
     console.log("[email:stub]", msg.to, "—", msg.subject);
   }
   return { ok: false, error: "No email transport configured" };

@@ -57,7 +57,7 @@ export async function POST(req: Request) {
     },
   });
 
-  // eslint-disable-next-line no-console
+   
   console.log(
     `\n📬 New ${body.kind.toUpperCase()} contact: ${body.name} <${body.email}> +91${body.phone}`
   );

@@ -174,7 +174,7 @@ export function StudentsBrowser({
         window.history.replaceState({}, "", next);
       }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [filters]);
 
   // Back / forward — re-read the URL filters and apply. Only triggered by

@@ -170,7 +170,7 @@ export default async function AddItemsPage({ params }: { params: Params }) {
           <div className="text-[12px] text-ink-600">
             <span className="font-semibold text-ink-900">Per-school overrides:</span> tagging a row
             with a price uses that price for parents at this school; leave blank to inherit the
-            product's base price. <Badge tone="warning">Required</Badge> marks a must-buy item.
+            product&apos;s base price. <Badge tone="warning">Required</Badge> marks a must-buy item.
           </div>
         </div>
       </Card>

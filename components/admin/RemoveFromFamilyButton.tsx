@@ -57,7 +57,7 @@ export function RemoveFromFamilyButton({ studentId }: { studentId: string }) {
           <div className="font-bold">Detach this student from the family?</div>
           <div className="mt-1 text-[12.5px]">
             The student will be disabled (no longer shown on the storefront)
-            and the parent's phone will be removed from this student's
+            and the parent&apos;s phone will be removed from this student&apos;s
             guardian list. Order history is preserved. The student will not
             re-attach automatically on the next ERPNext sync.
           </div>

@@ -528,7 +528,7 @@ function PhoneRow({
             {maskPhone(altShown)}
           </p>
           <p className="mt-0.5 text-[11px] text-ink-500">
-            This guardian's number is linked to the same family.
+            This guardian&apos;s number is linked to the same family.
           </p>
         </div>
       )}

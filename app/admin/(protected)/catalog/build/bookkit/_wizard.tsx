@@ -748,7 +748,7 @@ function Step1(p: {
         </select>
       </Field>
       <p className="text-[11px] text-ink-500 leading-snug">
-        Behind the scenes: products.kind = 'kit'  ·  products.is_magic_box = false
+        Behind the scenes: products.kind = &apos;kit&apos;  ·  products.is_magic_box = false
       </p>
     </section>
   );

@@ -57,7 +57,7 @@ export function Testimonials() {
               {t.angle}
             </span>
             <blockquote className="mt-5 text-[15px] leading-relaxed text-ink-800 flex-1">
-              "{t.quote}"
+              &quot;{t.quote}&quot;
             </blockquote>
             <figcaption className="mt-6 pt-5 border-t border-ink-100 flex items-center gap-3">
               <div className="h-10 w-10 rounded-full bg-gradient-to-br from-brand-200 to-brand-400 grid place-items-center font-display text-[14px] font-bold text-white">

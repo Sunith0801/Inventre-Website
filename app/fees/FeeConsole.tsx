@@ -262,7 +262,7 @@ export default function FeeConsole({
         })
     );
     return () => { dead = true; };
-  }, [scope, ayParam, tick]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [scope, ayParam, tick]);  
 
   // Billing coverage follows (year, scope) like the band above it.
   useEffect(() => {
@@ -277,7 +277,7 @@ export default function FeeConsole({
         .catch(() => {})
     );
     return () => { dead = true; };
-  }, [scope, ayParam, tick]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [scope, ayParam, tick]);  
 
   // The ledger.
   useEffect(() => {
@@ -303,7 +303,7 @@ export default function FeeConsole({
         })
     );
     return () => { dead = true; };
-  }, [scope, head, ayParam, status, grade, q, page, tick, heads, showLeft]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [scope, head, ayParam, status, grade, q, page, tick, heads, showLeft]);  
 
   /* Receipts are pulled per student, on expand — MCB has no bulk variant.
      The API caches for 5 minutes; this keeps a second copy so re-expanding

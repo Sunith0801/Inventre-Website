@@ -115,7 +115,7 @@ export async function POST(req: Request) {
       html: `<p>Your Inventre verification code is <b>${code}</b>.</p><p>It is valid for 5 minutes. If you didn't request this, you can ignore this email.</p>`,
     });
     if (!send.ok) {
-      // eslint-disable-next-line no-console
+       
       console.error("[recover/email-otp] send failed:", send.error);
       return NextResponse.json(
         { error: "Could not send email right now. Try again in a minute." },
