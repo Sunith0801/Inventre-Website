@@ -79,6 +79,62 @@ const nextConfig = {
   async headers() {
     return [
       {
+        /**
+         * SECURITY HEADERS — every route.
+         *
+         * Chosen so that none of them can change how a page renders. What is
+         * deliberately NOT here matters as much as what is:
+         *
+         *  - HSTS carries no `includeSubDomains`. inventre.in has at least
+         *    four live subdomains (testing, staging, audit, erp) and the flag
+         *    is a one-year commitment on ALL of them, including any not
+         *    enumerated here. Add it once that list is known and confirmed
+         *    TLS-only; certbot.timer is active and the apex cert renews.
+         *  - Permissions-Policy denies camera, microphone, geolocation,
+         *    payment, usb and bluetooth because the codebase calls none of
+         *    them (verified: zero references). The /fit camera flow lives on
+         *    a dev branch and is not in this tree — revisit `camera=()` when
+         *    it ships.
+         *  - The enforcing CSP restricts only what cannot break a render:
+         *    who may frame us, plugin embedding, and <base>. Script and style
+         *    sources are NOT restricted here: Next.js emits inline bootstrap
+         *    scripts, so a strict script-src needs per-request nonces, and
+         *    this app also embeds third-party map iframes on the store pages.
+         *    The full strict policy ships alongside as Report-Only so the
+         *    violations can be read from real traffic before it is enforced.
+         */
+        source: "/(.*)",
+        headers: [
+          { key: "Strict-Transport-Security", value: "max-age=31536000" },
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "X-Frame-Options", value: "DENY" },
+          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+          {
+            key: "Permissions-Policy",
+            value: "camera=(), microphone=(), geolocation=(), payment=(), usb=(), bluetooth=()",
+          },
+          {
+            key: "Content-Security-Policy",
+            value: "frame-ancestors 'none'; object-src 'none'; base-uri 'self'",
+          },
+          {
+            key: "Content-Security-Policy-Report-Only",
+            value: [
+              "default-src 'self'",
+              "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+              "style-src 'self' 'unsafe-inline'",
+              "img-src 'self' data: blob: https://images.unsplash.com https://*.inventre.in https://*.inventre.online https://pub-d46aef8f98ef4da0a1834fb6f554ae2c.r2.dev",
+              "font-src 'self' data:",
+              "connect-src 'self' https://*.inventre.in https://*.inventre.online",
+              "frame-src https://www.google.com https://maps.google.com",
+              "frame-ancestors 'none'",
+              "object-src 'none'",
+              "base-uri 'self'",
+            ].join("; "),
+          },
+        ],
+      },
+      {
         source: "/_next/static/:path*",
         headers: [
           {

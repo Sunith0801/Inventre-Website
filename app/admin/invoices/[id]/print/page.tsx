@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { invoices, invoiceItems, parents, orders } from "@/db/schema";
 import { getCurrentUser } from "@/server/session";
+import { canSeePage } from "@/lib/admin-permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +14,10 @@ export default async function InvoicePrintPage({
 }) {
   const me = await getCurrentUser();
   if (me?.kind !== "admin") notFound();
+  // This page sits OUTSIDE the (protected) group, so neither that layout nor
+  // the per-section gate covers it — it needs its own check, or a customer
+  // invoice is readable by any signed-in staff account.
+  if (!canSeePage(me.permissions, "invoices")) notFound();
   const { id } = await params;
 
   const [inv] = await db.select().from(invoices).where(eq(invoices.id, id)).limit(1);
