@@ -44,7 +44,11 @@ export type FinalizeSource =
 export type FinalizeResult =
   | {
       kind: "no-change";
-      reason: "already_finalized" | "still_pending" | "unknown_status";
+      reason:
+        | "already_finalized"
+        | "still_pending"
+        | "unknown_status"
+        | "deferred_duplicate_submit";
       orderId: string;
       paymentStatus: "pending" | "paid" | "failed" | "refunded";
     }
@@ -74,6 +78,43 @@ function formatPaymentDate(d: Date): string {
 }
 
 /**
+ * CCAvenue rejects a re-submitted checkout with `order_bank_response:
+ * "Payment already done"` and `order_capt_amt: 0`. That sentence is not a
+ * failure — it is the gateway telling us an EARLIER attempt already took the
+ * money, which is exactly why it refused this one. Treating it as a terminal
+ * failure is what stranded SAL-ORD-2026-40412: the whole basket flipped
+ * FAILED, and CCAvenue's own Status API went on reporting the abort for ~19
+ * hours until settlement, so the 5-minute reconcile cron had nothing better
+ * to go on. Worst hit is a multi-student basket, where the failure fans out
+ * to every sibling order at once.
+ *
+ * Matched against the whole decoded payload rather than one named field: the
+ * Status-API shape nests it under `Order_Status_Result.order_bank_response`
+ * while the callback shape is flat.
+ */
+const DUPLICATE_SUBMIT_RE = /payment\s+already\s+done/i;
+
+function looksLikeDuplicateOfCapturedPayment(
+  normalized: NormalizedGatewayResult
+): boolean {
+  try {
+    return DUPLICATE_SUBMIT_RE.test(
+      JSON.stringify(normalized.rawResponse ?? {})
+    );
+  } catch {
+    // Circular / unserialisable payload — fall back to treating the verdict
+    // at face value rather than swallowing a genuine failure.
+    return false;
+  }
+}
+
+/** How long we'll keep deferring a "Payment already done" verdict before
+ *  giving up and recording the failure. Matches the reconcile cron's own
+ *  MAX_AGE (5 days) — past that nothing re-polls the row, so deferring
+ *  further would strand it `pending` forever. */
+const DUPLICATE_SUBMIT_DEFER_MS = 5 * 24 * 60 * 60 * 1000;
+
+/**
  * Single entry point that callers (callback route, parent-status route,
  * reconciler cron) use to apply CCAvenue's verdict to local state.
  */
@@ -100,6 +141,8 @@ export async function finalizeOrderPayment(args: {
       couponId: orders.couponId,
       orderDiscount: orders.discount,
       studentId: orders.studentId,
+      // Bounds the duplicate-submit deferral below.
+      paymentCreatedAt: payments.createdAt,
     })
     .from(payments)
     .innerJoin(orders, eq(orders.id, payments.orderId))
@@ -168,6 +211,35 @@ export async function finalizeOrderPayment(args: {
         paymentStatus: "failed",
       };
     }
+
+    // Not a failure at all — see looksLikeDuplicateOfCapturedPayment. Leave
+    // the row `pending` and un-finalised so the 5-minute reconcile cron keeps
+    // polling until CCAvenue admits the capture, instead of flashing FAILED
+    // across the basket (and every sibling order in it) in the meantime.
+    // Bounded: past the cron's own polling window nothing would re-check it,
+    // so we stop deferring and let the failure be recorded.
+    const deferrable =
+      snap.paymentCreatedAt != null &&
+      Date.now() - new Date(snap.paymentCreatedAt).getTime() <
+        DUPLICATE_SUBMIT_DEFER_MS;
+    if (deferrable && looksLikeDuplicateOfCapturedPayment(normalized)) {
+      await db
+        .update(payments)
+        .set({
+          gatewayResponseMessage:
+            `deferred: CCAvenue reports "Payment already done" — ` +
+            `awaiting capture confirmation (via ${source})`,
+          lastStatusPollAt: source === "callback" ? undefined : new Date(),
+        })
+        .where(eq(payments.orderId, orderId));
+      return {
+        kind: "no-change",
+        reason: "deferred_duplicate_submit",
+        orderId,
+        paymentStatus: snap.paymentStatus,
+      };
+    }
+
     const failNow = new Date();
     await db
       .update(payments)
