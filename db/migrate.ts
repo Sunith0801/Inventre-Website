@@ -36,6 +36,26 @@ import fs from "fs";
  * If ALL listed tables exist on first migrator run, the file is treated
  * as already applied. Keep this in sync when adding new migrations.
  */
+/**
+ * Historical data seeds that CANNOT be replayed onto today's schema.
+ *
+ * 0037 is a pg_dump of the May-2026 dev catalog, taken when `schools` still
+ * had `grade_offset` and `kit_label`. Those two columns are gone from
+ * db/schema.ts but still stand on the live databases, so its positional
+ * `INSERT INTO public.schools VALUES (...)` carries 35 values for what is now
+ * a 33-column table and fails with "INSERT has more expressions than target
+ * columns". Rewriting 3.7 MB of dumped rows to today's shape would mean
+ * editing historical data by hand, which is worse than not replaying it.
+ *
+ * So it is skipped — ONLY when MIGRATE_SKIP_HISTORICAL_SEEDS=1, which CI sets
+ * when it builds a throwaway database to compile against. The live databases
+ * have long since applied 0037 and never re-read it; nothing about their path
+ * changes. A database built with this flag has the full SCHEMA and none of
+ * that seed's catalog ROWS, which is exactly what a build gate needs and is
+ * not a substitute for a restore.
+ */
+const HISTORICAL_SEEDS = new Set(["0037_catalog_data_backfill.sql"]);
+
 const BOOTSTRAP_FINGERPRINTS: Record<string, string[]> = {
   "0000_phase1_option_b_foundation.sql": ["parents", "products", "orders"],
   "0001_erpnext_inspired_modules.sql": ["suppliers", "purchase_orders"],
@@ -130,7 +150,21 @@ async function main() {
       `[migrate] applying ${pending.length} migration(s): ${pending.join(", ")}`
     );
 
+    const skipHistoricalSeeds =
+      process.env.MIGRATE_SKIP_HISTORICAL_SEEDS === "1";
+
     for (const file of pending) {
+      if (skipHistoricalSeeds && HISTORICAL_SEEDS.has(file)) {
+        await client/* sql */`
+          INSERT INTO __schema_migrations (filename) VALUES (${file})
+          ON CONFLICT DO NOTHING
+        `;
+        console.log(
+          `[migrate]   — ${file} (historical seed, skipped by MIGRATE_SKIP_HISTORICAL_SEEDS)`
+        );
+        continue;
+      }
+
       const sql = fs.readFileSync(path.join(dir, file), "utf8");
       // Wrap each migration in its own transaction so partial failures don't
       // poison the next one. postgres.js .begin() commits on resolve, rolls

@@ -12,5 +12,16 @@
 -- order page uses this to badge a held-back line "pending" instead of
 -- inheriting the category's delivered floor (e.g. SAL-ORD-2026-34537's
 -- KLS Half Pants, out_of_stock, while its 5 siblings delivered).
-ALTER TABLE erp.sales_order_items
-  ADD COLUMN IF NOT EXISTS packing_state TEXT;
+-- GUARDED, 2026-09-10, for the same reason as 0048: erp.sales_order_items is
+-- part of the ERP mirror and no migration creates it, so an empty database
+-- has no such table and an unguarded ALTER would abort the chain.
+DO $$
+BEGIN
+  IF to_regclass('erp.sales_order_items') IS NULL THEN
+    RAISE NOTICE '[0071] erp.sales_order_items absent (ERP mirror not present) - skipping';
+    RETURN;
+  END IF;
+
+  ALTER TABLE erp.sales_order_items
+    ADD COLUMN IF NOT EXISTS packing_state TEXT;
+END $$;

@@ -12,15 +12,18 @@ name: CI
 # pnpm-lock.yaml in the root is a leftover from June and should go once
 # somebody confirms nothing still uses it.
 #
-# NOT here yet: `npm run build`. Static generation reaches the database for
-# 173 pages, so CI would need a Postgres service seeded by db/migrate.ts —
-# and on 2026-09-10 that was tested and does NOT work: migration 0015
-# (backfill_student_parent_id) references student_guardian_links, which a
-# later migration creates, so the chain stops at 73 of 116 tables on an empty
-# database. Until 0015 is made defensive, the schema cannot be rebuilt from
-# source, disaster recovery depends entirely on the nightly dump, and a build
-# gate here is impossible. The build IS still gated — at deploy, by
-# scripts/deploy.sh, which builds and then verifies the live site.
+# Two jobs. `verify` is types, tests, lint, formatting and advisories, and
+# needs nothing but Node. `build` needs a database, because static generation
+# reaches one for 173 pages, so it stands up Postgres and builds the schema
+# from db/migrations before compiling.
+#
+# That second job was impossible until 2026-09-10. The migration chain could
+# not build an empty database: `drizzle-kit push` had put one schema, eleven
+# tables, 110 columns and an enum onto the live databases that no migration
+# ever wrote down, so the chain died at 0015 after 73 of 116 tables. Fixing
+# that is what makes this gate possible — and the gate is now what keeps it
+# fixed, because a migration that cannot apply to an empty database fails here
+# on the branch that introduces it, not during a disaster.
 
 on:
   push:
@@ -99,3 +102,80 @@ jobs:
         # without holding the branch hostage.
         if: always()
         run: npm audit --omit=dev || true
+
+  build:
+    name: build (schema rebuilt from migrations)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    # Postgres 16 to match docker-compose.deploy.yml. Nothing is restored into
+    # it: the point is to prove db/migrations can build the schema from
+    # nothing, which is the same property disaster recovery depends on.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: inventre_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/inventre_ci
+      DATABASE_DIRECT_URL: postgres://postgres:postgres@127.0.0.1:5432/inventre_ci
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Build the schema from db/migrations
+        # THE FIRST ASSERTION, and the one that has never been made before:
+        # every migration applies, in order, to a database that starts empty.
+        # A migration that reads a table it does not create, or that was
+        # written against a shape the repository no longer describes, fails
+        # here — on the branch that adds it.
+        #
+        # MIGRATE_SKIP_HISTORICAL_SEEDS skips 0037, a 3.7 MB pg_dump of the
+        # May-2026 catalog whose positional INSERTs carry two columns that
+        # schema.ts has since dropped. It cannot replay onto today's schema and
+        # rewriting historical rows by hand would be worse. db/migrate.ts
+        # documents the exception; nothing else is skipped.
+        env:
+          MIGRATE_SKIP_HISTORICAL_SEEDS: "1"
+        run: npx tsx db/migrate.ts
+
+      - name: Assert the schema matches db/schema.ts
+        # Cheap, and it catches the failure mode this job would otherwise miss:
+        # a chain that applies cleanly but builds the WRONG schema, which is
+        # how 110 columns went missing in the first place.
+        run: npx tsx scripts/assert-schema-complete.ts
+
+      - name: Build
+        # The gate itself. Static generation renders 173 pages against the
+        # database above, so this fails on a bad query, a bad import, or a
+        # column that only exists on somebody's laptop.
+        #
+        # Secrets are deliberately fake: nothing here should reach a real
+        # service, and a build that needs a live credential is a bug worth
+        # finding. NEXT_DIST_DIR keeps the output away from `.next`, which on
+        # the deploy host is a live artefact.
+        env:
+          NEXT_DIST_DIR: .next-ci
+          NODE_ENV: production
+          JWT_SECRET: ci-build-only-not-a-real-secret
+          AUTH_SECRET: ci-build-only-not-a-real-secret
+          NEXT_PUBLIC_APP_URL: http://localhost:3000
+        run: npm run build
