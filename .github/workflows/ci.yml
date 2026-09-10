@@ -13,8 +13,14 @@ name: CI
 # somebody confirms nothing still uses it.
 #
 # NOT here yet: `npm run build`. Static generation reaches the database for
-# 173 pages, so a real build needs a Postgres service plus migrations. Worth
-# adding, but a fake green tick is worse than an honest missing step.
+# 173 pages, so CI would need a Postgres service seeded by db/migrate.ts —
+# and on 2026-09-10 that was tested and does NOT work: migration 0015
+# (backfill_student_parent_id) references student_guardian_links, which a
+# later migration creates, so the chain stops at 73 of 116 tables on an empty
+# database. Until 0015 is made defensive, the schema cannot be rebuilt from
+# source, disaster recovery depends entirely on the nightly dump, and a build
+# gate here is impossible. The build IS still gated — at deploy, by
+# scripts/deploy.sh, which builds and then verifies the live site.
 
 on:
   push:
@@ -45,4 +51,25 @@ jobs:
         run: npm run typecheck
 
       - name: Tests
+        # Includes tests/architecture/ — executable rules asserting that every
+        # admin section is gated, every /api/admin route names a permission,
+        # next.config.mjs still serves the security headers, no connection
+        # string is hardcoded in shipping code, and no client component
+        # imports the database. Each encodes a real past incident.
         run: npm run test
+
+      - name: No critical advisories
+        # Blocking at `critical` rather than `high` on purpose. The five highs
+        # that remain all need semver-MAJOR upgrades (drizzle 0.36 -> 0.45,
+        # next 15 -> 16, nodemailer 6 -> 10, sharp 0.34 -> 0.35) and xlsx has
+        # no fix on the registry at all. Gating on `high` would paint CI red
+        # permanently and teach everyone to ignore it. Gating on `critical`
+        # is a promise the team can actually keep, and it catches the next
+        # one on the day it lands.
+        run: npm audit --omit=dev --audit-level=critical
+
+      - name: Report remaining advisories
+        # Visible, not blocking — so the five highs stay in front of people
+        # without holding the branch hostage.
+        if: always()
+        run: npm audit --omit=dev || true

@@ -110,6 +110,13 @@ fi
 # `docker start` is a no-op if already running.
 docker start inventre-deploy-app >/dev/null 2>&1 || true
 
+# Snapshot what is CURRENTLY serving, so a failed verification can put it
+# back. /app/.next is ~40 MB, so this costs nothing and buys an undo.
+echo "▶ Snapshotting the running build…"
+docker exec inventre-deploy-app sh -c 'rm -rf /app/.next.prev && cp -a /app/.next /app/.next.prev' 2>/dev/null \
+  && echo "   rollback point saved" \
+  || echo "   ⚠ could not snapshot — a failed verify will NOT auto-roll-back"
+
 echo "▶ Syncing build into container…"
 # Standalone output → /app (server.js, .next/server/, node_modules/)
 #
@@ -202,6 +209,29 @@ for i in $(seq 1 30); do
   fi
   sleep 2
 done
+
+# ── POST-DEPLOY VERIFICATION ────────────────────────────────────────────────
+# The container being "Ready" only means node started. It says nothing about
+# WHICH build is serving or whether it still carries the security posture.
+# On 2026-09-10 a rebuild from a branch without the security commits went live
+# and every existing gate passed. This is the gate that catches that.
+EXPECTED_BUILD_ID="$(cat .next/BUILD_ID 2>/dev/null || true)"
+echo ""
+if ! ./scripts/verify-deployment.sh "$EXPECTED_BUILD_ID"; then
+  echo ""
+  echo "✖ The deployed site failed verification — rolling back."
+  if docker exec inventre-deploy-app sh -c '[ -d /app/.next.prev ]' 2>/dev/null; then
+    docker exec inventre-deploy-app sh -c 'rm -rf /app/.next && mv /app/.next.prev /app/.next'
+    docker restart inventre-deploy-app >/dev/null
+    sleep 8
+    echo "▶ Rolled back to the previous build. Re-verifying:"
+    ./scripts/verify-deployment.sh || true
+  else
+    echo "   No snapshot available — the site is serving the FAILED build."
+    echo "   Restore manually from the rollback image tag."
+  fi
+  exit 1
+fi
 
 END=$(date +%s)
 echo ""

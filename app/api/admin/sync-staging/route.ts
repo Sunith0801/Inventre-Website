@@ -29,13 +29,24 @@ export async function POST(req: Request) {
     );
   }
 
+  const stagingDbUrl = process.env.STAGING_DB_URL;
+  if (!stagingDbUrl) {
+    return NextResponse.json(
+      { error: "STAGING_DB_URL is not configured on this host." },
+      { status: 503 },
+    );
+  }
+
   const child = spawn(SCRIPT, [], {
     detached: true,
     stdio: "ignore",
     env: {
       ...process.env,
       PROD_DB_URL: prodDbUrl,
-      STAGING_DB_URL: "postgres://inventre:inventre_dev@localhost:6533/inventre_staging",
+      // Read from the environment, never hardcoded. A connection string in
+      // source is a connection string in every clone and every backup of the
+      // repository, for as long as the history exists.
+      STAGING_DB_URL: stagingDbUrl,
       PATH: process.env.PATH ?? "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
     },
   });
