@@ -113,7 +113,7 @@ docker start inventre-deploy-app >/dev/null 2>&1 || true
 # Snapshot what is CURRENTLY serving, so a failed verification can put it
 # back. /app/.next is ~40 MB, so this costs nothing and buys an undo.
 echo "▶ Snapshotting the running build…"
-docker exec inventre-deploy-app sh -c 'rm -rf /app/.next.prev && cp -a /app/.next /app/.next.prev' 2>/dev/null \
+docker exec -u root inventre-deploy-app sh -c 'rm -rf /app/.next.prev && cp -a /app/.next /app/.next.prev' 2>/dev/null \
   && echo "   rollback point saved" \
   || echo "   ⚠ could not snapshot — a failed verify will NOT auto-roll-back"
 
@@ -220,8 +220,8 @@ echo ""
 if ! ./scripts/verify-deployment.sh "$EXPECTED_BUILD_ID"; then
   echo ""
   echo "✖ The deployed site failed verification — rolling back."
-  if docker exec inventre-deploy-app sh -c '[ -d /app/.next.prev ]' 2>/dev/null; then
-    docker exec inventre-deploy-app sh -c 'rm -rf /app/.next && mv /app/.next.prev /app/.next'
+  if docker exec -u root inventre-deploy-app sh -c '[ -d /app/.next.prev ]' 2>/dev/null; then
+    docker exec -u root inventre-deploy-app sh -c 'rm -rf /app/.next && mv /app/.next.prev /app/.next'
     docker restart inventre-deploy-app >/dev/null
     sleep 8
     echo "▶ Rolled back to the previous build. Re-verifying:"
