@@ -336,7 +336,40 @@ export async function finalizeOrderPayment(args: {
   // order_number. NOT EXISTS keeps the insert idempotent against the
   // race where two finalize callers (callback + status-poll) fire
   // concurrently.
+  //
+  // The insert alone is not enough. A sibling can already OWN a payments
+  // row that says `failed`, written by the failed fan-out above when an
+  // earlier attempt returned a terminal failure — the classic shape is a
+  // parent who pays, then re-submits the checkout page: CCAvenue aborts
+  // the duplicate ("Payment already done"), we fan that failure out, and
+  // the reconciler only later re-polls and finds the real capture. In
+  // that order NOT EXISTS saw a row, skipped, and left the sibling stuck
+  // at failed/0.00 forever while its order said paid — the website and
+  // audit then showed one child's order paid and the other's FAILED off a
+  // single captured payment (SAL-ORD-2026-40412, 2026-08-08). Promote any
+  // non-paid sibling row first: a paid verdict must always win over an
+  // earlier failed one, exactly as it does for the order row itself.
   if (primary?.orderGroupId) {
+    await db.execute(sql`
+      UPDATE payments p SET
+        status = 'paid'::payment_status,
+        paid_amount = to_char(sib.total::numeric / 100, 'FM999999990.00'),
+        payment_mode = ${normalized.paymentMode ?? "CCAvenue"},
+        payment_date = ${normalized.paymentDate ?? formatPaymentDate(now)},
+        gateway_tracking_id = COALESCE(${normalized.trackingId ?? null}, p.gateway_tracking_id),
+        internal_payment_reference = ${orderId},
+        gateway_response_message = ${`sibling-of:${orderId} success:${normalized.trackingId ?? ""} (via ${source})`},
+        payment_finalized = true,
+        raw = COALESCE(
+          ${normalized.rawResponse != null ? JSON.stringify(normalized.rawResponse) : null}::jsonb,
+          p.raw
+        )
+      FROM orders sib
+      WHERE p.order_id = sib.id
+        AND sib.order_group_id = ${primary.orderGroupId}
+        AND sib.id <> ${orderId}
+        AND p.status <> 'paid'::payment_status
+    `);
     await db.execute(sql`
       INSERT INTO payments (
         order_id, provider, gateway_provider, gateway_order_id,
