@@ -86,5 +86,29 @@ fi
 DELETED="$(find "$DAILY_DIR" -name 'inventre_*.dump' -type f -mtime +$KEEP_DAILY_DAYS -print -delete | wc -l)"
 [ "$DELETED" -gt 0 ] && log "rotated out $DELETED daily backup(s) older than $KEEP_DAILY_DAYS days"
 
-log "done — $(ls -1 "$DAILY_DIR" | wc -l) daily, $(ls -1 "$MONTHLY_DIR" | wc -l) monthly on disk"
+# ── SOURCE CODE ─────────────────────────────────────────────────────────────
+# The database was not the only thing without a backup. On 2026-09-10 this
+# server had not reached GitHub since 21 June: no credential helper, no token,
+# the SSH key rejected, origin/main three months stale and 58 local commits
+# never pushed. Every line written since June existed on this disk and nowhere
+# else — a dead disk would have taken the source with it.
+#
+# `git bundle --all` is a single file containing every branch and the complete
+# history. Restore with: git clone <file> inventre
+#
+# This is a stopgap, not a substitute for a remote. Fix the GitHub credential
+# and this becomes belt-and-braces instead of the only belt.
+SOURCE_DIR="$ROOT/db_backups/source"
+mkdir -p "$SOURCE_DIR"
+BUNDLE="$SOURCE_DIR/inventre-source-${STAMP}.bundle"
+if git -C "$ROOT" bundle create "$BUNDLE" --all >/dev/null 2>&1 \
+   && git -C "$ROOT" bundle verify "$BUNDLE" >/dev/null 2>&1; then
+  log "source bundled: $(basename "$BUNDLE") — $(du -h "$BUNDLE" | cut -f1)"
+  find "$SOURCE_DIR" -name '*.bundle' -type f -mtime +$KEEP_DAILY_DAYS -delete
+else
+  rm -f "$BUNDLE"
+  log "WARNING: source bundle failed or did not verify (removed)"
+fi
+
+log "done — $(ls -1 "$DAILY_DIR" | wc -l) daily, $(ls -1 "$MONTHLY_DIR" | wc -l) monthly, $(ls -1 "$SOURCE_DIR" 2>/dev/null | wc -l) source bundle(s) on disk"
 exit 0
