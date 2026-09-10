@@ -158,3 +158,31 @@ describe("client / server boundary", () => {
     expect(offenders).toEqual([]);
   });
 });
+
+describe("repository hygiene", () => {
+  /**
+   * The repo root was cleaned by hand at 10:00 on 2026-09-10 and was dirty
+   * again by 12:25, because a deck generator writes .xlsx and .pdf there on
+   * every run. Manual cleaning is not a fix. .gitignore now covers the root,
+   * and this stops anyone committing past it.
+   *
+   * Anchored to the ROOT only — docs/guides/*.pdf is a tracked deliverable and
+   * must stay that way.
+   */
+  it("no document or media artefact is tracked at the repository root", () => {
+    const rootFiles = tracked("").filter((f) => !f.includes("/"));
+    expect(rootFiles.length).toBeGreaterThan(5); // must not pass vacuously
+
+    const junk = rootFiles.filter((f) =>
+      /\.(xlsx|xls|pptx|docx|pdf|csv|jpe?g|png|patch|zip|dump|bundle)$/i.test(f),
+    );
+    expect(junk).toEqual([]);
+  });
+
+  it("build output and backups are never tracked", () => {
+    const forbidden = tracked("").filter((f) =>
+      /^(\.next|node_modules|db_backups|public\.r2-backup)\//.test(f),
+    );
+    expect(forbidden).toEqual([]);
+  });
+});

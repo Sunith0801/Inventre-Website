@@ -135,3 +135,21 @@ inventre_deck_builder.py
 # Carries a root SSH password for the audit host. Rotate the credential
 # and remove it from the script before this is ever committed.
 /scripts/push-catalogue-to-audit.sh
+
+# ── Recurring generated artefacts (added 2026-09-10) ────────────────────────
+# These were cleaned out of the repo root by hand at 10:00 and were back by
+# 12:25, because a deck generator writes them here on every run. Cleaning is
+# not a fix; ignoring them is. Anchored to the ROOT so a legitimately tracked
+# document elsewhere (docs/guides/*.pdf) is unaffected.
+/*.xlsx
+/*.pptx
+/*.docx
+/*.pdf
+/*.csv
+/*.jpeg
+/*.jpg
+/*.patch
+
+# Local backup output: nightly pg_dump, the source bundles and their logs.
+# Never committed — the dumps carry PII and the bundles are 20 MB apiece.
+db_backups/

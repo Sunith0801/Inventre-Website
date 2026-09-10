@@ -17,11 +17,21 @@ import {
 import { normalizeGrade } from "@/server/grade-filter";
 
 // Schools where free (0-price) bookkits are limited to 1 per student ever.
-const FREE_BOOKKIT_RESTRICTED_SCHOOL_CODES = ["SMSAW"];
+// The bookkit rules themselves live in features/bookkit/domain/eligibility.ts:
+// pure, database-free and covered by 16 tests including an equivalence proof
+// against the branching that used to sit inline in this file. This route
+// gathers the facts; that module decides.
 import { getCurrentParent, type CurrentParent } from "@/server/session";
 import { readCart, addToCart, setCartQty, clearCart } from "@/server/repos/cart";
 import { failJson } from "@/server/observability/fail-json";
 import { parseJson } from "@/server/api-handler";
+import {
+  FREE_BOOKKIT_RESTRICTED_SCHOOL_CODES,
+  decideBookkitLimit,
+  effectivePricePaise,
+  isBookkitName,
+  isRestrictedFreeBookkit,
+} from "@/features/bookkit/domain/eligibility";
 import {
   isCatalogDisabledSchool,
   catalogDisabledMessage,
@@ -335,33 +345,37 @@ async function checkBookkitLimit(
       : Promise.resolve([] as { id: string; orderNumber: string }[]),
   ]);
 
-  if (!FREE_BOOKKIT_RESTRICTED_SCHOOL_CODES.includes(schoolRow[0]?.schoolCode ?? "")) return NOT_RESTRICTED;
+  // These two guards duplicate what `isRestrictedFreeBookkit` decides below.
+  // They stay only to skip the price query for the overwhelming majority of
+  // cart adds — query economy, not business logic. The authoritative gate is
+  // the domain call.
+  const schoolCode = schoolRow[0]?.schoolCode ?? null;
+  if (!schoolCode || !FREE_BOOKKIT_RESTRICTED_SCHOOL_CODES.includes(schoolCode)) return NOT_RESTRICTED;
 
   const variant = variantRow[0];
-  const isBookkit = /bookkit|bookset/i.test(variant?.productName ?? "");
-  if (!isBookkit) return NOT_RESTRICTED;
+  if (!isBookkitName(variant?.productName)) return NOT_RESTRICTED;
 
-  // Resolve price (school override takes priority)
-  let price = variant.basePrice ?? 0;
   const [schoolOverride] = await db
     .select({ overridePrice: productSchool.overridePrice })
     .from(productSchool)
     .where(and(eq(productSchool.productId, variant.productId), eq(productSchool.schoolId, schoolId)))
     .limit(1);
-  if (schoolOverride?.overridePrice !== null && schoolOverride?.overridePrice !== undefined) {
-    price = schoolOverride.overridePrice;
+
+  // The authoritative gate. School, product name and "is it actually free"
+  // are all decided in one place now.
+  const pricePaise = effectivePricePaise(variant.basePrice, schoolOverride?.overridePrice);
+  if (!isRestrictedFreeBookkit({ schoolCode, productName: variant.productName, pricePaise })) {
+    return NOT_RESTRICTED;
   }
-  if (price !== 0) return NOT_RESTRICTED; // only restrict free bookkits
 
   // From here on this IS a restricted free bookkit → always cap the line to 1.
-  if (qty > 1)
-    return {
-      block: {
-        message: "Only 1 complimentary bookkit can be added — it is a free item.",
-        orderNumber: null,
-      },
-      capToOne: true,
-    };
+  //
+  // Quantity is decided before the cart and history queries run, exactly as
+  // before: `decideBookkitLimit` judges quantity first, so the other two facts
+  // cannot affect the answer and the two queries are skipped.
+  if (qty > 1) {
+    return decideBookkitLimit({ requestedQty: qty, bookkitAlreadyInCart: false, priorRedemption: null });
+  }
 
   // Cart check + order history check in parallel
   const cart = cartRow[0];
@@ -402,31 +416,19 @@ async function checkBookkitLimit(
       : Promise.resolve([] as { orderId: string }[]),
   ]);
 
-  if (cartBookkits.length > 0) {
-    return {
-      block: {
-        message: "A complimentary bookkit is already in your cart. Only 1 is allowed per order.",
-        orderNumber: null,
-      },
-      capToOne: true,
-    };
-  }
-  if (bookkitInOrders.length > 0) {
-    // Link to the order that already carries the complimentary bookkit.
-    const blockingId = bookkitInOrders[0].orderId;
-    const orderNumber =
-      priorOrders.find((o) => o.id === blockingId)?.orderNumber ?? null;
-    return {
-      block: {
-        message:
-          "You have already received a complimentary bookkit in a previous order. Only 1 is allowed per student.",
-        orderNumber,
-      },
-      capToOne: true,
-    };
-  }
+  // Link to the order that already carries the complimentary bookkit, so the
+  // customer can be told which one.
+  const blockingId = bookkitInOrders[0]?.orderId;
+  const priorRedemption =
+    blockingId === undefined
+      ? null
+      : { orderNumber: priorOrders.find((o) => o.id === blockingId)?.orderNumber ?? null };
 
-  return { block: null, capToOne: true };
+  return decideBookkitLimit({
+    requestedQty: qty,
+    bookkitAlreadyInCart: cartBookkits.length > 0,
+    priorRedemption,
+  });
 }
 
 /** Union of every school any of this parent's children attends. Used by

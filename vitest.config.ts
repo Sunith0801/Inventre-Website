@@ -13,7 +13,10 @@ import { fileURLToPath } from "node:url";
  */
 export default defineConfig({
   test: {
-    include: ["tests/**/*.test.ts"],
+    // Tests live BESIDE the code they describe (features/**) as well as in
+    // tests/ for cross-cutting rules. A rule and its proof in the same folder
+    // is far more likely to be read — and updated — than one two directories away.
+    include: ["tests/**/*.test.ts", "features/**/*.test.ts"],
     environment: "node",
     reporters: "dot",
   },
