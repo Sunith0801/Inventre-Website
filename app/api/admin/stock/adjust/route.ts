@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
-import { parseBody } from "@/lib/parse-body";
+import { parseBody } from "@/server/parse-body";
 import { z } from "zod";
-import { isResponse, requirePermission } from "@/lib/admin-guard";
-import { logAdminActivity } from "@/lib/activity";
-import { adjust, getDefaultWarehouseId } from "@/lib/repos/inventory";
+import { isResponse, requirePermission } from "@/server/admin-guard";
+import { logAdminActivity } from "@/server/activity";
+import { adjust, getDefaultWarehouseId } from "@/server/repos/inventory";
 
 const Body = z.object({
   variantId: z.string().uuid(),

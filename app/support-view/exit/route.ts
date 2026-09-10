@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { SUPPORT_VIEW_COOKIE, verifySupportView } from "@/lib/support-view";
-import { logActivity } from "@/lib/activity";
+import { SUPPORT_VIEW_COOKIE, verifySupportView } from "@/server/support-view";
+import { logActivity } from "@/server/activity";
 
 /**
  * Agent-facing "Exit read-only view" — clears the support-view cookie and

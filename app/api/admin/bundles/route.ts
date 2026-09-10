@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { parseBody } from "@/lib/parse-body";
+import { parseBody } from "@/server/parse-body";
 import { z } from "zod";
 import { db } from "@/db/client";
 import {
@@ -10,8 +10,8 @@ import {
   products,
 } from "@/db/schema";
 import { eq, desc } from "drizzle-orm";
-import { isResponse, requirePermission } from "@/lib/admin-guard";
-import { logAdminActivity } from "@/lib/activity";
+import { isResponse, requirePermission } from "@/server/admin-guard";
+import { logAdminActivity } from "@/server/activity";
 
 export async function GET() {
   const guard = await requirePermission("catalog.read");

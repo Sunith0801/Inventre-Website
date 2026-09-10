@@ -13,8 +13,8 @@
  */
 import { db, schema } from "@/db/client";
 import { and, eq } from "drizzle-orm";
-import { runErpNextEducationSync } from "@/lib/importers/erpnext-education";
-import { ERPNEXT_EDUCATION_JOB_TYPE } from "@/lib/jobs/erpnext-education-sync";
+import { runErpNextEducationSync } from "@/server/importers/erpnext-education";
+import { ERPNEXT_EDUCATION_JOB_TYPE } from "@/server/jobs/erpnext-education-sync";
 
 async function main() {
   console.log(`[sync-education] start ${new Date().toISOString()}`);

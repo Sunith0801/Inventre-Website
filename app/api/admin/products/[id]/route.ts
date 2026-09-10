@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { parseBody } from "@/lib/parse-body";
+import { parseBody } from "@/server/parse-body";
 import { z } from "zod";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db/client";
@@ -13,10 +13,10 @@ import {
   itemPrices,
   priceLists,
 } from "@/db/schema";
-import { isResponse, requirePermission } from "@/lib/admin-guard";
-import { invalidateCatalog } from "@/lib/cache";
-import { logAdminActivity, diffFields } from "@/lib/activity";
-import { getSizeAxisNameForProduct } from "@/lib/repos/product-attribute-groups";
+import { isResponse, requirePermission } from "@/server/admin-guard";
+import { invalidateCatalog } from "@/server/cache";
+import { logAdminActivity, diffFields } from "@/server/activity";
+import { getSizeAxisNameForProduct } from "@/server/repos/product-attribute-groups";
 import { normalizeAttributeName } from "@/lib/normalize-attribute-name";
 
 const Variant = z.object({

@@ -4,11 +4,11 @@ import bcrypt from "@node-rs/bcrypt";
 import { eq, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { parents, otpLogs } from "@/db/schema";
-import { redis } from "@/lib/redis";
-import { createParentSession } from "@/lib/session";
+import { redis } from "@/server/redis";
+import { createParentSession } from "@/server/session";
 import { last10Sql } from "@/lib/phone";
-import { resolveFamilyParent } from "@/lib/parent-lookup";
-import { scheduleParentBackfill } from "@/lib/erp-backfill";
+import { resolveFamilyParent } from "@/server/parent-lookup";
+import { scheduleParentBackfill } from "@/server/erp-backfill";
 
 const Body = z.object({
   phone: z.string().regex(/^\d{10}$/),
@@ -105,7 +105,7 @@ export async function POST(req: Request) {
         );
       }
     }
-    const { generateCustomerCode } = await import("@/lib/customer-numbering");
+    const { generateCustomerCode } = await import("@/server/customer-numbering");
     const customerCode = await generateCustomerCode();
     [parent] = await db
       .insert(parents)

@@ -14,8 +14,8 @@
  */
 import { sql } from "drizzle-orm";
 import { db } from "@/db/client";
-import { emitOrderEvent, buildErpOrderPayload } from "@/lib/erp-bridge";
-import { isErpBridgeConfigured } from "@/lib/erp-config";
+import { emitOrderEvent, buildErpOrderPayload } from "@/server/erp-bridge";
+import { isErpBridgeConfigured } from "@/server/erp-config";
 
 const ORDERS = ["SAL-ORD-2026-27393", "SAL-ORD-2026-30648"];
 

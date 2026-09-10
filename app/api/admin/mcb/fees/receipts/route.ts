@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getFeesViewer, viewerHas } from "@/lib/fees-auth";
-import { lookupReceipts, mcbConfigured } from "@/lib/mcb/receipts";
+import { getFeesViewer, viewerHas } from "@/server/fees-auth";
+import { lookupReceipts, mcbConfigured } from "@/server/mcb/receipts";
 
 /**
  * Real fee receipts for one student, for the ledger's expand panel.

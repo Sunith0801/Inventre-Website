@@ -12,15 +12,15 @@ import {
   products,
   paymentEntries,
 } from "@/db/schema";
-import { requirePermission, isResponse } from "@/lib/admin-guard";
-import { generateOrderNumber } from "@/lib/repos/orders";
-import { financialYearOf } from "@/lib/invoice-numbering";
+import { requirePermission, isResponse } from "@/server/admin-guard";
+import { generateOrderNumber } from "@/server/repos/orders";
+import { financialYearOf } from "@/server/invoice-numbering";
 import { placeOfSupply } from "@/lib/tax";
 import {
   applyStockChange,
   getDefaultWarehouseId,
-} from "@/lib/repos/inventory";
-import { logAdminActivity } from "@/lib/activity";
+} from "@/server/repos/inventory";
+import { logAdminActivity } from "@/server/activity";
 
 export async function GET(req: Request) {
   const guard = await requirePermission("orders.read");
@@ -192,7 +192,7 @@ export async function POST(req: Request) {
   // Single transaction wraps order + items + (when paid) stock decrement +
   // payment ledger. A failure anywhere rolls back the entire write — no
   // orphan orders, no payment-without-stock drift.
-  const { allocPaymentNumber } = await import("@/lib/numbering");
+  const { allocPaymentNumber } = await import("@/server/numbering");
   let paidPaymentNumber: string | null = null;
   if (body.paymentStatus === "paid") {
     paidPaymentNumber = await allocPaymentNumber();

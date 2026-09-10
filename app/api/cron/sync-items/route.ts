@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { enqueueErpItemSync } from "@/lib/jobs/erp-item-sync";
-import { erpInboundDisabledResponse } from "@/lib/erp-inbound-guard";
+import { enqueueErpItemSync } from "@/server/jobs/erp-item-sync";
+import { erpInboundDisabledResponse } from "@/server/erp-inbound-guard";
 
 /**
  * Scheduled trigger for the ERP item sync.

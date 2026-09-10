@@ -1,4 +1,4 @@
-import type { CurrentAdmin } from "./session";
+import type { CurrentAdmin } from "@/server/session";
 
 export type AdminRole = CurrentAdmin["role"];
 

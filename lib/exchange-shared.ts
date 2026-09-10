@@ -5,7 +5,7 @@
  *
  * Server-side orchestrators (createExchange, transitionExchangeStatus,
  * etc.) live in lib/exchange.ts, which re-exports everything here for
- * back-compat — server code can keep importing from "@/lib/exchange"
+ * back-compat — server code can keep importing from "@/server/exchange"
  * and not notice the split.
  */
 

@@ -18,7 +18,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { sql } from "drizzle-orm";
 import { db } from "@/db/client";
-import { isResponse, requirePermission } from "@/lib/admin-guard";
+import { isResponse, requirePermission } from "@/server/admin-guard";
 import { last10Sql } from "@/lib/phone";
 
 const Query = z.object({

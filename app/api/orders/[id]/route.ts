@@ -2,18 +2,18 @@ import { NextResponse } from "next/server";
 import { and, eq, desc } from "drizzle-orm";
 import { db } from "@/db/client";
 import { returns, orders, missingItemClaims, schools } from "@/db/schema";
-import { requireParent, isResponse } from "@/lib/parent-guard";
+import { requireParent, isResponse } from "@/server/parent-guard";
 import {
   getParentOrderDetailFromErp,
   getParentOrderDetailLocal,
-} from "@/lib/erp-customer-orders";
-import { getOrderPlacementInfo } from "@/lib/order-eligibility";
+} from "@/server/erp-customer-orders";
+import { getOrderPlacementInfo } from "@/server/order-eligibility";
 import {
   isExchangeTester,
   isExchangeScopeRelaxed,
   isExchangeOwnershipRelaxed,
-} from "@/lib/exchange-gate";
-import { classifyReturnItems } from "@/lib/return-line-eligibility";
+} from "@/server/exchange-gate";
+import { classifyReturnItems } from "@/server/return-line-eligibility";
 
 // Schools whose exchange collection happens at the Inventre store, not the
 // school office. The order-page exchange banner uses this to swap "school"

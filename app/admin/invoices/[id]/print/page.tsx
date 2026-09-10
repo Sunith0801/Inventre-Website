@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { invoices, invoiceItems, parents, orders } from "@/db/schema";
-import { getCurrentUser } from "@/lib/session";
+import { getCurrentUser } from "@/server/session";
 
 export const dynamic = "force-dynamic";
 

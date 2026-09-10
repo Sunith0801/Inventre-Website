@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/db/client";
 import { sql } from "drizzle-orm";
 import * as XLSX from "xlsx";
-import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
+import { requireAnyPermission, isResponse } from "@/server/admin-guard";
 
 export const dynamic = "force-dynamic";
 

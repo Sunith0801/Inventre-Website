@@ -9,8 +9,8 @@ async function main() {
   const [phone, email] = process.argv.slice(2);
   if (!phone || !email) throw new Error("usage: test-notify-dryrun.ts <phone> <email>");
 
-  const { sendOrderConfirmationSms } = await import("@/lib/sms");
-  const { sendEmail } = await import("@/lib/email");
+  const { sendOrderConfirmationSms } = await import("@/server/notify/sms");
+  const { sendEmail } = await import("@/server/notify/email");
 
   try {
     const sms = await sendOrderConfirmationSms(phone, "Sunith", "SAL-ORD-TEST-001");

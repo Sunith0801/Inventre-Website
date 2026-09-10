@@ -1,23 +1,23 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
-import { failJson } from "@/lib/observability/fail-json";
+import { failJson } from "@/server/observability/fail-json";
 import { randomUUID } from "node:crypto";
 import { db } from "@/db/client";
 import { orders, orderItems, payments } from "@/db/schema";
-import { getCurrentParent } from "@/lib/session";
-import { readCart, clearCart, type CartLine } from "@/lib/repos/cart";
-import { generateOrderNumber } from "@/lib/repos/orders";
-import { buildRedirectPayload, isCCAvenueConfigured } from "@/lib/ccavenue";
-import { financialYearOf } from "@/lib/invoice-numbering";
+import { getCurrentParent } from "@/server/session";
+import { readCart, clearCart, type CartLine } from "@/server/repos/cart";
+import { generateOrderNumber } from "@/server/repos/orders";
+import { buildRedirectPayload, isCCAvenueConfigured } from "@/server/ccavenue";
+import { financialYearOf } from "@/server/invoice-numbering";
 import { placeOfSupply } from "@/lib/tax";
-import { getDefaultWarehouseId } from "@/lib/repos/inventory";
+import { getDefaultWarehouseId } from "@/server/repos/inventory";
 import {
   resolveAppliedCoupon,
   clearAppliedCoupon,
-} from "@/lib/cart-coupon";
-import { enqueueOrderEvent } from "@/lib/erp-bridge";
-import { notifyOrderConfirmed } from "@/lib/order-confirmation";
+} from "@/server/cart-coupon";
+import { enqueueOrderEvent } from "@/server/erp-bridge";
+import { notifyOrderConfirmed } from "@/server/order-confirmation";
 
 /**
  * Sibling of /api/checkout/create-order, but routes through CCAvenue.
@@ -188,7 +188,7 @@ export async function POST(req: Request) {
   // ERPNext-driven shipping fee — compute PER GROUP because the rule set
   // is per-school. The basket-level totals (paid + discount) inform each
   // rule but the school selector differs.
-  const { computeShippingFeePaise } = await import("@/lib/delivery-fee");
+  const { computeShippingFeePaise } = await import("@/server/delivery-fee");
 
   // Build per-group totals first so we can compute the basket grand total
   // (the figure CCAvenue captures). Coupon discount is applied to the

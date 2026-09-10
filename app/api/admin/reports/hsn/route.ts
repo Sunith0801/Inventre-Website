@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { eq, and, gte, lte, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { invoices, invoiceItems } from "@/db/schema";
-import { isResponse, requirePermission } from "@/lib/admin-guard";
+import { isResponse, requirePermission } from "@/server/admin-guard";
 
 export async function GET(req: Request) {
   const guard = await requirePermission("reports.read");

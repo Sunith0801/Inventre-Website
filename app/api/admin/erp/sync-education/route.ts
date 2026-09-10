@@ -2,12 +2,12 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db, schema } from "@/db/client";
 import { eq, desc } from "drizzle-orm";
-import { isResponse, requirePermission } from "@/lib/admin-guard";
+import { isResponse, requirePermission } from "@/server/admin-guard";
 import {
   enqueueErpNextEducationSync,
   ERPNEXT_EDUCATION_JOB_TYPE,
-} from "@/lib/jobs/erpnext-education-sync";
-import { erpInboundDisabledResponse } from "@/lib/erp-inbound-guard";
+} from "@/server/jobs/erpnext-education-sync";
+import { erpInboundDisabledResponse } from "@/server/erp-inbound-guard";
 
 const Body = z.object({
   maxStudents: z.number().int().min(1).optional(),

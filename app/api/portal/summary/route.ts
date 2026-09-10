@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
-import { requireParent, isResponse } from "@/lib/parent-guard";
+import { requireParent, isResponse } from "@/server/parent-guard";
 import {
   listParentOrdersFromErp,
   getParentOrderDetailFromErp,
-} from "@/lib/erp-customer-orders";
+} from "@/server/erp-customer-orders";
 
 /**
  * Data for the Parent Help Portal student card (inventre.in/portal):

@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
-import { parseBody } from "@/lib/parse-body";
+import { parseBody } from "@/server/parse-body";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { productAttributeValues } from "@/db/schema";
-import { isResponse, requirePermission } from "@/lib/admin-guard";
-import { logAdminActivity } from "@/lib/activity";
+import { isResponse, requirePermission } from "@/server/admin-guard";
+import { logAdminActivity } from "@/server/activity";
 
 const Body = z.object({
   value: z.string().min(1),

@@ -15,7 +15,7 @@ config({ path: path.resolve(process.cwd(), ".env.local") });
 async function main() {
   const orderId = process.argv[2];
   if (!orderId) throw new Error("usage: test-order-notify.ts <orderId>");
-  const { notifyOrderConfirmed } = await import("@/lib/order-confirmation");
+  const { notifyOrderConfirmed } = await import("@/server/order-confirmation");
   await notifyOrderConfirmed(orderId);
   const { db } = await import("@/db/client");
   const { sql } = await import("drizzle-orm");

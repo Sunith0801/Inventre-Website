@@ -7,7 +7,7 @@ import {
   PageHeader, Card, Td, Tr, Badge, EmptyState, SearchInput, Toolbar, FilterChips, Button,
 } from "@/components/admin/ui/primitives";
 import { redirect } from "next/navigation";
-import { requireAnyPermission, isResponse, hasPermission } from "@/lib/admin-guard";
+import { requireAnyPermission, isResponse, hasPermission } from "@/server/admin-guard";
 import { SchoolRowActions } from "@/components/admin/SchoolRowActions";
 
 export const dynamic = "force-dynamic";

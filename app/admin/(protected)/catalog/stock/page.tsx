@@ -25,7 +25,7 @@ import {
 } from "@/components/admin/ui/primitives";
 import { ExportButton } from "@/components/admin/ExportButton";
 import { redirect } from "next/navigation";
-import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
+import { requireAnyPermission, isResponse } from "@/server/admin-guard";
 
 export const dynamic = "force-dynamic";
 

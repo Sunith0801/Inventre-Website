@@ -3,11 +3,11 @@ import { z } from "zod";
 import bcrypt from "@node-rs/bcrypt";
 import { sql } from "drizzle-orm";
 import { db } from "@/db/client";
-import { redis } from "@/lib/redis";
-import { rateLimit } from "@/lib/rate-limit";
-import { sendSms, generateOtp } from "@/lib/sms";
-import { getCurrentParent } from "@/lib/session";
-import { parseJson } from "@/lib/api-handler";
+import { redis } from "@/server/redis";
+import { rateLimit } from "@/server/rate-limit";
+import { sendSms, generateOtp } from "@/server/notify/sms";
+import { getCurrentParent } from "@/server/session";
+import { parseJson } from "@/server/api-handler";
 
 const Body = z.object({
   newPhone: z.string().regex(/^\d{10}$/),

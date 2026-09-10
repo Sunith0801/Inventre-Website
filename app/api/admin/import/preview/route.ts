@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { isResponse, requirePermission } from "@/lib/admin-guard";
-import { detectImporter, parseSpreadsheet, IMPORTERS } from "@/lib/importers";
+import { isResponse, requirePermission } from "@/server/admin-guard";
+import { detectImporter, parseSpreadsheet, IMPORTERS } from "@/server/importers";
 
 export const runtime = "nodejs"; // need Buffer
 export const maxDuration = 60;

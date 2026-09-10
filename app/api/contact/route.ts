@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/db/client";
 import { contactSubmissions } from "@/db/schema";
-import { rateLimit } from "@/lib/rate-limit";
+import { rateLimit } from "@/server/rate-limit";
 
 const Body = z.object({
   kind: z.enum(["parent", "school", "business"]),

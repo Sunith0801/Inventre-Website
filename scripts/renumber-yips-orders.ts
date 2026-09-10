@@ -22,7 +22,7 @@ import { config } from "dotenv";
 import { and, eq, ilike } from "drizzle-orm";
 import { db } from "@/db/client";
 import { orders, payments } from "@/db/schema";
-import { enqueueOrderEvent } from "@/lib/erp-bridge";
+import { enqueueOrderEvent } from "@/server/erp-bridge";
 
 config({ path: ".env.local" });
 config();

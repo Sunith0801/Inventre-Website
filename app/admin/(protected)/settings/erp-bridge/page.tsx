@@ -9,9 +9,9 @@ import { db } from "@/db/client";
 import { webhookDeliveries, webhookEndpoints, erpOutboundQueue } from "@/db/schema";
 import { ReplayButton } from "./replay-button";
 import { SendNowButton } from "./send-now-button";
-import { getErpConfig, isErpBridgeConfigured, isErpPollConfigured } from "@/lib/erp-config";
-import { getQueueCounts } from "@/lib/erp-drain";
-import { getSyncStateRows } from "@/lib/erp-poll";
+import { getErpConfig, isErpBridgeConfigured, isErpPollConfigured } from "@/server/erp-config";
+import { getQueueCounts } from "@/server/erp-drain";
+import { getSyncStateRows } from "@/server/erp-poll";
 
 export const dynamic = "force-dynamic";
 

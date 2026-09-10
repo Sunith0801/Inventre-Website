@@ -60,8 +60,8 @@ import {
   productVariantAttributes,
   parents,
 } from "@/db/schema";
-import { enqueueOrderEvent } from "@/lib/erp-bridge";
-import { financialYearOf } from "@/lib/invoice-numbering";
+import { enqueueOrderEvent } from "@/server/erp-bridge";
+import { financialYearOf } from "@/server/invoice-numbering";
 import { placeOfSupply } from "@/lib/tax";
 
 const SCHOOL_SLUG = "yips-young-india-police-school";

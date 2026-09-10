@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import crypto from "crypto";
-import { pollOpenOrders } from "@/lib/erp-poll";
-import { getErpConfig } from "@/lib/erp-config";
+import { pollOpenOrders } from "@/server/erp-poll";
+import { getErpConfig } from "@/server/erp-config";
 import {
   erpOrderPollDisabledResponse,
   isOrderPollOnlyMode,
-} from "@/lib/erp-inbound-guard";
+} from "@/server/erp-inbound-guard";
 
 /**
  * Cron-only entry point for the ERP status poller.

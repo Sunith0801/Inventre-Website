@@ -3,10 +3,10 @@ import { z } from "zod";
 import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/db/client";
 import { productSchool, productGrades, products, schools } from "@/db/schema";
-import { isResponse, requirePermission } from "@/lib/admin-guard";
-import { parseJson } from "@/lib/api-handler";
-import { invalidateCatalog } from "@/lib/cache";
-import { logAdminActivity } from "@/lib/activity";
+import { isResponse, requirePermission } from "@/server/admin-guard";
+import { parseJson } from "@/server/api-handler";
+import { invalidateCatalog } from "@/server/cache";
+import { logAdminActivity } from "@/server/activity";
 
 /**
  * Bulk-tag a set of products to a single (school, grade) tuple.

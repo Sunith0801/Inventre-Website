@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
-import { parseBody } from "@/lib/parse-body";
+import { parseBody } from "@/server/parse-body";
 import { z } from "zod";
-import { isResponse, requirePermission } from "@/lib/admin-guard";
-import { getBalance, getLedger, adjust } from "@/lib/repos/loyalty";
-import { logAdminActivity } from "@/lib/activity";
+import { isResponse, requirePermission } from "@/server/admin-guard";
+import { getBalance, getLedger, adjust } from "@/server/repos/loyalty";
+import { logAdminActivity } from "@/server/activity";
 
 export async function GET(
   _: Request,

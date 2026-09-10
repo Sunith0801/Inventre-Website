@@ -31,13 +31,13 @@ config({ path: path.resolve(process.cwd(), ".env.local") }); // won't override p
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { orders, returns, missingItemClaims } from "@/db/schema";
-import { buildOrderMatchIndex, matchAuditItem } from "@/lib/audit-item-match";
+import { buildOrderMatchIndex, matchAuditItem } from "@/server/audit-item-match";
 import {
   createExchangeFromAudit,
   createMissingFromAudit,
   type AuditExchangeCreate,
   type AuditMissingCreate,
-} from "@/lib/audit-inbound";
+} from "@/server/audit-inbound";
 
 const COMMIT = process.argv.includes("--commit");
 const SCRATCH =

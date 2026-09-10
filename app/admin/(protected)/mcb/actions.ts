@@ -5,8 +5,8 @@ import { guardians, parents, schools, studentGuardianLinks, students } from "@/d
 import { and, eq, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
-import { getCurrentUser } from "@/lib/session";
-import { logAdminActivity } from "@/lib/activity";
+import { getCurrentUser } from "@/server/session";
+import { logAdminActivity } from "@/server/activity";
 
 /** Best-effort client IP for server actions (no Request object → read headers). */
 async function clientIpFromHeaders(): Promise<string | null> {

@@ -3,7 +3,7 @@ import Link from "next/link";
 import { ChevronLeft } from "lucide-react";
 import { sql } from "drizzle-orm";
 import { db } from "@/db/client";
-import { requirePermission, isResponse } from "@/lib/admin-guard";
+import { requirePermission, isResponse } from "@/server/admin-guard";
 import { ADMIN_PAGES, ADMIN_PERMISSION_GROUPS } from "@/lib/admin-permissions";
 import { UserPermissionsEditor } from "@/components/admin/UserPermissionsEditor";
 import { RecordHistory } from "@/components/admin/RecordHistory";

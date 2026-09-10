@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 import { eq, and } from "drizzle-orm";
 import { db } from "@/db/client";
 import { addresses } from "@/db/schema";
-import { requirePermission, isResponse } from "@/lib/admin-guard";
-import { logAdminActivity } from "@/lib/activity";
+import { requirePermission, isResponse } from "@/server/admin-guard";
+import { logAdminActivity } from "@/server/activity";
 
 export async function DELETE(
   req: Request,

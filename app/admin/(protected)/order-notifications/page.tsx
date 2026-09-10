@@ -8,7 +8,7 @@ import {
   type ChannelRow,
 } from "@/components/admin/NotificationOrderRow";
 import { AutoRefresh } from "@/components/admin/AutoRefresh";
-import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
+import { requireAnyPermission, isResponse } from "@/server/admin-guard";
 
 export const dynamic = "force-dynamic";
 

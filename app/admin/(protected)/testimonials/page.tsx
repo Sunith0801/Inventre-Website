@@ -3,7 +3,7 @@ import { db } from "@/db/client";
 import { testimonials, schools } from "@/db/schema";
 import { TestimonialList } from "@/components/admin/TestimonialList";
 import { redirect } from "next/navigation";
-import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
+import { requireAnyPermission, isResponse } from "@/server/admin-guard";
 
 export default async function TestimonialsPage() {
   const guard = await requireAnyPermission("testimonials.read", "testimonials.write");

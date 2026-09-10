@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import crypto from "crypto";
-import { drainOutboundQueue } from "@/lib/erp-drain";
-import { getErpConfig } from "@/lib/erp-config";
+import { drainOutboundQueue } from "@/server/erp-drain";
+import { getErpConfig } from "@/server/erp-config";
 
 /**
  * Cron-only entry point for the buffered-outbox drainer.

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { requireParent, isResponse } from "@/lib/parent-guard";
-import { listParentOrdersFromErp } from "@/lib/erp-customer-orders";
+import { requireParent, isResponse } from "@/server/parent-guard";
+import { listParentOrdersFromErp } from "@/server/erp-customer-orders";
 
 export async function GET() {
   const me = await requireParent();

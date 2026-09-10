@@ -3,7 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { db } from "@/db/client";
 import { products, schools, productSchool } from "@/db/schema";
 import { ProductSchoolEditor } from "@/components/admin/ProductSchoolEditor";
-import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
+import { requireAnyPermission, isResponse } from "@/server/admin-guard";
 
 export default async function ProductSchoolsPage({
   params,

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { lookupGiftCard, isValidCode } from "@/lib/repos/gift-cards";
-import { requireParent, isResponse } from "@/lib/parent-guard";
+import { lookupGiftCard, isValidCode } from "@/server/repos/gift-cards";
+import { requireParent, isResponse } from "@/server/parent-guard";
 
 /**
  * Parent-facing gift-card preview at checkout. Returns balance + status

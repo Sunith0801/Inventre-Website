@@ -16,7 +16,7 @@ import { config as loadEnv } from "dotenv";
 loadEnv({ path: ".env.local" });
 loadEnv({ path: ".env.deploy", override: true });
 
-import { sendEmail } from "../lib/email";
+import { sendEmail } from "../server/notify/email";
 
 async function main() {
   const to = process.argv[2];

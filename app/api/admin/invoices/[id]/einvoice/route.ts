@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { requirePermission, isResponse } from "@/lib/admin-guard";
-import { submitIrn } from "@/lib/einvoice";
-import { logAdminActivity } from "@/lib/activity";
+import { requirePermission, isResponse } from "@/server/admin-guard";
+import { submitIrn } from "@/server/einvoice";
+import { logAdminActivity } from "@/server/activity";
 
 /**
  * Submit a sales invoice to the NIC IRP and persist the IRN + signed QR.

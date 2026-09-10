@@ -12,7 +12,7 @@
  */
 import { db } from "@/db/client";
 import { sql } from "drizzle-orm";
-import { generateInvoiceForOrder } from "@/lib/repos/invoices";
+import { generateInvoiceForOrder } from "@/server/repos/invoices";
 
 async function main() {
   const limit = Number(process.argv[2] ?? "50000");

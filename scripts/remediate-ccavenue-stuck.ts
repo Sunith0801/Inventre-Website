@@ -46,8 +46,8 @@ import { db } from "@/db/client";
 import {
   fetchCCAvenueOrderStatus,
   isCCAvenueConfigured,
-} from "@/lib/ccavenue";
-import { finalizeOrderPayment } from "@/lib/ccavenue-finalize";
+} from "@/server/ccavenue";
+import { finalizeOrderPayment } from "@/server/ccavenue-finalize";
 
 const APPLY = process.argv.includes("--apply");
 const CAPTURED_ONLY = process.argv.includes("--captured-only");

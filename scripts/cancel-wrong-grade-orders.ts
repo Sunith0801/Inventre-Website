@@ -40,7 +40,7 @@ config({ path: path.resolve(process.cwd(), ".env") });
 import { eq, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { orders } from "@/db/schema";
-import { enqueueOrderEvent } from "@/lib/erp-bridge";
+import { enqueueOrderEvent } from "@/server/erp-bridge";
 
 type Flags = { apply: boolean; order?: string; kind?: string };
 

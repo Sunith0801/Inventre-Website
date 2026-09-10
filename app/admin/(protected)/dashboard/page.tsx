@@ -10,9 +10,9 @@ import {
   ArrowRight,
 } from "lucide-react";
 import Link from "next/link";
-import { getAdminStats } from "@/lib/repos/admin-stats";
+import { getAdminStats } from "@/server/repos/admin-stats";
 import { UniversalSearch } from "@/components/admin/UniversalSearch";
-import { getCurrentUser } from "@/lib/session";
+import { getCurrentUser } from "@/server/session";
 import {
   PageHeader,
   Stat,

@@ -3,8 +3,8 @@ import * as XLSX from "xlsx";
 import {
   buildProductExportRows,
   PRODUCT_EXPORT_HEADER,
-} from "@/lib/product-export";
-import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
+} from "@/server/product-export";
+import { requireAnyPermission, isResponse } from "@/server/admin-guard";
 
 export const dynamic = "force-dynamic";
 

@@ -18,8 +18,8 @@ config({ path: ".env" });
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { orders, payments } from "@/db/schema";
-import { finalizeOrderPayment } from "@/lib/ccavenue-finalize";
-import type { NormalizedGatewayResult } from "@/lib/ccavenue";
+import { finalizeOrderPayment } from "@/server/ccavenue-finalize";
+import type { NormalizedGatewayResult } from "@/server/ccavenue";
 
 async function main() {
   const orderNumber = process.argv[2];

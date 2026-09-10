@@ -17,10 +17,10 @@ import bcrypt from "@node-rs/bcrypt";
 import { eq, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { parents, students } from "@/db/schema";
-import { redis } from "@/lib/redis";
-import { rateLimit } from "@/lib/rate-limit";
-import { createParentSession } from "@/lib/session";
-import { upsertGuardianLink } from "@/lib/repos/guardians";
+import { redis } from "@/server/redis";
+import { rateLimit } from "@/server/rate-limit";
+import { createParentSession } from "@/server/session";
+import { upsertGuardianLink } from "@/server/repos/guardians";
 
 const Body = z.object({
   studentId: z.string().uuid(),
@@ -146,7 +146,7 @@ export async function POST(req: Request) {
     `)) as unknown as Array<{ guardian_name: string | null; email: string | null }>;
     const g = guardian[0] ?? { guardian_name: null, email: null };
     // newPhone must be free at this point (checked below regardless).
-    const { generateCustomerCode } = await import("@/lib/customer-numbering");
+    const { generateCustomerCode } = await import("@/server/customer-numbering");
     const customerCode = await generateCustomerCode();
     // ON CONFLICT race-recovery against the parents_phone_idx unique
     // index. If a parallel OTP-verify on the same number microseconds

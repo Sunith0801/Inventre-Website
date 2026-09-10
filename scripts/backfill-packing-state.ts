@@ -10,7 +10,7 @@
 import { readFileSync } from "node:fs";
 import { sql } from "drizzle-orm";
 import { db } from "@/db/client";
-import { erpAuthedGet } from "@/lib/erp-jwt";
+import { erpAuthedGet } from "@/server/erp-jwt";
 
 type Detail = {
   header?: { name?: string };

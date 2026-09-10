@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Truck, Plus } from "lucide-react";
-import { listSuppliers } from "@/lib/repos/suppliers";
+import { listSuppliers } from "@/server/repos/suppliers";
 import {
   PageHeader,
   Card,
@@ -15,7 +15,7 @@ import {
   statusTone,
 } from "@/components/admin/ui/primitives";
 import { redirect } from "next/navigation";
-import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
+import { requireAnyPermission, isResponse } from "@/server/admin-guard";
 
 export const dynamic = "force-dynamic";
 

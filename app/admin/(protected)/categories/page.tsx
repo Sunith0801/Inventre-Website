@@ -3,7 +3,7 @@ import { db } from "@/db/client";
 import { categories } from "@/db/schema";
 import { CategoryEditor } from "@/components/admin/CategoryEditor";
 import { redirect } from "next/navigation";
-import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
+import { requireAnyPermission, isResponse } from "@/server/admin-guard";
 
 export default async function CategoriesPage() {
   const guard = await requireAnyPermission("catalog.read", "catalog.write");

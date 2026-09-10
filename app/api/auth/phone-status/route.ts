@@ -50,9 +50,9 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { sql } from "drizzle-orm";
 import { db } from "@/db/client";
-import { rateLimit } from "@/lib/rate-limit";
+import { rateLimit } from "@/server/rate-limit";
 import { last10Sql } from "@/lib/phone";
-import { resolveFamilyParent, familyHasVerifiedStudent } from "@/lib/parent-lookup";
+import { resolveFamilyParent, familyHasVerifiedStudent } from "@/server/parent-lookup";
 
 const Body = z.object({ phone: z.string().regex(/^\d{10}$/) });
 

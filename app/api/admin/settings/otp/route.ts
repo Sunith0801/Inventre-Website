@@ -1,15 +1,15 @@
 import { NextResponse } from "next/server";
-import { parseBody } from "@/lib/parse-body";
+import { parseBody } from "@/server/parse-body";
 import { z } from "zod";
 import { db } from "@/db/client";
 import { systemSettings } from "@/db/schema";
-import { isResponse, requirePermission } from "@/lib/admin-guard";
-import { logAdminActivity } from "@/lib/activity";
+import { isResponse, requirePermission } from "@/server/admin-guard";
+import { logAdminActivity } from "@/server/activity";
 import {
   SMS_REAL_SEND_KEY,
   EMAIL_REAL_SEND_KEY,
   getOtpToggles,
-} from "@/lib/otp-toggles";
+} from "@/server/otp-toggles";
 
 export const dynamic = "force-dynamic";
 

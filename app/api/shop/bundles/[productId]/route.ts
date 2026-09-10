@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { getCurrentParent } from "@/lib/session";
-import { getBundlePdpConfig } from "@/lib/bundle-engine";
+import { getCurrentParent } from "@/server/session";
+import { getBundlePdpConfig } from "@/server/bundle-engine";
 
 /**
  * Public bundle PDP config — render the dynamic selectors on the parent's PDP.

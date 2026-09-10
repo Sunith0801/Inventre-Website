@@ -2,7 +2,7 @@ import { db } from "@/db/client";
 import { sql } from "drizzle-orm";
 import McbDashboard from "./McbDashboard";
 import { redirect } from "next/navigation";
-import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
+import { requireAnyPermission, isResponse } from "@/server/admin-guard";
 
 export const dynamic = "force-dynamic";
 

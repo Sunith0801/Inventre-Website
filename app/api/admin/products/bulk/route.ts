@@ -3,9 +3,9 @@ import { z } from "zod";
 import { inArray } from "drizzle-orm";
 import { db } from "@/db/client";
 import { products } from "@/db/schema";
-import { isResponse, requirePermission } from "@/lib/admin-guard";
-import { invalidateCatalog } from "@/lib/cache";
-import { logAdminActivity } from "@/lib/activity";
+import { isResponse, requirePermission } from "@/server/admin-guard";
+import { invalidateCatalog } from "@/server/cache";
+import { logAdminActivity } from "@/server/activity";
 
 /**
  * Bulk operations across products. Today only status change is supported —

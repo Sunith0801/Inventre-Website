@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { rateLimit } from "@/lib/rate-limit";
+import { rateLimit } from "@/server/rate-limit";
 
 /**
  * Newsletter signup endpoint. Currently logs the email (dev) — wire to your

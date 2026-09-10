@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { eq, desc } from "drizzle-orm";
-import { failJson } from "@/lib/observability/fail-json";
+import { failJson } from "@/server/observability/fail-json";
 import { db } from "@/db/client";
 import { returns } from "@/db/schema";
-import { requireParent, isResponse } from "@/lib/parent-guard";
-import { isExchangeTester } from "@/lib/exchange-gate";
-import { createExchange } from "@/lib/exchange";
+import { requireParent, isResponse } from "@/server/parent-guard";
+import { isExchangeTester } from "@/server/exchange-gate";
+import { createExchange } from "@/server/exchange";
 
 const PhotoSchema = z.object({
   url: z.string().url(),

@@ -52,7 +52,7 @@ import {
   fetchCCAvenueOrderStatus,
   mapCCAvenueStatus,
   type NormalizedGatewayResult,
-} from "@/lib/ccavenue";
+} from "@/server/ccavenue";
 
 type Flags = {
   apply: boolean;

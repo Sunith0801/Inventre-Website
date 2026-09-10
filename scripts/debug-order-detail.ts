@@ -5,7 +5,7 @@ config({ path: path.resolve(process.cwd(), ".env.deploy") });
 config({ path: path.resolve(process.cwd(), ".env.local") });
 config({ path: path.resolve(process.cwd(), ".env") });
 
-import { getParentOrderDetailFromErp, getParentOrderDetailLocal } from "@/lib/erp-customer-orders";
+import { getParentOrderDetailFromErp, getParentOrderDetailLocal } from "@/server/erp-customer-orders";
 
 async function main() {
   const PARENT = "a6fee0d9-1fcb-4526-ab9f-f47030933cf1";

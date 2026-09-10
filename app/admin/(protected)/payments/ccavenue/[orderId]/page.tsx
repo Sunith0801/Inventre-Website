@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { db } from "@/db/client";
 import { orders, payments, orderItems, parents, students } from "@/db/schema";
-import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
+import { requireAnyPermission, isResponse } from "@/server/admin-guard";
 import {
   PageHeader,
   Card,

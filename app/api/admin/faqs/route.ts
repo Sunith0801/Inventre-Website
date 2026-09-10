@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
-import { parseBody } from "@/lib/parse-body";
+import { parseBody } from "@/server/parse-body";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/db/client";
 import { faqs } from "@/db/schema";
-import { isResponse, requirePermission } from "@/lib/admin-guard";
-import { invalidate } from "@/lib/cache";
-import { logAdminActivity } from "@/lib/activity";
+import { isResponse, requirePermission } from "@/server/admin-guard";
+import { invalidate } from "@/server/cache";
+import { logAdminActivity } from "@/server/activity";
 
 const Body = z.object({
   question: z.string().min(1),

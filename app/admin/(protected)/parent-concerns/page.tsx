@@ -5,7 +5,7 @@ import { db } from "@/db/client";
 import { concerns } from "@/db/schema";
 import { PageHeader, Card, Th, Td, Tr, EmptyState, Badge } from "@/components/admin/ui/primitives";
 import { redirect } from "next/navigation";
-import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
+import { requireAnyPermission, isResponse } from "@/server/admin-guard";
 
 /**
  * Admin "Parent Concerns" module — the support team's queue for concerns

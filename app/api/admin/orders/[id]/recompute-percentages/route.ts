@@ -8,8 +8,8 @@ import {
   shipmentItems,
   invoices,
 } from "@/db/schema";
-import { requirePermission, isResponse, assertSchoolAccess } from "@/lib/admin-guard";
-import { logAdminActivity } from "@/lib/activity";
+import { requirePermission, isResponse, assertSchoolAccess } from "@/server/admin-guard";
+import { logAdminActivity } from "@/server/activity";
 
 /**
  * Recompute delivered_percent + billed_percent for an order

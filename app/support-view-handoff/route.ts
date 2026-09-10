@@ -3,7 +3,7 @@ import {
   SUPPORT_VIEW_COOKIE,
   isSupportViewEnabled,
   verifySupportView,
-} from "@/lib/support-view";
+} from "@/server/support-view";
 
 /**
  * Support portal redirects the agent's iframe here with a fresh, short-lived

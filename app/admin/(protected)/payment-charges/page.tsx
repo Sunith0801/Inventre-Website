@@ -1,5 +1,5 @@
 import { PageHeader, Card, CardHeader } from "@/components/admin/ui/primitives";
-import { getPaymentCharges } from "@/lib/payment-charges";
+import { getPaymentCharges } from "@/server/payment-charges";
 import { PaymentChargesForm } from "./form";
 
 export const dynamic = "force-dynamic";

@@ -10,7 +10,7 @@ import {
   productGrades,
   schools,
 } from "@/db/schema";
-import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
+import { requireAnyPermission, isResponse } from "@/server/admin-guard";
 import { PageHeader } from "@/components/admin/ui/primitives";
 import { BookkitWizard, type AttributeOption } from "./_wizard";
 

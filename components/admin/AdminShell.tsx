@@ -42,7 +42,7 @@ import {
   Send,
   LifeBuoy,
 } from "lucide-react";
-import type { CurrentAdmin } from "@/lib/session";
+import type { CurrentAdmin } from "@/server/session";
 import { isReadOnlyAdmin, canSeePage } from "@/lib/admin-permissions";
 import { cn } from "@/lib/cn";
 import { TopProgressBar } from "@/components/admin/TopProgressBar";

@@ -7,7 +7,7 @@ import {
   ArrowRight,
 } from "lucide-react";
 import { redirect } from "next/navigation";
-import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
+import { requireAnyPermission, isResponse } from "@/server/admin-guard";
 
 const sections = [
   {

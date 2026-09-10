@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { sql } from "drizzle-orm";
 import { db } from "@/db/client";
-import { redis } from "@/lib/redis";
+import { redis } from "@/server/redis";
 
 export async function GET() {
   const checks = {

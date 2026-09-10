@@ -63,7 +63,7 @@ import {
   postErpEvent,
   enqueueOrderEvent,
   emitStudentEvent,
-} from "@/lib/erp-bridge";
+} from "@/server/erp-bridge";
 
 const has = (f: string) => process.argv.includes(f);
 const APPLY = has("--apply");

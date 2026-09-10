@@ -221,7 +221,7 @@ async function main() {
         // (idempotent) — cheap, and avoids needing a second pass after
         // the variant loop completes.
         const { refreshProductAttributeGroups } = await import(
-          "../../lib/repos/product-attribute-groups"
+          "../../server/repos/product-attribute-groups"
         );
         await refreshProductAttributeGroups(parentRow[0].id);
 

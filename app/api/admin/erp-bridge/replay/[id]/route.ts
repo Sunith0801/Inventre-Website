@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/session";
-import { replayDelivery } from "@/lib/erp-bridge";
+import { getCurrentUser } from "@/server/session";
+import { replayDelivery } from "@/server/erp-bridge";
 
 export async function POST(
   _req: Request,

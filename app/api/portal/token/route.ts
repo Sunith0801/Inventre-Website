@@ -3,8 +3,8 @@ import { z } from "zod";
 import { sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { parents } from "@/db/schema";
-import { requirePermission, isResponse } from "@/lib/admin-guard";
-import { signPortalToken, PORTAL_TOKEN_DEFAULT_TTL_DAYS } from "@/lib/portal-token";
+import { requirePermission, isResponse } from "@/server/admin-guard";
+import { signPortalToken, PORTAL_TOKEN_DEFAULT_TTL_DAYS } from "@/server/portal-token";
 
 /**
  * Mint a Parent Help Portal magic-link (admin-gated).

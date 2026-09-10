@@ -12,9 +12,9 @@ import {
   returns,
   schools,
 } from "@/db/schema";
-import { getCurrentParent } from "@/lib/session";
-import { isExchangeTester, isExchangeOwnershipRelaxed } from "@/lib/exchange-gate";
-import { getParentOrderDetailFromErp } from "@/lib/erp-customer-orders";
+import { getCurrentParent } from "@/server/session";
+import { isExchangeTester, isExchangeOwnershipRelaxed } from "@/server/exchange-gate";
+import { getParentOrderDetailFromErp } from "@/server/erp-customer-orders";
 import {
   getHeldBackOrderItemIds,
   getLockedComponentSignatures,
@@ -22,7 +22,7 @@ import {
   classifyReturnItems,
   getBookkitParcelDelivered,
   getPendingComponentVariantIds,
-} from "@/lib/return-line-eligibility";
+} from "@/server/return-line-eligibility";
 import {
   fallbackBundleComponents,
   loadBookkitCategoryTreeUnion,
@@ -31,7 +31,7 @@ import {
   loadBookkitCategoryTree,
   kindCategoryFor,
   resolveSubBundleCategories,
-} from "@/lib/bundle-fallback";
+} from "@/server/bundle-fallback";
 import { Nav } from "@/components/Nav";
 import { Footer } from "@/components/Footer";
 import { ExchangeForm } from "@/components/shop/orders/exchange/ExchangeForm";

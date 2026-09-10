@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { requireParent, isResponse } from "@/lib/parent-guard";
-import { getBalance } from "@/lib/repos/loyalty";
+import { requireParent, isResponse } from "@/server/parent-guard";
+import { getBalance } from "@/server/repos/loyalty";
 
 export async function GET() {
   const me = await requireParent();

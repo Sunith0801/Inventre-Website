@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "@node-rs/bcrypt";
 import { db } from "@/db/client";
 import { sql } from "drizzle-orm";
-import { createFeesSession, permissionsFor } from "@/lib/fees-auth";
-import { rateLimit } from "@/lib/rate-limit";
+import { createFeesSession, permissionsFor } from "@/server/fees-auth";
+import { rateLimit } from "@/server/rate-limit";
 
 /**
  * Fee-ledger sign-in. Issues the `inv_fees` cookie only — never an admin

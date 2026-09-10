@@ -8,7 +8,7 @@ import {
   requireAnyPermission,
   isResponse,
   assertSchoolAccess,
-} from "@/lib/admin-guard";
+} from "@/server/admin-guard";
 
 export const dynamic = "force-dynamic";
 

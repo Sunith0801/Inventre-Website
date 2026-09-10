@@ -1,4 +1,4 @@
-import { listRecordActivity, type FieldChange } from "@/lib/activity";
+import { listRecordActivity, type FieldChange } from "@/server/activity";
 import { History } from "lucide-react";
 
 /**

@@ -1,5 +1,5 @@
 import { PageHeader, Card, CardHeader } from "@/components/admin/ui/primitives";
-import { getOtpToggles } from "@/lib/otp-toggles";
+import { getOtpToggles } from "@/server/otp-toggles";
 import { OtpTogglesForm } from "./toggles-form";
 
 export const dynamic = "force-dynamic";

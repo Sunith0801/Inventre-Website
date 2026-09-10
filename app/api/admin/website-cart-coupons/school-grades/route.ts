@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { eq, asc } from "drizzle-orm";
 import { db } from "@/db/client";
 import { schools, schoolGradeMappings } from "@/db/schema";
-import { isResponse, requirePermission } from "@/lib/admin-guard";
+import { isResponse, requirePermission } from "@/server/admin-guard";
 
 /**
  * List the grades a given school serves (read from the ERP-synced

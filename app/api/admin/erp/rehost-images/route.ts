@@ -2,11 +2,11 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db, schema } from "@/db/client";
 import { eq, desc } from "drizzle-orm";
-import { isResponse, requirePermission } from "@/lib/admin-guard";
+import { isResponse, requirePermission } from "@/server/admin-guard";
 import {
   enqueueErpMediaRehost,
   ERP_MEDIA_REHOST_JOB_TYPE,
-} from "@/lib/jobs/erp-media-rehost";
+} from "@/server/jobs/erp-media-rehost";
 
 const Body = z.object({
   limit: z.number().int().min(1).optional(),

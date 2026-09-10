@@ -23,13 +23,13 @@ config({ path: path.resolve(process.cwd(), ".env") });
 
 import { sql } from "drizzle-orm";
 import { db } from "@/db/client";
-import { erpAuthedGet } from "@/lib/erp-jwt";
+import { erpAuthedGet } from "@/server/erp-jwt";
 import {
   upsertOrderMirror,
   upsertItemsMirror,
   deriveStatusForErpOrderName,
   type ErpOrderDetailResp,
-} from "@/lib/erp-poll";
+} from "@/server/erp-poll";
 
 const CUTOFF = "2026-05-28 16:41:00+00";
 const DRY = process.argv.includes("--dry-run");

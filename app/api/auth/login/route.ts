@@ -4,9 +4,9 @@ import bcrypt from "@node-rs/bcrypt";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { parents } from "@/db/schema";
-import { createParentSession } from "@/lib/session";
-import { rateLimit } from "@/lib/rate-limit";
-import { resolveFamilyParent } from "@/lib/parent-lookup";
+import { createParentSession } from "@/server/session";
+import { rateLimit } from "@/server/rate-limit";
+import { resolveFamilyParent } from "@/server/parent-lookup";
 
 const Body = z.object({
   phone: z.string().regex(/^\d{10}$/, "10-digit mobile number required"),

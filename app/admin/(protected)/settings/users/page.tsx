@@ -2,7 +2,7 @@ import { asc, eq } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { db } from "@/db/client";
 import { users, schools } from "@/db/schema";
-import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
+import { requireAnyPermission, isResponse } from "@/server/admin-guard";
 import { UserList } from "@/components/admin/UserList";
 
 export default async function AdminUsersPage() {

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { ClipboardList, Plus } from "lucide-react";
-import { listPurchaseOrders } from "@/lib/repos/purchase-orders";
+import { listPurchaseOrders } from "@/server/repos/purchase-orders";
 import {
   PageHeader,
   Card,
@@ -16,7 +16,7 @@ import {
   statusTone,
 } from "@/components/admin/ui/primitives";
 import { redirect } from "next/navigation";
-import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
+import { requireAnyPermission, isResponse } from "@/server/admin-guard";
 
 export const dynamic = "force-dynamic";
 

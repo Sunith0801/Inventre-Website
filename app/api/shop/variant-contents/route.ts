@@ -32,8 +32,8 @@ import {
   productAttributeValues,
   productVariantAttributes,
 } from "@/db/schema";
-import { loadBundleTree, type BundleNode } from "@/lib/repos/products";
-import { getCurrentParent } from "@/lib/session";
+import { loadBundleTree, type BundleNode } from "@/server/repos/products";
+import { getCurrentParent } from "@/server/session";
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);

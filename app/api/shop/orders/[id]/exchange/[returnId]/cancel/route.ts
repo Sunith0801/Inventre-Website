@@ -2,13 +2,13 @@ import { NextResponse } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { returns, webhookDeliveries } from "@/db/schema";
-import { getCurrentParent } from "@/lib/session";
-import { isExchangeTester } from "@/lib/exchange-gate";
+import { getCurrentParent } from "@/server/session";
+import { isExchangeTester } from "@/server/exchange-gate";
 import {
   applyExchangeCancellation,
   isCancellableRequestStatus,
-} from "@/lib/exchange";
-import { postErpEvent } from "@/lib/erp-bridge";
+} from "@/server/exchange";
+import { postErpEvent } from "@/server/erp-bridge";
 
 /**
  * Customer self-cancellation of an EXCHANGE (return) request.

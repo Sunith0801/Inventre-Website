@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { db } from "@/db/client";
 import { warehouses } from "@/db/schema";
 import { asc } from "drizzle-orm";
-import { getPurchaseOrder } from "@/lib/repos/purchase-orders";
+import { getPurchaseOrder } from "@/server/repos/purchase-orders";
 import {
   PageHeader,
   Card,

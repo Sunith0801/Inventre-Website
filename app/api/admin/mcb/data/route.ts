@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db/client";
 import { sql } from "drizzle-orm";
-import { requirePermission, isResponse } from "@/lib/admin-guard";
+import { requirePermission, isResponse } from "@/server/admin-guard";
 
 // MUST match PAGE_SIZE in app/admin/(protected)/mcb/page.tsx and
 // McbDashboard.tsx. 100 rows/page keeps the React commit cheap.

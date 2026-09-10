@@ -3,7 +3,7 @@ import { z } from "zod";
 import { eq, desc } from "drizzle-orm";
 import { db } from "@/db/client";
 import { addresses } from "@/db/schema";
-import { requireParent, isResponse } from "@/lib/parent-guard";
+import { requireParent, isResponse } from "@/server/parent-guard";
 
 export async function GET() {
   const me = await requireParent();

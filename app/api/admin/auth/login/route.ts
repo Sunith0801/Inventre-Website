@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import bcrypt from "@node-rs/bcrypt";
-import { permissionsFor } from "@/lib/fees-auth";
-import { isFeesScopedPermission } from "@/lib/fees-users";
+import { permissionsFor } from "@/server/fees-auth";
+import { isFeesScopedPermission } from "@/server/fees-users";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { users } from "@/db/schema";
-import { createAdminSession } from "@/lib/session";
-import { rateLimit } from "@/lib/rate-limit";
+import { createAdminSession } from "@/server/session";
+import { rateLimit } from "@/server/rate-limit";
 
 const Body = z.object({
   email: z.string().email(),

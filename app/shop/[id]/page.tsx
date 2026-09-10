@@ -29,7 +29,7 @@ import type {
   ProductDetailDto,
   ProductCardDto,
   BundleNode,
-} from "@/lib/repos/products";
+} from "@/server/repos/products";
 
 function dtoToProduct(d: ProductDetailDto): Product {
   return {

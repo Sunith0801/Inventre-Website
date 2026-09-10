@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import { db } from "@/db/client";
 import { schools } from "@/db/schema";
-import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
+import { requireAnyPermission, isResponse } from "@/server/admin-guard";
 import {
   PageHeader,
   Card,
@@ -26,7 +26,7 @@ import {
 } from "@/components/admin/ui/primitives";
 import { unstable_cache } from "next/cache";
 import { CatalogPreviewPicker } from "@/components/admin/CatalogPreviewPicker";
-import { listProductsForStudent } from "@/lib/repos/products";
+import { listProductsForStudent } from "@/server/repos/products";
 import { compareGrades } from "@/lib/sort-grades";
 
 export const dynamic = "force-dynamic";

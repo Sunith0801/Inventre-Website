@@ -5,7 +5,7 @@ import { ContactHero } from "@/components/contact/ContactHero";
 import { ContactForm } from "@/components/contact/ContactForm";
 import { FAQ } from "@/components/contact/FAQ";
 import { FinalCTA } from "@/components/FinalCTA";
-import { resolveMedia } from "@/lib/repos/media";
+import { resolveMedia } from "@/server/repos/media";
 
 export const dynamic = "force-dynamic";
 

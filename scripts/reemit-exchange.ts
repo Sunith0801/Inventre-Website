@@ -16,7 +16,7 @@ import path from "node:path";
 config({ path: path.resolve(process.cwd(), ".env.local") });
 config({ path: path.resolve(process.cwd(), ".env") });
 
-import { emitExchangeEvent } from "@/lib/erp-bridge";
+import { emitExchangeEvent } from "@/server/erp-bridge";
 
 async function main() {
   const returnId = process.argv[2];

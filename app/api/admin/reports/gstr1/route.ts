@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { isResponse, requirePermission } from "@/lib/admin-guard";
-import { buildGstr1 } from "@/lib/gstr1";
+import { isResponse, requirePermission } from "@/server/admin-guard";
+import { buildGstr1 } from "@/server/gstr1";
 
 /**
  * GET /api/admin/reports/gstr1?from=YYYY-MM-DD&to=YYYY-MM-DD

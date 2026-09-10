@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { sql, gte, lte, and, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { invoices, invoiceItems } from "@/db/schema";
-import { isResponse, requirePermission } from "@/lib/admin-guard";
+import { isResponse, requirePermission } from "@/server/admin-guard";
 
 /**
  * GST summary report — supports the GSTR-1 outward-supply view.

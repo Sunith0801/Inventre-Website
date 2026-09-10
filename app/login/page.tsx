@@ -1,8 +1,8 @@
 import { redirect } from "next/navigation";
 import { LoginForm } from "@/components/auth/LoginForm";
 import { AuthBrandPanel } from "@/components/auth/AuthBrandPanel";
-import { getCurrentUser } from "@/lib/session";
-import { resolveMedia } from "@/lib/repos/media";
+import { getCurrentUser } from "@/server/session";
+import { resolveMedia } from "@/server/repos/media";
 
 export const dynamic = "force-dynamic";
 

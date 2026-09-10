@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import * as XLSX from "xlsx";
 import { db } from "@/db/client";
 import { sql, type SQL } from "drizzle-orm";
-import { getFeesViewer, viewerHas } from "@/lib/fees-auth";
+import { getFeesViewer, viewerHas } from "@/server/fees-auth";
 
 /**
  * MCB fee dashboard data API.

@@ -11,8 +11,8 @@ import {
   websiteCartCoupons,
   websiteCartCouponUsages,
 } from "@/db/schema";
-import { getCurrentUser } from "@/lib/session";
-import { logActivityBatch } from "@/lib/activity";
+import { getCurrentUser } from "@/server/session";
+import { logActivityBatch } from "@/server/activity";
 
 /** Best-effort client IP for server actions (no Request object → read headers). */
 async function clientIpFromHeaders(): Promise<string | null> {

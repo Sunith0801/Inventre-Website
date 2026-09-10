@@ -1,8 +1,8 @@
 import { db } from "@/db/client";
 import { sql } from "drizzle-orm";
 import { redirect } from "next/navigation";
-import { getFeesViewer, viewerHas } from "@/lib/fees-auth";
-import { lookupReceipts } from "@/lib/mcb/receipts";
+import { getFeesViewer, viewerHas } from "@/server/fees-auth";
+import { lookupReceipts } from "@/server/mcb/receipts";
 import PrintButton from "./PrintButton";
 
 export const dynamic = "force-dynamic";

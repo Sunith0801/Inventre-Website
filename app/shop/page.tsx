@@ -15,7 +15,7 @@ import { OrderUpdatesBanner } from "@/components/shop/OrderUpdatesBanner";
 import AccessClosed from "@/components/shop/AccessClosed";
 import { useCart } from "@/lib/cart";
 import type { Product } from "@/lib/products";
-import type { ProductCardDto } from "@/lib/repos/products";
+import type { ProductCardDto } from "@/server/repos/products";
 
 const initialFilters: Filters = {
   categories: [],

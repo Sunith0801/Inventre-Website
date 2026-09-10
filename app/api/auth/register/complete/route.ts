@@ -14,10 +14,10 @@ import bcrypt from "@node-rs/bcrypt";
 import { eq, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { parents, students } from "@/db/schema";
-import { redis } from "@/lib/redis";
-import { rateLimit } from "@/lib/rate-limit";
-import { createParentSession } from "@/lib/session";
-import { upsertGuardianLink } from "@/lib/repos/guardians";
+import { redis } from "@/server/redis";
+import { rateLimit } from "@/server/rate-limit";
+import { createParentSession } from "@/server/session";
+import { upsertGuardianLink } from "@/server/repos/guardians";
 
 const Body = z.object({
   phone: z.string().regex(/^\d{10}$/),

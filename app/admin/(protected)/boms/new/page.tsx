@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { asc, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { products, schools } from "@/db/schema";
-import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
+import { requireAnyPermission, isResponse } from "@/server/admin-guard";
 import { PageHeader, Card } from "@/components/admin/ui/primitives";
 import { NewBomForm } from "@/components/admin/NewBomForm";
 

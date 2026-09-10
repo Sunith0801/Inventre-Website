@@ -7,9 +7,9 @@ import {
   requirePermission,
   isResponse,
   assertSchoolAccess,
-} from "@/lib/admin-guard";
-import { logActivity } from "@/lib/activity";
-import { createExchange } from "@/lib/exchange";
+} from "@/server/admin-guard";
+import { logActivity } from "@/server/activity";
+import { createExchange } from "@/server/exchange";
 
 /**
  * SPOC / staff-raised EXCHANGE on behalf of a parent.

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { verifyPortalToken } from "@/lib/portal-token";
-import { createParentSession } from "@/lib/session";
+import { verifyPortalToken } from "@/server/portal-token";
+import { createParentSession } from "@/server/session";
 
 /**
  * Magic-link entry for the Parent Help Portal.

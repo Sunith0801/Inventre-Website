@@ -3,8 +3,8 @@ import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { concerns, concernMessages } from "@/db/schema";
-import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
-import { logActivity } from "@/lib/activity";
+import { requireAnyPermission, isResponse } from "@/server/admin-guard";
+import { logActivity } from "@/server/activity";
 
 /**
  * Admin actions on a Parent Concern: update status / assign (PATCH) and

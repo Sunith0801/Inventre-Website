@@ -19,7 +19,7 @@ config({ path: path.resolve(process.cwd(), ".env") });
 
 import { sql } from "drizzle-orm";
 import { db } from "@/db/client";
-import { enqueueOrderEvent } from "@/lib/erp-bridge";
+import { enqueueOrderEvent } from "@/server/erp-bridge";
 
 type Flags = { apply: boolean; csvPath: string };
 

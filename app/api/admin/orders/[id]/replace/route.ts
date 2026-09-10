@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
-import { parseBody } from "@/lib/parse-body";
+import { parseBody } from "@/server/parse-body";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { orders, orderItems } from "@/db/schema";
-import { requirePermission, isResponse, assertSchoolAccess } from "@/lib/admin-guard";
-import { generateOrderNumber } from "@/lib/repos/orders";
-import { financialYearOf } from "@/lib/invoice-numbering";
-import { logAdminActivity } from "@/lib/activity";
+import { requirePermission, isResponse, assertSchoolAccess } from "@/server/admin-guard";
+import { generateOrderNumber } from "@/server/repos/orders";
+import { financialYearOf } from "@/server/invoice-numbering";
+import { logAdminActivity } from "@/server/activity";
 
 /**
  * Create a replacement Sales Order from an existing one (audit §3.4

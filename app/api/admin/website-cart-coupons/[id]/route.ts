@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
-import { parseBody } from "@/lib/parse-body";
+import { parseBody } from "@/server/parse-body";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { websiteCartCoupons, schools, students } from "@/db/schema";
-import { isResponse, requirePermission } from "@/lib/admin-guard";
-import { logAdminActivity, diffFields } from "@/lib/activity";
+import { isResponse, requirePermission } from "@/server/admin-guard";
+import { logAdminActivity, diffFields } from "@/server/activity";
 
 const Body = z.object({
   couponCode: z.string().min(2).max(64).optional(),

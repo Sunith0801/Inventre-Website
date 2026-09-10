@@ -4,10 +4,10 @@ import { z } from "zod";
 import { eq, ilike, or, and, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { students, schools } from "@/db/schema";
-import { requirePermission, isResponse } from "@/lib/admin-guard";
-import { parseJson } from "@/lib/api-handler";
-import { invalidateCatalog } from "@/lib/cache";
-import { logActivity } from "@/lib/activity";
+import { requirePermission, isResponse } from "@/server/admin-guard";
+import { parseJson } from "@/server/api-handler";
+import { invalidateCatalog } from "@/server/cache";
+import { logActivity } from "@/server/activity";
 
 /**
  * Bulk-set students.enabled across every row that matches the current

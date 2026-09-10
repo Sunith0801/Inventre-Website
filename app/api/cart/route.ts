@@ -14,14 +14,14 @@ import {
   payments,
   schools,
 } from "@/db/schema";
-import { normalizeGrade } from "@/lib/grade-filter";
+import { normalizeGrade } from "@/server/grade-filter";
 
 // Schools where free (0-price) bookkits are limited to 1 per student ever.
 const FREE_BOOKKIT_RESTRICTED_SCHOOL_CODES = ["SMSAW"];
-import { getCurrentParent, type CurrentParent } from "@/lib/session";
-import { readCart, addToCart, setCartQty, clearCart } from "@/lib/repos/cart";
-import { failJson } from "@/lib/observability/fail-json";
-import { parseJson } from "@/lib/api-handler";
+import { getCurrentParent, type CurrentParent } from "@/server/session";
+import { readCart, addToCart, setCartQty, clearCart } from "@/server/repos/cart";
+import { failJson } from "@/server/observability/fail-json";
+import { parseJson } from "@/server/api-handler";
 import {
   isCatalogDisabledSchool,
   catalogDisabledMessage,

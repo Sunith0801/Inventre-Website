@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Book, Shirt, Sparkles, ShoppingBag, Box } from "lucide-react";
-import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
+import { requireAnyPermission, isResponse } from "@/server/admin-guard";
 import { PageHeader } from "@/components/admin/ui/primitives";
 
 export const dynamic = "force-dynamic";

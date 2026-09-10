@@ -1,16 +1,16 @@
 import { NextResponse } from "next/server";
-import { parseBody } from "@/lib/parse-body";
+import { parseBody } from "@/server/parse-body";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { shipments } from "@/db/schema";
-import { requirePermission, isResponse } from "@/lib/admin-guard";
+import { requirePermission, isResponse } from "@/server/admin-guard";
 import {
   getShipmentDetail,
   markShipped,
   markDelivered,
-} from "@/lib/repos/shipments";
-import { logAdminActivity } from "@/lib/activity";
+} from "@/server/repos/shipments";
+import { logAdminActivity } from "@/server/activity";
 
 export async function GET(
   _: Request,

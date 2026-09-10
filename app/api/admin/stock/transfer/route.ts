@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
-import { parseBody } from "@/lib/parse-body";
+import { parseBody } from "@/server/parse-body";
 import { z } from "zod";
 import { db } from "@/db/client";
-import { isResponse, requirePermission } from "@/lib/admin-guard";
-import { logAdminActivity } from "@/lib/activity";
-import { applyStockChange } from "@/lib/repos/inventory";
+import { isResponse, requirePermission } from "@/server/admin-guard";
+import { logAdminActivity } from "@/server/activity";
+import { applyStockChange } from "@/server/repos/inventory";
 
 /**
  * Stock Transfer — move inventory between two warehouses.

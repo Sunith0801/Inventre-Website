@@ -47,7 +47,7 @@ config({ path: path.resolve(process.cwd(), ".env") });
 
 import { sql } from "drizzle-orm";
 import { db } from "@/db/client";
-import { emitStudentEvent, emitOrderEvent } from "@/lib/erp-bridge";
+import { emitStudentEvent, emitOrderEvent } from "@/server/erp-bridge";
 
 const DRY_RUN = process.argv.includes("--dry-run");
 const STUDENTS_ONLY = process.argv.includes("--students-only");

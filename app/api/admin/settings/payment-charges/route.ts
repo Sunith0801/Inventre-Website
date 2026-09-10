@@ -2,13 +2,13 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/db/client";
 import { systemSettings } from "@/db/schema";
-import { isResponse, requirePermission } from "@/lib/admin-guard";
-import { logAdminActivity } from "@/lib/activity";
-import { parseBody } from "@/lib/parse-body";
+import { isResponse, requirePermission } from "@/server/admin-guard";
+import { logAdminActivity } from "@/server/activity";
+import { parseBody } from "@/server/parse-body";
 import {
   PAYMENT_CHARGES_KEY,
   getPaymentCharges,
-} from "@/lib/payment-charges";
+} from "@/server/payment-charges";
 
 export const dynamic = "force-dynamic";
 

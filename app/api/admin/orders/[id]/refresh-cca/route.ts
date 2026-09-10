@@ -3,10 +3,10 @@ import { revalidatePath } from "next/cache";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { orders, payments } from "@/db/schema";
-import { requirePermission, isResponse, assertSchoolAccess } from "@/lib/admin-guard";
-import { fetchCCAvenueOrderStatus } from "@/lib/ccavenue";
-import { finalizeOrderPayment } from "@/lib/ccavenue-finalize";
-import { logAdminActivity } from "@/lib/activity";
+import { requirePermission, isResponse, assertSchoolAccess } from "@/server/admin-guard";
+import { fetchCCAvenueOrderStatus } from "@/server/ccavenue";
+import { finalizeOrderPayment } from "@/server/ccavenue-finalize";
+import { logAdminActivity } from "@/server/activity";
 
 /**
  * Live-refresh the CCAvenue reference for a single order. Hits

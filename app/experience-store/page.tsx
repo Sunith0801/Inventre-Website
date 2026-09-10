@@ -6,7 +6,7 @@ import { StoreSneakPeek } from "@/components/experience/StoreSneakPeek";
 import { VisitInfo } from "@/components/experience/VisitInfo";
 import { StoreMap } from "@/components/experience/StoreMap";
 import { FinalCTA } from "@/components/FinalCTA";
-import { resolveMedia } from "@/lib/repos/media";
+import { resolveMedia } from "@/server/repos/media";
 
 export const dynamic = "force-dynamic";
 

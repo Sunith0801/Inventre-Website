@@ -26,11 +26,11 @@ config({ path: path.resolve(process.cwd(), ".env") });
 
 import { sql } from "drizzle-orm";
 import { db } from "@/db/client";
-import { erpAuthedGet } from "@/lib/erp-jwt";
+import { erpAuthedGet } from "@/server/erp-jwt";
 import {
   upsertItemsMirror,
   type ErpOrderDetailResp,
-} from "@/lib/erp-poll";
+} from "@/server/erp-poll";
 
 const DRY = process.argv.includes("--dry-run");
 const limitArg = process.argv.find((a) => a.startsWith("--limit="));

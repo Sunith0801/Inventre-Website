@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
-import { parseBody } from "@/lib/parse-body";
+import { parseBody } from "@/server/parse-body";
 import { z } from "zod";
 import { db } from "@/db/client";
 import { suppliers } from "@/db/schema";
-import { isResponse, requirePermission } from "@/lib/admin-guard";
-import { logAdminActivity } from "@/lib/activity";
-import { listSuppliers, nextSupplierCode } from "@/lib/repos/suppliers";
+import { isResponse, requirePermission } from "@/server/admin-guard";
+import { logAdminActivity } from "@/server/activity";
+import { listSuppliers, nextSupplierCode } from "@/server/repos/suppliers";
 
 export async function GET(req: Request) {
   const guard = await requirePermission("suppliers.read");

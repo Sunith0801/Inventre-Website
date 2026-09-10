@@ -46,7 +46,7 @@ async function main() {
   // Script-side cancellations must reach audit too — same buffered queue
   // the admin-UI cancel uses (app/api/admin/orders/[id]/route.ts).
   if (newStatus === "cancelled") {
-    const { enqueueOrderEvent } = await import("@/lib/erp-bridge");
+    const { enqueueOrderEvent } = await import("@/server/erp-bridge");
     await enqueueOrderEvent(before.id, "order.cancelled");
     console.log("enqueued order.cancelled for audit sync");
   }

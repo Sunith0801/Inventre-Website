@@ -3,7 +3,7 @@ import { eq, ilike, or, and, asc, sql } from "drizzle-orm";
 import * as XLSX from "xlsx";
 import { db } from "@/db/client";
 import { students, parents, schools } from "@/db/schema";
-import { requirePermission, isResponse } from "@/lib/admin-guard";
+import { requirePermission, isResponse } from "@/server/admin-guard";
 
 export const dynamic = "force-dynamic";
 

@@ -29,8 +29,8 @@ export const onRequestError: Instrumentation.onRequestError = async (
   if (process.env.NEXT_RUNTIME === "nodejs") {
     try {
       const [{ recordStorefrontEvent }, { cookieToParentId }] = await Promise.all([
-        import("@/lib/observability/record-storefront-event"),
-        import("@/lib/observability/cookie-to-parent-id"),
+        import("@/server/observability/record-storefront-event"),
+        import("@/server/observability/cookie-to-parent-id"),
       ]);
 
       let parentId: string | null = null;

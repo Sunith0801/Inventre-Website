@@ -2,13 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "@node-rs/bcrypt";
 import { db } from "@/db/client";
 import { sql } from "drizzle-orm";
-import { getFeesViewer, viewerHas } from "@/lib/fees-auth";
+import { getFeesViewer, viewerHas } from "@/server/fees-auth";
 import {
   MANAGED_ROLES,
   FEES_VIEWER_ROLE,
   passwordProblem,
   emailProblem,
-} from "@/lib/fees-users";
+} from "@/server/fees-users";
 
 /**
  * Account management for the fee ledger, gated on `fees-users.write`.

@@ -1,10 +1,10 @@
 import { notFound } from "next/navigation";
 import { eq } from "drizzle-orm";
-import { getParentOrderDetailFromErp } from "@/lib/erp-customer-orders";
+import { getParentOrderDetailFromErp } from "@/server/erp-customer-orders";
 import { db } from "@/db/client";
 import { missingItemClaims, orders, schools } from "@/db/schema";
-import { getCurrentParent } from "@/lib/session";
-import { isExchangeTester } from "@/lib/exchange-gate";
+import { getCurrentParent } from "@/server/session";
+import { isExchangeTester } from "@/server/exchange-gate";
 import { Nav } from "@/components/Nav";
 import { Footer } from "@/components/Footer";
 import {

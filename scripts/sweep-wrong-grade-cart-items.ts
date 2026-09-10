@@ -125,7 +125,7 @@ async function main() {
   // on the next read.
   const parentIds = Array.from(new Set(rows.map((r) => r.parent_id)));
   if (parentIds.length > 0) {
-    const { redis } = await import("@/lib/redis");
+    const { redis } = await import("@/server/redis");
     const keys = parentIds.map((id) => `cart:${id}`);
     const cleared = await redis.del(...keys);
     console.log(`[sweep] cleared ${cleared} Redis cart hash(es) for rehydrate.`);

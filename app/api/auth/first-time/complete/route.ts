@@ -17,12 +17,12 @@ import bcrypt from "@node-rs/bcrypt";
 import { eq, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { parents, students } from "@/db/schema";
-import { redis } from "@/lib/redis";
-import { rateLimit } from "@/lib/rate-limit";
-import { createParentSession } from "@/lib/session";
+import { redis } from "@/server/redis";
+import { rateLimit } from "@/server/rate-limit";
+import { createParentSession } from "@/server/session";
 import { last10Sql } from "@/lib/phone";
-import { upsertGuardianLink } from "@/lib/repos/guardians";
-import { resolveFamilyParent } from "@/lib/parent-lookup";
+import { upsertGuardianLink } from "@/server/repos/guardians";
+import { resolveFamilyParent } from "@/server/parent-lookup";
 import { TC_VERSION } from "@/lib/legal/terms";
 
 const Body = z.object({
@@ -144,7 +144,7 @@ export async function POST(req: Request) {
         );
       }
     }
-    const { generateCustomerCode } = await import("@/lib/customer-numbering");
+    const { generateCustomerCode } = await import("@/server/customer-numbering");
     const customerCode = await generateCustomerCode();
     // ON CONFLICT (phone) DO NOTHING + refetch: another tab / parallel
     // request can OTP-complete on the same phone microseconds earlier,

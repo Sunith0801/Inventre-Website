@@ -4,14 +4,14 @@ import { revalidatePath } from "next/cache";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { deliveryFeeRuleGrades } from "@/db/schema";
-import { getCurrentUser } from "@/lib/session";
+import { getCurrentUser } from "@/server/session";
 import {
   createDeliveryFeeRule,
   deleteDeliveryFeeRule,
   updateDeliveryFeeRule,
   type DeliveryFeeRuleInput,
-} from "@/lib/erp/delivery-fee-rules";
-import { bustDeliveryFeeCache } from "@/lib/delivery-fee";
+} from "@/server/erp/delivery-fee-rules";
+import { bustDeliveryFeeCache } from "@/server/delivery-fee";
 
 type Result = { ok: true; name: string } | { ok: false; error: string };
 

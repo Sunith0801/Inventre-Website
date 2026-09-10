@@ -2,11 +2,11 @@ import { NextResponse } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { orders } from "@/db/schema";
-import { requireParent, isResponse } from "@/lib/parent-guard";
-import { isExchangeTester, isExchangeOwnershipRelaxed } from "@/lib/exchange-gate";
-import { getParentOrderDetailFromErp } from "@/lib/erp-customer-orders";
-import { uploadFile } from "@/lib/storage";
-import { readSupportView } from "@/lib/support-view";
+import { requireParent, isResponse } from "@/server/parent-guard";
+import { isExchangeTester, isExchangeOwnershipRelaxed } from "@/server/exchange-gate";
+import { getParentOrderDetailFromErp } from "@/server/erp-customer-orders";
+import { uploadFile } from "@/server/storage";
+import { readSupportView } from "@/server/support-view";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

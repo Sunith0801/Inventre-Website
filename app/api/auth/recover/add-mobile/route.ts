@@ -17,9 +17,9 @@ import { z } from "zod";
 import bcrypt from "@node-rs/bcrypt";
 import { sql } from "drizzle-orm";
 import { db } from "@/db/client";
-import { redis } from "@/lib/redis";
-import { rateLimit } from "@/lib/rate-limit";
-import { upsertGuardianLink } from "@/lib/repos/guardians";
+import { redis } from "@/server/redis";
+import { rateLimit } from "@/server/rate-limit";
+import { upsertGuardianLink } from "@/server/repos/guardians";
 
 const Relations = [
   "Father",

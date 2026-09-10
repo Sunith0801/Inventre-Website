@@ -4,9 +4,9 @@ import { eq } from "drizzle-orm";
 import crypto from "node:crypto";
 import { db } from "@/db/client";
 import { parents } from "@/db/schema";
-import { rateLimit } from "@/lib/rate-limit";
-import { sendSms } from "@/lib/sms";
-import { redis } from "@/lib/redis";
+import { rateLimit } from "@/server/rate-limit";
+import { sendSms } from "@/server/notify/sms";
+import { redis } from "@/server/redis";
 
 const RESET_TTL_SECONDS = 30 * 60;
 

@@ -1,7 +1,7 @@
 import { db } from "@/db/client";
 import { sql } from "drizzle-orm";
 import { redirect } from "next/navigation";
-import { getFeesViewer, viewerHas } from "@/lib/fees-auth";
+import { getFeesViewer, viewerHas } from "@/server/fees-auth";
 import FeeConsole from "./FeeConsole";
 
 export const dynamic = "force-dynamic";

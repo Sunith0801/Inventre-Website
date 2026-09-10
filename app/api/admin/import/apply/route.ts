@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { isResponse, requirePermission } from "@/lib/admin-guard";
-import { applyImport, detectImporter, parseSpreadsheet, IMPORTERS } from "@/lib/importers";
+import { isResponse, requirePermission } from "@/server/admin-guard";
+import { applyImport, detectImporter, parseSpreadsheet, IMPORTERS } from "@/server/importers";
 
 export const runtime = "nodejs";
 export const maxDuration = 600; // 10 minutes — lots of rows possible

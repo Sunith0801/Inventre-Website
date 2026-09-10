@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { isResponse, requirePermission } from "@/lib/admin-guard";
+import { isResponse, requirePermission } from "@/server/admin-guard";
 
 /**
  * RETIRED — used to trigger a one-shot pull from ERPNext at

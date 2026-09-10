@@ -21,10 +21,10 @@ import { z } from "zod";
 import bcrypt from "@node-rs/bcrypt";
 import { db } from "@/db/client";
 import { otpLogs } from "@/db/schema";
-import { redis } from "@/lib/redis";
-import { rateLimit } from "@/lib/rate-limit";
-import { sendOtpSms, generateOtp } from "@/lib/sms";
-import { getOtpToggles, getBypassOtp } from "@/lib/otp-toggles";
+import { redis } from "@/server/redis";
+import { rateLimit } from "@/server/rate-limit";
+import { sendOtpSms, generateOtp } from "@/server/notify/sms";
+import { getOtpToggles, getBypassOtp } from "@/server/otp-toggles";
 
 const Body = z.object({
   studentId: z.string().uuid(),

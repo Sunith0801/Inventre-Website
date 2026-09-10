@@ -22,7 +22,7 @@ import {
   EmptyState,
   Button,
 } from "@/components/admin/ui/primitives";
-import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
+import { requireAnyPermission, isResponse } from "@/server/admin-guard";
 
 export const dynamic = "force-dynamic";
 

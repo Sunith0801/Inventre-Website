@@ -17,9 +17,9 @@ function humaniseZod(path: string, message: string): string {
 import { eq, ilike, or, and, count, asc, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { students, parents, schools } from "@/db/schema";
-import { requirePermission, isResponse, assertSchoolAccess } from "@/lib/admin-guard";
-import { studentDisplayGradeSql } from "@/lib/repos/grades";
-import { logActivity } from "@/lib/activity";
+import { requirePermission, isResponse, assertSchoolAccess } from "@/server/admin-guard";
+import { studentDisplayGradeSql } from "@/server/repos/grades";
+import { logActivity } from "@/server/activity";
 
 const Body = z.object({
   // Student
@@ -140,7 +140,7 @@ export async function POST(req: Request) {
       .limit(1);
 
     if (!parent) {
-      const { generateCustomerCode } = await import("@/lib/customer-numbering");
+      const { generateCustomerCode } = await import("@/server/customer-numbering");
       const customerCode = await generateCustomerCode();
       [parent] = await db
         .insert(parents)

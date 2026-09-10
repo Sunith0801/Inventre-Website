@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { getSession } from "@/lib/session";
+import { getSession } from "@/server/session";
 import { SaleStrip } from "@/components/SaleStrip";
 import { Nav } from "@/components/Nav";
 import { Hero } from "@/components/Hero";
@@ -9,7 +9,7 @@ import { ForSchools } from "@/components/ForSchools";
 import { Testimonials } from "@/components/Testimonials";
 import { FinalCTA } from "@/components/FinalCTA";
 import { Footer } from "@/components/Footer";
-import { resolveMedia } from "@/lib/repos/media";
+import { resolveMedia } from "@/server/repos/media";
 
 export const dynamic = "force-dynamic";
 

@@ -1,4 +1,4 @@
-import { readSupportView } from "@/lib/support-view";
+import { readSupportView } from "@/server/support-view";
 import { db } from "@/db/client";
 import { parents } from "@/db/schema";
 import { eq } from "drizzle-orm";

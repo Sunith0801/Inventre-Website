@@ -5,13 +5,13 @@
  */
 import { sql } from "drizzle-orm";
 import { db } from "@/db/client";
-import { getParentOrderDetailFromErp } from "@/lib/erp-customer-orders";
+import { getParentOrderDetailFromErp } from "@/server/erp-customer-orders";
 import {
   classifyReturnItems,
   getHeldBackOrderItemIds,
   getBookkitParcelDelivered,
   getLockedOrderItemIds,
-} from "@/lib/return-line-eligibility";
+} from "@/server/return-line-eligibility";
 
 async function main() {
   const ono = process.argv[2];

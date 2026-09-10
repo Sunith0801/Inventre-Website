@@ -2,9 +2,9 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db, schema } from "@/db/client";
 import { eq, desc } from "drizzle-orm";
-import { isResponse, requirePermission } from "@/lib/admin-guard";
-import { enqueueErpItemSync, ERP_ITEM_SYNC_JOB_TYPE } from "@/lib/jobs/erp-item-sync";
-import { erpInboundDisabledResponse } from "@/lib/erp-inbound-guard";
+import { isResponse, requirePermission } from "@/server/admin-guard";
+import { enqueueErpItemSync, ERP_ITEM_SYNC_JOB_TYPE } from "@/server/jobs/erp-item-sync";
+import { erpInboundDisabledResponse } from "@/server/erp-inbound-guard";
 
 const Body = z.object({
   itemGroup: z.string().optional(),

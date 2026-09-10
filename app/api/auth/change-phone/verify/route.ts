@@ -4,10 +4,10 @@ import bcrypt from "@node-rs/bcrypt";
 import { eq, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { parents, students } from "@/db/schema";
-import { recomputeStudentParent } from "@/lib/repos/guardians";
-import { redis } from "@/lib/redis";
-import { getCurrentParent } from "@/lib/session";
-import { parseJson } from "@/lib/api-handler";
+import { recomputeStudentParent } from "@/server/repos/guardians";
+import { redis } from "@/server/redis";
+import { getCurrentParent } from "@/server/session";
+import { parseJson } from "@/server/api-handler";
 
 const Body = z.object({
   newPhone: z.string().regex(/^\d{10}$/),

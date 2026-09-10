@@ -4,7 +4,7 @@ import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { Eye, Library, Plus } from "lucide-react";
 import { db } from "@/db/client";
 import { schools, products, productSchool, productGrades, productImages } from "@/db/schema";
-import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
+import { requireAnyPermission, isResponse } from "@/server/admin-guard";
 import { PageHeader, Card, Badge } from "@/components/admin/ui/primitives";
 import { BulkTagItemsTool, type TaggableProduct } from "@/components/admin/BulkTagItemsTool";
 

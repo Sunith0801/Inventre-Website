@@ -17,8 +17,8 @@ import { z } from "zod";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { productDrafts } from "@/db/schema";
-import { getCurrentParent } from "@/lib/session";
-import { parseJson } from "@/lib/api-handler";
+import { getCurrentParent } from "@/server/session";
+import { parseJson } from "@/server/api-handler";
 
 const StateMultiAxis = z.object({
   kind: z.literal("multi-axis"),

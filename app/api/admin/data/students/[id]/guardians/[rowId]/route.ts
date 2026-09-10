@@ -3,11 +3,11 @@ import { revalidatePath } from "next/cache";
 import { and, eq, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db, schema } from "@/db/client";
-import { isResponse, requirePermission } from "@/lib/admin-guard";
-import { logAdminActivity, diffFields } from "@/lib/activity";
-import { parseJson } from "@/lib/api-handler";
-import { emitGuardianEvent, emitStudentEvent } from "@/lib/erp-bridge";
-import { recomputeStudentParent } from "@/lib/repos/guardians";
+import { isResponse, requirePermission } from "@/server/admin-guard";
+import { logAdminActivity, diffFields } from "@/server/activity";
+import { parseJson } from "@/server/api-handler";
+import { emitGuardianEvent, emitStudentEvent } from "@/server/erp-bridge";
+import { recomputeStudentParent } from "@/server/repos/guardians";
 
 const PatchBody = z.object({
   phoneNo: z.string().nullable().optional(),
@@ -95,7 +95,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         await db.update(schema.parents).set(patch).where(eq(schema.parents.id, parentId));
       }
     } else {
-      const { generateCustomerCode } = await import("@/lib/customer-numbering");
+      const { generateCustomerCode } = await import("@/server/customer-numbering");
       const customerCode = await generateCustomerCode();
       const [created] = await db
         .insert(schema.parents)

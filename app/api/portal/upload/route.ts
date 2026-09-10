@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import crypto from "crypto";
-import { uploadFile } from "@/lib/storage";
+import { uploadFile } from "@/server/storage";
 
 /**
  * PUBLIC photo upload for the Parent Support Portal (mandatory photos on

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { getCurrentParent } from "@/lib/session";
-import { getProductBySlug } from "@/lib/repos/products";
+import { getCurrentParent } from "@/server/session";
+import { getProductBySlug } from "@/server/repos/products";
 
 export async function GET(
   req: Request,

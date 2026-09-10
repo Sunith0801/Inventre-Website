@@ -3,10 +3,10 @@ import { revalidatePath } from "next/cache";
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { students, studentGuardianLinks, parents } from "@/db/schema";
-import { isResponse, requirePermission } from "@/lib/admin-guard";
-import { logActivity } from "@/lib/activity";
-import { emitStudentEvent } from "@/lib/erp-bridge";
-import type { CurrentAdmin } from "@/lib/session";
+import { isResponse, requirePermission } from "@/server/admin-guard";
+import { logActivity } from "@/server/activity";
+import { emitStudentEvent } from "@/server/erp-bridge";
+import type { CurrentAdmin } from "@/server/session";
 
 /**
  * Detach a student from their currently-linked family. Shared body

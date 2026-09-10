@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { ChevronLeft } from "lucide-react";
-import { requirePermission, isResponse } from "@/lib/admin-guard";
+import { requirePermission, isResponse } from "@/server/admin-guard";
 import { ADMIN_PAGES, ADMIN_PERMISSION_GROUPS } from "@/lib/admin-permissions";
 import { RoleEditor } from "@/components/admin/RoleEditor";
 

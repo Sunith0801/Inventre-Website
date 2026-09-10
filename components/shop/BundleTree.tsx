@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import { ChevronRight, Package, Check, Loader2 } from "lucide-react";
-import type { BundleNode } from "@/lib/repos/products";
+import type { BundleNode } from "@/server/repos/products";
 import { useCart } from "@/lib/cart";
 
 type Variant = {

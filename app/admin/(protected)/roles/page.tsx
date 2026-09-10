@@ -4,8 +4,8 @@ import { sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { PageHeader, Button, Badge, Card, Th, Td, Tr } from "@/components/admin/ui/primitives";
 import { Plus, KeyRound } from "lucide-react";
-import { requirePermission } from "@/lib/admin-guard";
-import { isResponse } from "@/lib/admin-guard";
+import { requirePermission } from "@/server/admin-guard";
+import { isResponse } from "@/server/admin-guard";
 
 export const dynamic = "force-dynamic";
 

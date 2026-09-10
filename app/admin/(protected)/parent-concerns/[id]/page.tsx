@@ -4,7 +4,7 @@ import { notFound, redirect } from "next/navigation";
 import { db } from "@/db/client";
 import { concerns, concernMessages, orders } from "@/db/schema";
 import { PageHeader, Card, Badge } from "@/components/admin/ui/primitives";
-import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
+import { requireAnyPermission, isResponse } from "@/server/admin-guard";
 import { ConcernActions } from "@/components/admin/ConcernActions";
 import { RecordHistory } from "@/components/admin/RecordHistory";
 

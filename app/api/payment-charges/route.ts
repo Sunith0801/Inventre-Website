@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getPaymentCharges } from "@/lib/payment-charges";
+import { getPaymentCharges } from "@/server/payment-charges";
 
 export const dynamic = "force-dynamic";
 

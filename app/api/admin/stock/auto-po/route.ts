@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { isResponse, requirePermission } from "@/lib/admin-guard";
-import { logAdminActivity } from "@/lib/activity";
-import { runAutoPo } from "@/lib/auto-po";
+import { isResponse, requirePermission } from "@/server/admin-guard";
+import { logAdminActivity } from "@/server/activity";
+import { runAutoPo } from "@/server/auto-po";
 
 export async function POST(req: Request) {
   const guard = await requirePermission("catalog.write");

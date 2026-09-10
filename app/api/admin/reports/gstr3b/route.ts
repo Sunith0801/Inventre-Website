@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { isResponse, requirePermission } from "@/lib/admin-guard";
-import { buildGstr3b } from "@/lib/gstr3b";
+import { isResponse, requirePermission } from "@/server/admin-guard";
+import { buildGstr3b } from "@/server/gstr3b";
 
 export async function GET(req: Request) {
   const guard = await requirePermission("reports.read");

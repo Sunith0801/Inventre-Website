@@ -20,8 +20,8 @@ config({ path: path.resolve(process.cwd(), ".env.deploy") });
 config({ path: path.resolve(process.cwd(), ".env.local") });
 config({ path: path.resolve(process.cwd(), ".env") });
 
-import { emitOrderEvent } from "@/lib/erp-bridge";
-import { getErpConfig } from "@/lib/erp-config";
+import { emitOrderEvent } from "@/server/erp-bridge";
+import { getErpConfig } from "@/server/erp-config";
 
 async function main() {
   const orderId = process.argv[2];

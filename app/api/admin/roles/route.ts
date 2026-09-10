@@ -2,9 +2,9 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { sql } from "drizzle-orm";
 import { db } from "@/db/client";
-import { requirePermission, isResponse } from "@/lib/admin-guard";
+import { requirePermission, isResponse } from "@/server/admin-guard";
 import { ADMIN_PERMISSION_KEYS } from "@/lib/admin-permissions";
-import { logActivity } from "@/lib/activity";
+import { logActivity } from "@/server/activity";
 
 const Body = z.object({
   name: z.string().min(1).max(80),

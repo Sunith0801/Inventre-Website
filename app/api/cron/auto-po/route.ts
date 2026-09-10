@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { runAutoPo } from "@/lib/auto-po";
+import { runAutoPo } from "@/server/auto-po";
 
 /**
  * Cron entry — run nightly to draft POs for low-stock variants.

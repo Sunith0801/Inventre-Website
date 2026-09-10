@@ -1,15 +1,15 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { sql, and, eq, count } from "drizzle-orm";
-import { failJson } from "@/lib/observability/fail-json";
+import { failJson } from "@/server/observability/fail-json";
 import { db } from "@/db/client";
 import {
   orders,
   websiteCartCoupons,
   websiteCartCouponUsages,
 } from "@/db/schema";
-import { getCurrentParent } from "@/lib/session";
-import { redis } from "@/lib/redis";
+import { getCurrentParent } from "@/server/session";
+import { redis } from "@/server/redis";
 
 // Forces runtime execution — the GET handler touches Redis (cart coupon
 // state) and the build host can't reach the in-container Redis. Without

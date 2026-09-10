@@ -4,15 +4,15 @@ import { z } from "zod";
 import { eq, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { students, systemSettings } from "@/db/schema";
-import { isResponse, requirePermission } from "@/lib/admin-guard";
-import { logActivity } from "@/lib/activity";
-import { parseJson } from "@/lib/api-handler";
-import { invalidateCatalog } from "@/lib/cache";
+import { isResponse, requirePermission } from "@/server/admin-guard";
+import { logActivity } from "@/server/activity";
+import { parseJson } from "@/server/api-handler";
+import { invalidateCatalog } from "@/server/cache";
 import {
   SITE_ACCESS_KEY,
   DEFAULT_SITE_ACCESS,
   getSiteAccess,
-} from "@/lib/site-access";
+} from "@/server/site-access";
 
 export const dynamic = "force-dynamic";
 

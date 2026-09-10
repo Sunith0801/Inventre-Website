@@ -3,10 +3,10 @@ import { timingSafeEqual } from "crypto";
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { parents, students, studentGuardianLinks } from "@/db/schema";
-import { isSupportViewEnabled, signSupportView } from "@/lib/support-view";
-import { resolveFamilyParent, type FamilyParent } from "@/lib/parent-lookup";
+import { isSupportViewEnabled, signSupportView } from "@/server/support-view";
+import { resolveFamilyParent, type FamilyParent } from "@/server/parent-lookup";
 import { last10, last10Sql } from "@/lib/phone";
-import { logActivity } from "@/lib/activity";
+import { logActivity } from "@/server/activity";
 
 /** Best-effort client IP from proxy headers; inlined to avoid cross-tree drift. */
 function reqIp(req: NextRequest): string | null {

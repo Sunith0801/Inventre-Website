@@ -9,8 +9,8 @@ import {
   productVariants,
   products,
 } from "@/db/schema";
-import { requireParent, isResponse } from "@/lib/parent-guard";
-import { invalidate } from "@/lib/cache";
+import { requireParent, isResponse } from "@/server/parent-guard";
+import { invalidate } from "@/server/cache";
 
 const Body = z.object({
   productId: z.string().uuid(),

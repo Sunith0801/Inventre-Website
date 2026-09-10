@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db/client";
 import { sql } from "drizzle-orm";
 import * as XLSX from "xlsx";
-import { requirePermission, isResponse } from "@/lib/admin-guard";
+import { requirePermission, isResponse } from "@/server/admin-guard";
 import { mcbGenderToLabel } from "@/lib/mcb/mappings";
 
 export const dynamic = "force-dynamic";

@@ -9,12 +9,12 @@ import {
   listDeliveryFeeRules,
   listGradeNames,
   listSchoolNames,
-} from "@/lib/erp/delivery-fee-rules";
+} from "@/server/erp/delivery-fee-rules";
 import { NewRuleButton, RuleRowActions } from "./RulesTableClient";
 import DeleteRuleButton from "./DeleteRuleButton";
 import { BulkAssignCard } from "./BulkAssignCard";
 import { redirect } from "next/navigation";
-import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
+import { requireAnyPermission, isResponse } from "@/server/admin-guard";
 
 export const dynamic = "force-dynamic";
 

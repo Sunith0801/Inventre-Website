@@ -3,8 +3,8 @@ import crypto from "crypto";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { missingItemClaims } from "@/db/schema";
-import { getErpConfig } from "@/lib/erp-config";
-import { isMissingClaimStatus } from "@/lib/missing";
+import { getErpConfig } from "@/server/erp-config";
+import { isMissingClaimStatus } from "@/server/missing";
 
 /**
  * Inbound webhook from audit.inventre.in for missing-item-claim status
@@ -71,9 +71,9 @@ export async function POST(req: Request) {
   // audit (no inventre row exists yet). Build one so the parent sees it on
   // their order page. Returns the new claim id for audit to pin as ecom_id.
   if (env.event_type === "missing.created") {
-    const { createMissingFromAudit } = await import("@/lib/audit-inbound");
+    const { createMissingFromAudit } = await import("@/server/audit-inbound");
     const res = await createMissingFromAudit(
-      cl as import("@/lib/audit-inbound").AuditMissingCreate
+      cl as import("@/server/audit-inbound").AuditMissingCreate
     );
     return NextResponse.json(res.body, { status: res.status });
   }

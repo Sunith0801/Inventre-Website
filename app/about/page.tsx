@@ -8,7 +8,7 @@ import { Innovations } from "@/components/about/Innovations";
 import { VisionMission } from "@/components/about/VisionMission";
 import { Sustainability } from "@/components/about/Sustainability";
 import { FinalCTA } from "@/components/FinalCTA";
-import { resolveMedia } from "@/lib/repos/media";
+import { resolveMedia } from "@/server/repos/media";
 
 export const dynamic = "force-dynamic";
 

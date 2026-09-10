@@ -25,11 +25,11 @@ import { sql } from "drizzle-orm";
 // Cron routes use the isolated `dbCron` pool (max=8) so a tight drain
 // loop can't starve the customer request pool (`db`, max=30).
 import { dbCron as db } from "@/db/client";
-import { erpOrderPollDisabledResponse } from "@/lib/erp-inbound-guard";
+import { erpOrderPollDisabledResponse } from "@/server/erp-inbound-guard";
 import {
   dispatchWebhookEvents,
   type WebhookEnvelope,
-} from "@/lib/erp-webhook-dispatch";
+} from "@/server/erp-webhook-dispatch";
 
 export const dynamic = "force-dynamic";
 

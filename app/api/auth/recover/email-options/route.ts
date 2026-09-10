@@ -15,8 +15,8 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { sql } from "drizzle-orm";
 import { db } from "@/db/client";
-import { rateLimit } from "@/lib/rate-limit";
-import { maskEmail } from "@/lib/email";
+import { rateLimit } from "@/server/rate-limit";
+import { maskEmail } from "@/server/notify/email";
 
 const Body = z.object({ studentId: z.string().uuid() });
 

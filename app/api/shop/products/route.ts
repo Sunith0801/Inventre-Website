@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
-import { getSiteAccess } from "@/lib/site-access";
-import { requireParent, isResponse } from "@/lib/parent-guard";
-import { listProductsForStudent } from "@/lib/repos/products";
-import { toTargetedGrade } from "@/lib/repos/grades";
+import { getSiteAccess } from "@/server/site-access";
+import { requireParent, isResponse } from "@/server/parent-guard";
+import { listProductsForStudent } from "@/server/repos/products";
+import { toTargetedGrade } from "@/server/repos/grades";
 import {
   isCatalogDisabledSchool,
   catalogDisabledMessage,

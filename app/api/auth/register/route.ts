@@ -19,9 +19,9 @@ import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { parents } from "@/db/schema";
-import { rateLimit } from "@/lib/rate-limit";
-import { sendSms, generateOtp } from "@/lib/sms";
-import { redis } from "@/lib/redis";
+import { rateLimit } from "@/server/rate-limit";
+import { sendSms, generateOtp } from "@/server/notify/sms";
+import { redis } from "@/server/redis";
 import bcrypt from "@node-rs/bcrypt";
 
 const Body = z.object({
@@ -69,7 +69,7 @@ export async function POST(req: Request) {
       { status: 409 }
     );
 
-  const { generateCustomerCode } = await import("@/lib/customer-numbering");
+  const { generateCustomerCode } = await import("@/server/customer-numbering");
   const customerCode = await generateCustomerCode();
   // ON CONFLICT (phone) DO NOTHING: the SELECT above is a TOCTOU
   // window — a parallel registration on the same phone microseconds

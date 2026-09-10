@@ -5,8 +5,8 @@ import crypto from "node:crypto";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { parents } from "@/db/schema";
-import { rateLimit } from "@/lib/rate-limit";
-import { redis } from "@/lib/redis";
+import { rateLimit } from "@/server/rate-limit";
+import { redis } from "@/server/redis";
 
 const Body = z.object({
   token: z.string().min(20).max(200),

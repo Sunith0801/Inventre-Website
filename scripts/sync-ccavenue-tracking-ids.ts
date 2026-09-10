@@ -24,7 +24,7 @@ config({ path: path.resolve(process.cwd(), ".env") });
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { sql } from "drizzle-orm";
-import { fetchCCAvenueOrderStatus, isCCAvenueConfigured } from "@/lib/ccavenue";
+import { fetchCCAvenueOrderStatus, isCCAvenueConfigured } from "@/server/ccavenue";
 
 const url = process.env.DATABASE_DIRECT_URL ?? process.env.DATABASE_URL;
 if (!url) throw new Error("DATABASE_DIRECT_URL or DATABASE_URL is required");

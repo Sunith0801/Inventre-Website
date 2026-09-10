@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { orders, payments } from "@/db/schema";
-import { parseCallback, normalizeCallbackPayload } from "@/lib/ccavenue";
-import { finalizeOrderPayment } from "@/lib/ccavenue-finalize";
+import { parseCallback, normalizeCallbackPayload } from "@/server/ccavenue";
+import { finalizeOrderPayment } from "@/server/ccavenue-finalize";
 
 /**
  * CCAvenue posts back form-encoded data with an `encResp` field. We decrypt

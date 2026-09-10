@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { ShoppingBag } from "lucide-react";
 import { db } from "@/db/client";
 import { sql } from "drizzle-orm";
-import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
+import { requireAnyPermission, isResponse } from "@/server/admin-guard";
 import {
   PageHeader,
   Card,

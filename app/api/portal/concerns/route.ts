@@ -3,8 +3,8 @@ import { z } from "zod";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { concerns, concernMessages, orders, parents } from "@/db/schema";
-import { allocConcernNumber } from "@/lib/numbering";
-import { emitConcernEvent } from "@/lib/erp-bridge";
+import { allocConcernNumber } from "@/server/numbering";
+import { emitConcernEvent } from "@/server/erp-bridge";
 
 /**
  * PUBLIC Parent Concern intake (inventre.in/portal) — no login.

@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
-import { parseBody } from "@/lib/parse-body";
+import { parseBody } from "@/server/parse-body";
 import { z } from "zod";
-import { isResponse, requirePermission } from "@/lib/admin-guard";
-import { logAdminActivity } from "@/lib/activity";
+import { isResponse, requirePermission } from "@/server/admin-guard";
+import { logAdminActivity } from "@/server/activity";
 import {
   createPurchaseOrder,
   listPurchaseOrders,
-} from "@/lib/repos/purchase-orders";
+} from "@/server/repos/purchase-orders";
 
 export async function GET(req: Request) {
   const guard = await requirePermission("purchase-orders.read");

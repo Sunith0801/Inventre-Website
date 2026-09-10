@@ -10,9 +10,9 @@ import {
   productSchool,
   productGrades,
 } from "@/db/schema";
-import { isResponse, requirePermission } from "@/lib/admin-guard";
-import { invalidateCatalog } from "@/lib/cache";
-import { logAdminActivity } from "@/lib/activity";
+import { isResponse, requirePermission } from "@/server/admin-guard";
+import { invalidateCatalog } from "@/server/cache";
+import { logAdminActivity } from "@/server/activity";
 
 /** Existing BOM components for a product — for prefilling the BOM form. */
 export async function GET(req: Request) {

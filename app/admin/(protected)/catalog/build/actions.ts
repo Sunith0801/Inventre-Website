@@ -2,16 +2,16 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { requirePermission, isResponse } from "@/lib/admin-guard";
-import { invalidateCatalog } from "@/lib/cache";
-import { logActivity } from "@/lib/activity";
+import { requirePermission, isResponse } from "@/server/admin-guard";
+import { invalidateCatalog } from "@/server/cache";
+import { logActivity } from "@/server/activity";
 import {
   createBookkitWithBom,
   createUniformWithVariants,
   type BookkitChildPayload,
   type BookkitPayload,
   type UniformPayload,
-} from "@/lib/admin/catalog-builders";
+} from "@/server/admin/catalog-builders";
 
 // Zod schemas — mirror the TS types in catalog-builders.ts but enforce
 // runtime shape (the client sends untrusted JSON).

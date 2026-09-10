@@ -5,8 +5,8 @@
  */
 import { sql } from "drizzle-orm";
 import { db } from "@/db/client";
-import { getParentOrderDetailFromErp } from "@/lib/erp-customer-orders";
-import { classifyReturnItems } from "@/lib/return-line-eligibility";
+import { getParentOrderDetailFromErp } from "@/server/erp-customer-orders";
+import { classifyReturnItems } from "@/server/return-line-eligibility";
 
 async function main() {
   const list = process.argv.slice(2);

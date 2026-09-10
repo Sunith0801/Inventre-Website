@@ -19,12 +19,12 @@ import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { orders, payments } from "@/db/schema";
-import { getCurrentParent } from "@/lib/session";
+import { getCurrentParent } from "@/server/session";
 import {
   fetchCCAvenueOrderStatus,
   isCCAvenueConfigured,
-} from "@/lib/ccavenue";
-import { finalizeOrderPayment } from "@/lib/ccavenue-finalize";
+} from "@/server/ccavenue";
+import { finalizeOrderPayment } from "@/server/ccavenue-finalize";
 
 const THROTTLE_MS = 5_000;
 

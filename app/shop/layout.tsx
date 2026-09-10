@@ -1,8 +1,8 @@
 import { redirect } from "next/navigation";
 import { CartProvider } from "@/lib/cart";
-import { getCurrentParent } from "@/lib/session";
-import { readSupportView } from "@/lib/support-view";
-import { getSiteAccess } from "@/lib/site-access";
+import { getCurrentParent } from "@/server/session";
+import { readSupportView } from "@/server/support-view";
+import { getSiteAccess } from "@/server/site-access";
 import AccessClosed from "@/components/shop/AccessClosed";
 
 export default async function ShopLayout({

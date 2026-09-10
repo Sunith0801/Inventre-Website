@@ -1,4 +1,4 @@
-import { buildGstr3b } from "@/lib/gstr3b";
+import { buildGstr3b } from "@/server/gstr3b";
 import { Receipt, Download } from "lucide-react";
 import {
   PageHeader,

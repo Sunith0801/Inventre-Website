@@ -8,7 +8,7 @@ import {
   IndianRupee,
 } from "lucide-react";
 import { ProductDeleteButton } from "@/components/admin/ProductDeleteButton";
-import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
+import { requireAnyPermission, isResponse } from "@/server/admin-guard";
 import { db } from "@/db/client";
 import { alias } from "drizzle-orm/pg-core";
 import {

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { sql, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { bins, productVariants, products, warehouses } from "@/db/schema";
-import { isResponse, requirePermission } from "@/lib/admin-guard";
+import { isResponse, requirePermission } from "@/server/admin-guard";
 
 /**
  * Stock valuation + low-stock report.

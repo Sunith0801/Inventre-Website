@@ -32,7 +32,7 @@ config({ path: path.resolve(process.cwd(), ".env") });
 
 import { sql } from "drizzle-orm";
 import { db } from "@/db/client";
-import { emitOrderEvent } from "@/lib/erp-bridge";
+import { emitOrderEvent } from "@/server/erp-bridge";
 
 const DRY_RUN = process.argv.includes("--dry-run");
 function numFlag(name: string, dflt: number): number {

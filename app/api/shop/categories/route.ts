@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getCategoryTree } from "@/lib/repos/categories";
+import { getCategoryTree } from "@/server/repos/categories";
 
 export async function GET() {
   const tree = await getCategoryTree();

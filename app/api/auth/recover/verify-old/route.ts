@@ -12,9 +12,9 @@ import bcrypt from "@node-rs/bcrypt";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { parents, students } from "@/db/schema";
-import { redis } from "@/lib/redis";
-import { rateLimit } from "@/lib/rate-limit";
-import { createParentSession } from "@/lib/session";
+import { redis } from "@/server/redis";
+import { rateLimit } from "@/server/rate-limit";
+import { createParentSession } from "@/server/session";
 
 const Body = z.object({
   studentId: z.string().uuid(),

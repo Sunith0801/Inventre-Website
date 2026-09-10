@@ -14,7 +14,7 @@
 import { asc, isNotNull } from "drizzle-orm";
 import { db } from "@/db/client";
 import { concerns } from "@/db/schema";
-import { emitConcernEvent } from "@/lib/erp-bridge";
+import { emitConcernEvent } from "@/server/erp-bridge";
 
 async function main() {
   const rows = await db

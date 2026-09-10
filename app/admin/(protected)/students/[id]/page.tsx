@@ -18,7 +18,7 @@ import {
   erpSchemaReady, countStudentSalesOrders, loadStudentSalesOrders,
   type StudentSalesData, type ErpOrder, type ErpItem,
   type ErpShipment, type ErpPayment,
-} from "@/lib/erp-sales";
+} from "@/server/erp-sales";
 
 export const dynamic = "force-dynamic";
 

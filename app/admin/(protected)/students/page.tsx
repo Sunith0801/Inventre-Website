@@ -2,14 +2,14 @@ import Link from "next/link";
 import { db } from "@/db/client";
 import { students, schools, grades, parents } from "@/db/schema";
 import { ilike, or, eq, and, count, asc, sql } from "drizzle-orm";
-import { studentDisplayGradeSql } from "@/lib/repos/grades";
+import { studentDisplayGradeSql } from "@/server/repos/grades";
 import { Plus, Upload } from "lucide-react";
 import { PageHeader, Button } from "@/components/admin/ui/primitives";
-import { getCurrentUser } from "@/lib/session";
+import { getCurrentUser } from "@/server/session";
 import { StudentsBrowser } from "./StudentsBrowser";
 import { STUDENTS_PAGE_SIZE } from "./_constants";
 import { redirect } from "next/navigation";
-import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
+import { requireAnyPermission, isResponse } from "@/server/admin-guard";
 
 export const dynamic = "force-dynamic";
 

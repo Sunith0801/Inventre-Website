@@ -3,8 +3,8 @@ import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { parents } from "@/db/schema";
-import { getCurrentUser, getCurrentParent } from "@/lib/session";
-import { parseJson } from "@/lib/api-handler";
+import { getCurrentUser, getCurrentParent } from "@/server/session";
+import { parseJson } from "@/server/api-handler";
 
 export async function GET() {
   // Prefer the parent session. `getCurrentUser` resolves an admin cookie

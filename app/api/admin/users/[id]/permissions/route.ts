@@ -3,10 +3,10 @@ import { z } from "zod";
 import { eq, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { users } from "@/db/schema";
-import { requirePermission, isResponse } from "@/lib/admin-guard";
+import { requirePermission, isResponse } from "@/server/admin-guard";
 import { ADMIN_PERMISSION_KEYS } from "@/lib/admin-permissions";
-import { logActivity } from "@/lib/activity";
-import { parseBody } from "@/lib/parse-body";
+import { logActivity } from "@/server/activity";
+import { parseBody } from "@/server/parse-body";
 
 /**
  * Replace the full set of per-user permission overrides for a target user.

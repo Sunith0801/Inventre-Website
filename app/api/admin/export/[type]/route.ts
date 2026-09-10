@@ -12,7 +12,7 @@ import {
   websiteCartCoupons,
   students,
 } from "@/db/schema";
-import { requirePermission, isResponse } from "@/lib/admin-guard";
+import { requirePermission, isResponse } from "@/server/admin-guard";
 
 /**
  * Unified CSV export for admin list pages.

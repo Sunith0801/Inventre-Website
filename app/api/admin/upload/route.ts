@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { requireAnyWritePermission, isResponse } from "@/lib/admin-guard";
-import { uploadFile } from "@/lib/storage";
+import { requireAnyWritePermission, isResponse } from "@/server/admin-guard";
+import { uploadFile } from "@/server/storage";
 
 const MAX_IMAGE_BYTES = 50 * 1024 * 1024; // 50 MB — DSLR/RAW-exported JPGs etc.
 const MAX_VIDEO_BYTES = 500 * 1024 * 1024; // 500 MB — short 4K marketing clips.

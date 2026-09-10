@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { requireParent, isResponse } from "@/lib/parent-guard";
-import { loadVariantBundleTree } from "@/lib/repos/products";
+import { requireParent, isResponse } from "@/server/parent-guard";
+import { loadVariantBundleTree } from "@/server/repos/products";
 
 /**
  * Returns a BOM tree for a template variant that has no product row of its own

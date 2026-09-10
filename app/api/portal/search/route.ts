@@ -5,7 +5,7 @@ import { students, schools, parents, concerns } from "@/db/schema";
 import {
   listParentOrdersFromErp,
   getParentOrderDetailFromErp,
-} from "@/lib/erp-customer-orders";
+} from "@/server/erp-customer-orders";
 
 /**
  * PUBLIC search for the Parent Support Portal — by Student ID (enrollment)

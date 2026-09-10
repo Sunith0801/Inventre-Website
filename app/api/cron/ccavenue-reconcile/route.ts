@@ -23,8 +23,8 @@ import { orders, payments } from "@/db/schema";
 import {
   fetchCCAvenueOrderStatus,
   isCCAvenueConfigured,
-} from "@/lib/ccavenue";
-import { finalizeOrderPayment } from "@/lib/ccavenue-finalize";
+} from "@/server/ccavenue";
+import { finalizeOrderPayment } from "@/server/ccavenue-finalize";
 
 const BATCH_LIMIT = 50;
 /** Min time between polls per order. */

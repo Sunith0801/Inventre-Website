@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
-import { parseBody } from "@/lib/parse-body";
+import { parseBody } from "@/server/parse-body";
 import { z } from "zod";
 import { eq, like } from "drizzle-orm";
 import { db } from "@/db/client";
 import { categories } from "@/db/schema";
-import { isResponse, requirePermission } from "@/lib/admin-guard";
-import { invalidateCatalog } from "@/lib/cache";
-import { logAdminActivity, diffFields } from "@/lib/activity";
+import { isResponse, requirePermission } from "@/server/admin-guard";
+import { invalidateCatalog } from "@/server/cache";
+import { logAdminActivity, diffFields } from "@/server/activity";
 
 const Body = z.object({
   slug: z.string().min(1).optional(),

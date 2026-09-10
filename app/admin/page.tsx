@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
-import { getCurrentUser } from "@/lib/session";
+import { getCurrentUser } from "@/server/session";
 import { firstAccessiblePath } from "@/lib/admin-permissions";
-import { isFeesScopedPermission } from "@/lib/fees-users";
+import { isFeesScopedPermission } from "@/server/fees-users";
 
 export default async function AdminIndex() {
   const me = await getCurrentUser();

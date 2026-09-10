@@ -2,9 +2,9 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { eq, sql } from "drizzle-orm";
 import { db, schema } from "@/db/client";
-import { isResponse, requirePermission } from "@/lib/admin-guard";
-import { parseJson } from "@/lib/api-handler";
-import { logAdminActivity } from "@/lib/activity";
+import { isResponse, requirePermission } from "@/server/admin-guard";
+import { parseJson } from "@/server/api-handler";
+import { logAdminActivity } from "@/server/activity";
 
 /**
  * Bulk grade-mapping insert. The single-row sibling endpoint stays untouched

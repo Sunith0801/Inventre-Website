@@ -20,7 +20,7 @@ config({ path: path.resolve(process.cwd(), ".env") });
 
 import { sql } from "drizzle-orm";
 import { db } from "../db/client";
-import { refreshProductAttributeGroups } from "../lib/repos/product-attribute-groups";
+import { refreshProductAttributeGroups } from "../server/repos/product-attribute-groups";
 
 async function main() {
   const args = process.argv.slice(2);

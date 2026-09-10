@@ -22,7 +22,7 @@
  *   other       — fallback when kind is missing/unknown
  */
 
-import type { ExchangeReason } from "./exchange-shared";
+import type { ExchangeReason } from "@/lib/exchange-shared";
 
 export type ProductKind =
   | "book"

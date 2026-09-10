@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
-import type { PaymentChargesConfig } from "@/lib/payment-charges";
+import type { PaymentChargesConfig } from "@/server/payment-charges";
 
 type Props = { initial: PaymentChargesConfig };
 

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { requirePermission, isResponse } from "@/lib/admin-guard";
-import { resendNotification } from "@/lib/order-confirmation";
-import { logAdminActivity } from "@/lib/activity";
+import { requirePermission, isResponse } from "@/server/admin-guard";
+import { resendNotification } from "@/server/order-confirmation";
+import { logAdminActivity } from "@/server/activity";
 
 /**
  * Re-fire a failed order-confirmation notification (one channel, one

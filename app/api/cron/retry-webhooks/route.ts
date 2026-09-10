@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { processWebhookRetries } from "@/lib/event-bus";
+import { processWebhookRetries } from "@/server/notify/event-bus";
 
 /**
  * Cron entry — run every minute to flush failed webhook deliveries.

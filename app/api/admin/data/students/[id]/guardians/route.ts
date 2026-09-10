@@ -3,11 +3,11 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { and, eq, ne, sql } from "drizzle-orm";
 import { db, schema } from "@/db/client";
-import { isResponse, requirePermission } from "@/lib/admin-guard";
-import { logAdminActivity } from "@/lib/activity";
-import { parseJson } from "@/lib/api-handler";
-import { emitGuardianEvent, emitStudentEvent } from "@/lib/erp-bridge";
-import { upsertGuardianLink } from "@/lib/repos/guardians";
+import { isResponse, requirePermission } from "@/server/admin-guard";
+import { logAdminActivity } from "@/server/activity";
+import { parseJson } from "@/server/api-handler";
+import { emitGuardianEvent, emitStudentEvent } from "@/server/erp-bridge";
+import { upsertGuardianLink } from "@/server/repos/guardians";
 import { last10 } from "@/lib/phone";
 
 const Row = z.object({

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Check, Loader2, ShoppingBag, AlertCircle, ShoppingCart, Package, Ruler, X } from "lucide-react";
-import type { BundleNode } from "@/lib/repos/products";
+import type { BundleNode } from "@/server/repos/products";
 import { useCart } from "@/lib/cart";
 import { parseBookkitLangs, type LangPair } from "@/lib/bookkit-langs";
 import { MultiAttributePicker } from "@/components/shop/pdp/MultiAttributePicker";

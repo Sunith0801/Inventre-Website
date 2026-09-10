@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { db } from "@/db/client";
 import { productAttributes, schools } from "@/db/schema";
 import { eq, sql, ilike, or, and } from "drizzle-orm";
-import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
+import { requireAnyPermission, isResponse } from "@/server/admin-guard";
 import { Layers, Plus } from "lucide-react";
 import {
   PageHeader,

@@ -1,6 +1,6 @@
 import { FileText, Printer } from "lucide-react";
 import Link from "next/link";
-import { listInvoices } from "@/lib/repos/invoices";
+import { listInvoices } from "@/server/repos/invoices";
 import { ExportButton } from "@/components/admin/ExportButton";
 import {
   PageHeader,
@@ -19,7 +19,7 @@ import {
   statusTone,
 } from "@/components/admin/ui/primitives";
 import { redirect } from "next/navigation";
-import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
+import { requireAnyPermission, isResponse } from "@/server/admin-guard";
 
 export const dynamic = "force-dynamic";
 

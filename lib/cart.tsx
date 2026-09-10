@@ -9,7 +9,7 @@ import {
   ReactNode,
 } from "react";
 import { useSearchParams } from "next/navigation";
-import type { Product } from "./products";
+import type { Product } from "@/lib/products";
 
 export type ServerCartLine = {
   variantId: string;

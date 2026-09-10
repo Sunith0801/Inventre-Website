@@ -4,7 +4,7 @@ import {
   byGrade,
   type ProductExportFilters,
   type LoadedProductExport,
-} from "@/lib/product-export";
+} from "@/server/product-export";
 
 /**
  * School-segregated price list behind the /admin/products "Price List" export.

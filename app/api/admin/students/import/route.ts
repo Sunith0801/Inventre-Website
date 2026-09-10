@@ -7,9 +7,9 @@ import {
   students,
   schools,
 } from "@/db/schema";
-import { requirePermission, isResponse } from "@/lib/admin-guard";
-import { logAdminActivity } from "@/lib/activity";
-import { upsertGuardianLink } from "@/lib/repos/guardians";
+import { requirePermission, isResponse } from "@/server/admin-guard";
+import { logAdminActivity } from "@/server/activity";
+import { upsertGuardianLink } from "@/server/repos/guardians";
 import { last10 } from "@/lib/phone";
 
 /**

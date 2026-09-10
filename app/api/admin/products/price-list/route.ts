@@ -6,7 +6,7 @@ import {
   PRICE_LIST_COL_WIDTHS,
   PRICE_LIST_HEADER,
 } from "@/lib/product-price-list";
-import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
+import { requireAnyPermission, isResponse } from "@/server/admin-guard";
 
 export const dynamic = "force-dynamic";
 

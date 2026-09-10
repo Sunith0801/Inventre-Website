@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
-import { parseBody } from "@/lib/parse-body";
+import { parseBody } from "@/server/parse-body";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { parents } from "@/db/schema";
-import { requirePermission, isResponse } from "@/lib/admin-guard";
-import { getCustomerDetail } from "@/lib/repos/customers";
-import { logAdminActivity, diffFields } from "@/lib/activity";
+import { requirePermission, isResponse } from "@/server/admin-guard";
+import { getCustomerDetail } from "@/server/repos/customers";
+import { logAdminActivity, diffFields } from "@/server/activity";
 
 export async function GET(
   _: Request,

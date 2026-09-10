@@ -13,13 +13,13 @@ config({ path: path.resolve(process.cwd(), ".env.deploy") });
 config({ path: path.resolve(process.cwd(), ".env.local") });
 config({ path: path.resolve(process.cwd(), ".env") });
 
-import { erpAuthedGet } from "@/lib/erp-jwt";
+import { erpAuthedGet } from "@/server/erp-jwt";
 import {
   upsertOrderMirror,
   upsertItemsMirror,
   deriveStatusForErpOrderName,
   type ErpOrderDetailResp,
-} from "@/lib/erp-poll";
+} from "@/server/erp-poll";
 
 async function main() {
   const name = process.argv[2];

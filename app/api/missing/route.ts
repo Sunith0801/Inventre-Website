@@ -3,10 +3,10 @@ import { z } from "zod";
 import { eq, desc } from "drizzle-orm";
 import { db } from "@/db/client";
 import { missingItemClaims } from "@/db/schema";
-import { requireParent, isResponse } from "@/lib/parent-guard";
-import { isExchangeTester } from "@/lib/exchange-gate";
-import { createMissingClaim } from "@/lib/missing";
-import { failJson } from "@/lib/observability/fail-json";
+import { requireParent, isResponse } from "@/server/parent-guard";
+import { isExchangeTester } from "@/server/exchange-gate";
+import { createMissingClaim } from "@/server/missing";
+import { failJson } from "@/server/observability/fail-json";
 
 /**
  * Customer-raised missing-item claim endpoint. Mirrors /api/returns but

@@ -24,7 +24,7 @@ config({ path: ".env.local" });
 
 import { db } from "@/db/client";
 import { sql } from "drizzle-orm";
-import { refreshOrderHeaderMirror } from "@/lib/erp-order-header-refresh";
+import { refreshOrderHeaderMirror } from "@/server/erp-order-header-refresh";
 
 const APPLY = process.argv.includes("--apply");
 const LIMIT = Number(

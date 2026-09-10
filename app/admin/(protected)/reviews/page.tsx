@@ -3,7 +3,7 @@ import { db } from "@/db/client";
 import { reviews, products, parents } from "@/db/schema";
 import { ReviewModerationActions } from "@/components/admin/ReviewModerationActions";
 import { redirect } from "next/navigation";
-import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
+import { requireAnyPermission, isResponse } from "@/server/admin-guard";
 
 export default async function AdminReviewsPage() {
   const guard = await requireAnyPermission("reviews.read", "reviews.write");

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requirePermission, isResponse } from "@/lib/admin-guard";
+import { requirePermission, isResponse } from "@/server/admin-guard";
 
 /**
  * Sample CSV the admin downloads, fills, and re-uploads via the import

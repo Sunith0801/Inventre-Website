@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { parseBody } from "@/lib/parse-body";
+import { parseBody } from "@/server/parse-body";
 import { z } from "zod";
 import { eq, and, ne } from "drizzle-orm";
 import { db } from "@/db/client";
@@ -14,14 +14,14 @@ import {
   returns,
   erpOutboundQueue,
 } from "@/db/schema";
-import { requirePermission, isResponse, assertSchoolAccess } from "@/lib/admin-guard";
-import { logAdminActivity, diffFields } from "@/lib/activity";
-import { notifyOrderStatus } from "@/lib/notifications";
+import { requirePermission, isResponse, assertSchoolAccess } from "@/server/admin-guard";
+import { logAdminActivity, diffFields } from "@/server/activity";
+import { notifyOrderStatus } from "@/server/notify/notifications";
 import {
   reserveOrder,
   releaseOrder,
   getDefaultWarehouseId,
-} from "@/lib/repos/inventory";
+} from "@/server/repos/inventory";
 
 const AddressShape = z.object({
   receiverName: z.string().min(1),
@@ -348,7 +348,7 @@ export async function PATCH(
   // notifications, ERP cancel queue, loyalty awards.
   if (body.status !== undefined && before.status !== body.status) {
     void notifyOrderStatus(id, body.status);
-    const { emit } = await import("@/lib/event-bus");
+    const { emit } = await import("@/server/notify/event-bus");
     void emit(`order.${body.status}` as never, {
       orderId: id,
       orderNumber: before.orderNumber,
@@ -358,7 +358,7 @@ export async function PATCH(
     });
     // Cancellations propagate to ERP through the buffered queue.
     if (body.status === "cancelled") {
-      const { enqueueOrderEvent } = await import("@/lib/erp-bridge");
+      const { enqueueOrderEvent } = await import("@/server/erp-bridge");
       void enqueueOrderEvent(id, "order.cancelled");
       enqueuedToAudit = true;
     } else if (
@@ -373,12 +373,12 @@ export async function PATCH(
       // "Fully Delivered"); without this re-emit audit stays frozen at the
       // create-time status ("To Deliver and Bill" / "Not Delivered").
       // Buffered queue, best-effort — never throws.
-      const { enqueueOrderEvent } = await import("@/lib/erp-bridge");
+      const { enqueueOrderEvent } = await import("@/server/erp-bridge");
       void enqueueOrderEvent(id, "order.updated");
       enqueuedToAudit = true;
     }
     if (body.status === "delivered") {
-      const { awardForOrder } = await import("@/lib/repos/loyalty");
+      const { awardForOrder } = await import("@/server/repos/loyalty");
       void awardForOrder({
         parentId: before.parentId,
         orderId: id,
@@ -397,7 +397,7 @@ export async function PATCH(
     body.billingAddress !== undefined ||
     phoneChanged;
   if (contactChanged && !enqueuedToAudit) {
-    const { enqueueOrderEvent } = await import("@/lib/erp-bridge");
+    const { enqueueOrderEvent } = await import("@/server/erp-bridge");
     void enqueueOrderEvent(id, "order.updated");
   }
 
@@ -440,7 +440,7 @@ export async function DELETE(
   // won't match — harmless, and cheaper than tracking which ones synced.
   // order.deleted (vs .cancelled) tells audit to remove the SO outright.
   {
-    const { emitOrderEvent } = await import("@/lib/erp-bridge");
+    const { emitOrderEvent } = await import("@/server/erp-bridge");
     await emitOrderEvent(id, "order.deleted");
   }
 

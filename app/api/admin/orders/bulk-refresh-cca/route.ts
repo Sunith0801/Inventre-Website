@@ -4,9 +4,9 @@ import { z } from "zod";
 import { and, eq, inArray, sql, asc } from "drizzle-orm";
 import { db } from "@/db/client";
 import { orders, payments } from "@/db/schema";
-import { requirePermission, isResponse } from "@/lib/admin-guard";
-import { parseJson } from "@/lib/api-handler";
-import { fetchCCAvenueOrderStatus, isCCAvenueConfigured } from "@/lib/ccavenue";
+import { requirePermission, isResponse } from "@/server/admin-guard";
+import { parseJson } from "@/server/api-handler";
+import { fetchCCAvenueOrderStatus, isCCAvenueConfigured } from "@/server/ccavenue";
 
 /**
  * Bulk-refresh CCAvenue status for N selected orders in one HTTP round-trip

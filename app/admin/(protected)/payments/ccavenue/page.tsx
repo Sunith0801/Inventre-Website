@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { sql } from "drizzle-orm";
 import { db } from "@/db/client";
-import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
+import { requireAnyPermission, isResponse } from "@/server/admin-guard";
 import {
   PageHeader,
   Card,

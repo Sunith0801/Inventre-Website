@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { sql } from "drizzle-orm";
 import { db } from "@/db/client";
-import { requireParent, isResponse } from "@/lib/parent-guard";
-import { erpAuthedGet } from "@/lib/erp-jwt";
-import { upsertShipmentMirror, type ErpShipmentResp } from "@/lib/erp-poll";
+import { requireParent, isResponse } from "@/server/parent-guard";
+import { erpAuthedGet } from "@/server/erp-jwt";
+import { upsertShipmentMirror, type ErpShipmentResp } from "@/server/erp-poll";
 import {
   getParentOrderDetailFromErp,
   getParentOrderDetailLocal,
-} from "@/lib/erp-customer-orders";
+} from "@/server/erp-customer-orders";
 
 /**
  * POST /api/orders/{id}/shipments/{shipmentId}/refresh

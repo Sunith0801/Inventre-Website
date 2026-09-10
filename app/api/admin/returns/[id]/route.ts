@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { parseBody } from "@/lib/parse-body";
+import { parseBody } from "@/server/parse-body";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
@@ -10,11 +10,11 @@ import {
   orders,
   orderItems,
 } from "@/db/schema";
-import { requirePermission, isResponse } from "@/lib/admin-guard";
-import { returnToStock, getDefaultWarehouseId } from "@/lib/repos/inventory";
-import { generateCreditNote } from "@/lib/repos/invoices";
-import { allocOrderNumber } from "@/lib/numbering";
-import { logAdminActivity } from "@/lib/activity";
+import { requirePermission, isResponse } from "@/server/admin-guard";
+import { returnToStock, getDefaultWarehouseId } from "@/server/repos/inventory";
+import { generateCreditNote } from "@/server/repos/invoices";
+import { allocOrderNumber } from "@/server/numbering";
+import { logAdminActivity } from "@/server/activity";
 
 const Body = z.object({
   action: z.enum(["approve", "reject", "receive", "refund", "create_replacement"]),

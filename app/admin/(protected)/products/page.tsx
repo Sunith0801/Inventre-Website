@@ -23,7 +23,7 @@ import {
 import { ExportButton } from "@/components/admin/ExportButton";
 import { ArchiveErpDisabledButton } from "@/components/admin/ArchiveErpDisabledButton";
 import { ProductsTableClient } from "@/components/admin/ProductsTableClient";
-import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
+import { requireAnyPermission, isResponse } from "@/server/admin-guard";
 import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";

@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 import crypto from "crypto";
 import { sql } from "drizzle-orm";
 import { db } from "@/db/client";
-import { getErpConfig } from "@/lib/erp-config";
-import { erpOrderPollDisabledResponse } from "@/lib/erp-inbound-guard";
+import { getErpConfig } from "@/server/erp-config";
+import { erpOrderPollDisabledResponse } from "@/server/erp-inbound-guard";
 
 /**
  * Inbound webhook receiver.

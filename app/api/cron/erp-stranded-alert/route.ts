@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import crypto from "crypto";
-import { getErpConfig } from "@/lib/erp-config";
-import { findStrandedOrders, markStrandedAlerted } from "@/lib/erp-stranded";
-import { sendEmail, isEmailConfigured } from "@/lib/email";
+import { getErpConfig } from "@/server/erp-config";
+import { findStrandedOrders, markStrandedAlerted } from "@/server/erp-stranded";
+import { sendEmail, isEmailConfigured } from "@/server/notify/email";
 
 /**
  * Cron-only stranded-order alert for the audit (ERP) outbound sync.

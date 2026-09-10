@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import crypto from "crypto";
-import { reconcileMissingAuditEvents } from "@/lib/erp-reconcile";
-import { getErpConfig } from "@/lib/erp-config";
+import { reconcileMissingAuditEvents } from "@/server/erp-reconcile";
+import { getErpConfig } from "@/server/erp-config";
 
 /**
  * Cron-only entry point for the audit-sync reconciliation backstop.

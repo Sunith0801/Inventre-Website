@@ -1,5 +1,5 @@
 import { Image as ImageIcon } from "lucide-react";
-import { getAllMediaUrls } from "@/lib/repos/media";
+import { getAllMediaUrls } from "@/server/repos/media";
 import { MediaSlotsGallery } from "@/components/admin/MediaSlotsGallery";
 
 export const dynamic = "force-dynamic";

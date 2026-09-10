@@ -4,8 +4,8 @@ import bcrypt from "@node-rs/bcrypt";
 import { sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { users } from "@/db/schema";
-import { isResponse, requirePermission } from "@/lib/admin-guard";
-import { logActivity } from "@/lib/activity";
+import { isResponse, requirePermission } from "@/server/admin-guard";
+import { logActivity } from "@/server/activity";
 
 const Body = z.object({
   email: z.string().email(),

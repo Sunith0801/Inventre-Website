@@ -1,15 +1,15 @@
 import { NextResponse } from "next/server";
-import { parseBody } from "@/lib/parse-body";
+import { parseBody } from "@/server/parse-body";
 import { z } from "zod";
 import { eq, and } from "drizzle-orm";
 import { db } from "@/db/client";
 import { bins } from "@/db/schema";
-import { isResponse, requirePermission } from "@/lib/admin-guard";
-import { logAdminActivity } from "@/lib/activity";
+import { isResponse, requirePermission } from "@/server/admin-guard";
+import { logAdminActivity } from "@/server/activity";
 import {
   applyStockChange,
   getDefaultWarehouseId,
-} from "@/lib/repos/inventory";
+} from "@/server/repos/inventory";
 
 /**
  * Stock Reconciliation — physical count.

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { and, desc, eq, gt, gte, ilike } from "drizzle-orm";
 import { db } from "@/db/client";
 import { otpLogs } from "@/db/schema";
-import { isResponse, requirePermission } from "@/lib/admin-guard";
+import { isResponse, requirePermission } from "@/server/admin-guard";
 
 /**
  * Cursor-paginated read of `otp_logs` for the live admin panel

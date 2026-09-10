@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { parseBody } from "@/lib/parse-body";
+import { parseBody } from "@/server/parse-body";
 import { z } from "zod";
 import { db } from "@/db/client";
 import {
@@ -9,9 +9,9 @@ import {
   productAttributeValues,
 } from "@/db/schema";
 import { eq, inArray } from "drizzle-orm";
-import { isResponse, requirePermission } from "@/lib/admin-guard";
-import { getDefaultWarehouseId, applyStockChange } from "@/lib/repos/inventory";
-import { logAdminActivity } from "@/lib/activity";
+import { isResponse, requirePermission } from "@/server/admin-guard";
+import { getDefaultWarehouseId, applyStockChange } from "@/server/repos/inventory";
+import { logAdminActivity } from "@/server/activity";
 
 /**
  * Bulk-create variants for a product as the cartesian product of attribute values.

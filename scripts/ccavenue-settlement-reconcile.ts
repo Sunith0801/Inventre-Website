@@ -66,7 +66,7 @@ async function main() {
 
   // Import AFTER dotenv so DATABASE_URL / config resolve first.
   const { parseSettlementCsv, parseSettlementWorkbook, reconcileSettlement } =
-    await import("@/lib/ccavenue-settlement-reconcile");
+    await import("@/server/ccavenue-settlement-reconcile");
 
   // CCAvenue's live SFTP push sends .xlsx; ops CSV exports still work.
   const rows = /\.(xlsx|xls)$/i.test(abs)

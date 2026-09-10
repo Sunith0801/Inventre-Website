@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { getFeesViewer } from "@/lib/fees-auth";
+import { getFeesViewer } from "@/server/fees-auth";
 import FeesLoginForm from "./FeesLoginForm";
 
 export const dynamic = "force-dynamic";

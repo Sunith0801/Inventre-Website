@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { requirePermission, isResponse } from "@/lib/admin-guard";
-import { submitEWB } from "@/lib/ewaybill";
-import { logAdminActivity } from "@/lib/activity";
+import { requirePermission, isResponse } from "@/server/admin-guard";
+import { submitEWB } from "@/server/ewaybill";
+import { logAdminActivity } from "@/server/activity";
 
 export async function POST(
   req: Request,

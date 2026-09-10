@@ -19,8 +19,8 @@ import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { parents } from "@/db/schema";
-import { getCurrentParent } from "@/lib/session";
-import { parseJson } from "@/lib/api-handler";
+import { getCurrentParent } from "@/server/session";
+import { parseJson } from "@/server/api-handler";
 import { TC_VERSION } from "@/lib/legal/terms";
 
 const Body = z.object({

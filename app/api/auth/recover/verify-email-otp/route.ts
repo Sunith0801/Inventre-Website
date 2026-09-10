@@ -8,8 +8,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import bcrypt from "@node-rs/bcrypt";
-import { redis } from "@/lib/redis";
-import { rateLimit } from "@/lib/rate-limit";
+import { redis } from "@/server/redis";
+import { rateLimit } from "@/server/rate-limit";
 
 const Body = z.object({
   studentId: z.string().uuid(),

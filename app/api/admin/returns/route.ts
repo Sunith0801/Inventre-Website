@@ -9,9 +9,9 @@ import {
   orderItems,
   parents,
 } from "@/db/schema";
-import { requirePermission, isResponse, assertSchoolAccess } from "@/lib/admin-guard";
-import { logActivity } from "@/lib/activity";
-import { allocReturnNumber } from "@/lib/numbering";
+import { requirePermission, isResponse, assertSchoolAccess } from "@/server/admin-guard";
+import { logActivity } from "@/server/activity";
+import { allocReturnNumber } from "@/server/numbering";
 
 export async function GET(req: Request) {
   const guard = await requirePermission("returns.read");

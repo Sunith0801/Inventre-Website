@@ -16,11 +16,11 @@ import { z } from "zod";
 import bcrypt from "@node-rs/bcrypt";
 import { sql } from "drizzle-orm";
 import { db } from "@/db/client";
-import { redis } from "@/lib/redis";
-import { rateLimit } from "@/lib/rate-limit";
-import { generateOtp } from "@/lib/sms";
-import { sendEmail, maskEmail } from "@/lib/email";
-import { getOtpToggles, getBypassOtp } from "@/lib/otp-toggles";
+import { redis } from "@/server/redis";
+import { rateLimit } from "@/server/rate-limit";
+import { generateOtp } from "@/server/notify/sms";
+import { sendEmail, maskEmail } from "@/server/notify/email";
+import { getOtpToggles, getBypassOtp } from "@/server/otp-toggles";
 
 const Body = z.object({ studentId: z.string().uuid() });
 const OTP_TTL = 5 * 60;

@@ -7,8 +7,8 @@ import {
   products,
 } from "@/db/schema";
 import { eq, sql } from "drizzle-orm";
-import { isResponse, requirePermission } from "@/lib/admin-guard";
-import { listLowStock } from "@/lib/repos/inventory";
+import { isResponse, requirePermission } from "@/server/admin-guard";
+import { listLowStock } from "@/server/repos/inventory";
 
 export async function GET(req: Request) {
   const guard = await requirePermission("catalog.read");

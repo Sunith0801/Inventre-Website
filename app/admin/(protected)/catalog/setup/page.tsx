@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { sql } from "drizzle-orm";
 import { Plus, GraduationCap, Eye } from "lucide-react";
 import { db } from "@/db/client";
-import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
+import { requireAnyPermission, isResponse } from "@/server/admin-guard";
 import {
   PageHeader,
   Card,

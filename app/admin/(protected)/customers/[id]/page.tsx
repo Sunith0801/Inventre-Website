@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, Phone, Mail, GraduationCap, Edit2 } from "lucide-react";
-import { getCustomerDetail } from "@/lib/repos/customers";
+import { getCustomerDetail } from "@/server/repos/customers";
 import { AddressBook } from "@/components/admin/AddressBook";
 import { RecordHistory } from "@/components/admin/RecordHistory";
 import {

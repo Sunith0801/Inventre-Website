@@ -9,7 +9,7 @@
 import { NextResponse } from "next/server";
 import { sql, type SQL } from "drizzle-orm";
 import { db } from "@/db/client";
-import { rateLimit } from "@/lib/rate-limit";
+import { rateLimit } from "@/server/rate-limit";
 
 function rows<T>(r: unknown): T[] {
   return r as unknown as T[];

@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
-import { parseBody } from "@/lib/parse-body";
+import { parseBody } from "@/server/parse-body";
 import { z } from "zod";
 import { db } from "@/db/client";
 import { notificationRules } from "@/db/schema";
-import { isResponse, requirePermission } from "@/lib/admin-guard";
-import { logAdminActivity } from "@/lib/activity";
-import { validateTemplate, EVENT_VARS } from "@/lib/notification-template";
+import { isResponse, requirePermission } from "@/server/admin-guard";
+import { logAdminActivity } from "@/server/activity";
+import { validateTemplate, EVENT_VARS } from "@/server/notify/notification-template";
 import { desc } from "drizzle-orm";
 
 export async function GET() {

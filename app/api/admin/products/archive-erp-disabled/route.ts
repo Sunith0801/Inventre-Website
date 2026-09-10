@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { db, schema } from "@/db/client";
 import { and, eq, sql } from "drizzle-orm";
-import { isResponse, requirePermission } from "@/lib/admin-guard";
-import { logAdminActivity } from "@/lib/activity";
+import { isResponse, requirePermission } from "@/server/admin-guard";
+import { logAdminActivity } from "@/server/activity";
 
 /**
  * Admin-driven bulk action: archive every product currently marked
@@ -52,7 +52,7 @@ export async function POST(req: Request) {
   // Bust the storefront product list cache so the change is visible.
   // The repo wraps reads in `cached(...)` with a 300s TTL keyed by school.
   try {
-    const { redis } = await import("@/lib/redis");
+    const { redis } = await import("@/server/redis");
     const keys = await redis.keys("products:school:*");
     if (keys.length > 0) await redis.del(...keys);
   } catch {}

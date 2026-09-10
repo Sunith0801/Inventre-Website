@@ -21,8 +21,8 @@ import {
   productVariantAttributes,
   productImages as productImagesTable,
 } from "@/db/schema";
-import { requireParent, isResponse } from "@/lib/parent-guard";
-import { sortSizes, pickKitFallbackImage } from "@/lib/repos/products";
+import { requireParent, isResponse } from "@/server/parent-guard";
+import { sortSizes, pickKitFallbackImage } from "@/server/repos/products";
 import { buildAttributeKey } from "@/lib/attribute-key";
 
 /**
@@ -77,7 +77,7 @@ export async function GET(req: Request) {
       )
     );
 
-  const { resolveVariants } = await import("@/lib/repos/variant-resolver");
+  const { resolveVariants } = await import("@/server/repos/variant-resolver");
   const resolved = await resolveVariants(
     vars.map((v) => v.id),
     schoolId

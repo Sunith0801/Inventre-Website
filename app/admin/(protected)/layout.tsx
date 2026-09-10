@@ -1,8 +1,8 @@
 import { redirect } from "next/navigation";
-import { getCurrentUser } from "@/lib/session";
+import { getCurrentUser } from "@/server/session";
 import { AdminShell } from "@/components/admin/AdminShell";
 import VersionWatcher from "@/components/VersionWatcher";
-import { isFeesScopedPermission } from "@/lib/fees-users";
+import { isFeesScopedPermission } from "@/server/fees-users";
 
 export default async function ProtectedAdminLayout({
   children,

@@ -9,14 +9,14 @@ import {
   Boxes,
   ChevronRight,
 } from "lucide-react";
-import { requireAnyPermission, isResponse } from "@/lib/admin-guard";
+import { requireAnyPermission, isResponse } from "@/server/admin-guard";
 import {
   PageHeader,
   Card,
   Badge,
   SectionTitle,
 } from "@/components/admin/ui/primitives";
-import { getProductBySlug, type BundleNode } from "@/lib/repos/products";
+import { getProductBySlug, type BundleNode } from "@/server/repos/products";
 
 export const dynamic = "force-dynamic";
 

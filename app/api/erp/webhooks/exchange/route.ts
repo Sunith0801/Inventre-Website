@@ -3,14 +3,14 @@ import crypto from "crypto";
 import { eq, and } from "drizzle-orm";
 import { db } from "@/db/client";
 import { returns } from "@/db/schema";
-import { getErpConfig } from "@/lib/erp-config";
+import { getErpConfig } from "@/server/erp-config";
 import {
   isExchangeStatus,
   transitionExchangeStatus,
   applyExchangeCancellation,
   isCancelledReason,
   type ExchangeStatus,
-} from "@/lib/exchange";
+} from "@/server/exchange";
 
 /**
  * Inbound webhook from audit.inventre.in for exchange-request status
@@ -102,9 +102,9 @@ export async function POST(req: Request) {
   // order page. Returns the new returns.id so audit can pin it as ecom_id
   // and route subsequent status flips through the normal channel.
   if (env.event_type === "exchange.created") {
-    const { createExchangeFromAudit } = await import("@/lib/audit-inbound");
+    const { createExchangeFromAudit } = await import("@/server/audit-inbound");
     const res = await createExchangeFromAudit(
-      ex as import("@/lib/audit-inbound").AuditExchangeCreate
+      ex as import("@/server/audit-inbound").AuditExchangeCreate
     );
     return NextResponse.json(res.body, { status: res.status });
   }
