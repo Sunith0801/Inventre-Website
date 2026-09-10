@@ -70,5 +70,19 @@ export async function POST(req: Request) {
   }
 
   await createAdminSession(user.id, user.role, user.schoolId);
+
+  // Record the login. `users.last_login_at` existed but nothing ever wrote it
+  // for staff — only the parent OTP path did — so all 14 admin accounts read
+  // "never" and there was no way to tell a live account from a dormant one, or
+  // to size a permission change against who actually uses what.
+  //
+  // Deliberately not awaited and deliberately caught: a failure to record a
+  // timestamp must never turn a successful sign-in into an error.
+  void db
+    .update(users)
+    .set({ lastLoginAt: new Date() })
+    .where(eq(users.id, user.id))
+    .catch((e) => console.error("[admin-login] lastLoginAt update failed:", e));
+
   return NextResponse.json({ ok: true });
 }
