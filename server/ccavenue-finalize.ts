@@ -377,6 +377,10 @@ export async function finalizeOrderPayment(args: {
     const wh = await getDefaultWarehouseId();
     await db.transaction(async () => {
       for (const it of items) {
+        // A line with no variant is not stock (bookkits, magic boxes): there is no
+        // bin to move. Passing null matched no bin and inserted one with a null
+        // variant — the phantom 0/0 rows cleaned out of production in July.
+        if (!it.variantId) continue;
         await applyStockChange({
           variantId: it.variantId,
           warehouseId: wh,

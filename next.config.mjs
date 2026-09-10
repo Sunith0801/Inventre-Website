@@ -8,10 +8,19 @@ const nextConfig = {
   // build, deploy.sh) keeps the default `.next` so cache reuse and the
   // container sync are untouched.
   distDir: process.env.NEXT_DIST_DIR || ".next",
-  // Upstream `main` has ~24 pre-existing TS errors from in-progress schema
-  // refactors (school status casing, dropped columns). The emitted JS runs
-  // fine; bypass the compile-time type gate so deploys aren't blocked.
-  // TODO: fix the underlying type errors and remove these two flags.
+  // Application code is now TYPE-CLEAN: `npm run typecheck` (tsconfig.check.json
+  // over app, components, lib, server, db, tests) passes with zero errors, and
+  // scripts/deploy.sh refuses to build unless it does.
+  //
+  // These two flags stay for a narrower reason. `next build` typechecks through
+  // tsconfig.json, which also covers scripts/ (7 errors in one-off ops scripts
+  // that never ship) and the generated types of every dist dir this repo uses
+  // — .next, .next-dev, .next-verify — so a stale dev build can fail a
+  // production build for reasons unrelated to the code. The gate that matters
+  // is the deterministic one in the deploy preflight.
+  //
+  // eslint: there is no ESLint config in this repo at all; `next lint` offers
+  // to create one. Enabling it is a separate piece of work, not a flag flip.
   typescript: { ignoreBuildErrors: true },
   eslint: { ignoreDuringBuilds: true },
   // Native modules — webpack can't bundle .node binaries; tell Next.js to

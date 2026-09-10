@@ -132,8 +132,10 @@ export async function POST(req: Request) {
          WHERE guardian_erp_name IN (${inList})
         RETURNING id
       `);
-      linksRewired = ((rewire as { rowCount?: number; rows?: unknown[] }).rowCount ??
-        ((rewire as { rows?: unknown[] }).rows ?? []).length) as number;
+      // postgres.js returns a RowList: the affected/returned count is `.count`,
+        // and there is no `.rowCount` or `.rows` — both read undefined, so this
+        // always reported 0 rewired links.
+        linksRewired = Number((rewire as unknown as { count?: number }).count ?? 0);
     }
 
     // Merge metadata onto the canonical row before deletion so we don't

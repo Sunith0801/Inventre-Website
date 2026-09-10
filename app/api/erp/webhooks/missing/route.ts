@@ -89,13 +89,13 @@ export async function POST(req: Request) {
         .update(missingItemClaims)
         .set({ replacementArrivedAt: arrivedAt, updatedAt: new Date() })
         .where(eq(missingItemClaims.id, cl.id));
-      updated = res.rowCount ?? 0;
+      updated = res.count ?? 0;
     } else if (cl.claim_number) {
       const res = await db
         .update(missingItemClaims)
         .set({ replacementArrivedAt: arrivedAt, updatedAt: new Date() })
         .where(eq(missingItemClaims.claimNumber, cl.claim_number));
-      updated = res.rowCount ?? 0;
+      updated = res.count ?? 0;
     }
     if (updated === 0) {
       return NextResponse.json({ error: "Claim not found" }, { status: 404 });
@@ -150,7 +150,7 @@ export async function POST(req: Request) {
     .update(missingItemClaims)
     .set(patch)
     .where(eq(missingItemClaims.id, localId));
-  if ((res.rowCount ?? 0) === 0) {
+  if ((res.count ?? 0) === 0) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
   return NextResponse.json({ ok: true, id: localId, status });

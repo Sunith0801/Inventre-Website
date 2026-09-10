@@ -127,7 +127,7 @@ export default async function SchoolsListPage({
                   <Td right><span className="tabular-nums font-semibold">{r.studentCount}</span></Td>
                   {canWrite ? (
                     <Td right>
-                      <SchoolRowActions schoolId={r.id} schoolLabel={r.schoolName ?? r.erpName} />
+                      <SchoolRowActions schoolId={r.id} schoolLabel={r.schoolName ?? r.erpName ?? "this school"} />
                     </Td>
                   ) : null}
                 </Tr>

@@ -214,7 +214,7 @@ export async function pruneGuardianLinksNotIn(
       .delete(studentGuardianLinks)
       .where(eq(studentGuardianLinks.studentId, studentId));
     await recomputeStudentParent(studentId);
-    return res.rowCount ?? 0;
+    return res.count ?? 0;
   }
   const res = await db
     .delete(studentGuardianLinks)
@@ -228,7 +228,7 @@ export async function pruneGuardianLinksNotIn(
       )
     );
   await recomputeStudentParent(studentId);
-  return res.rowCount ?? 0;
+  return res.count ?? 0;
 }
 
 /**

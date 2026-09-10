@@ -87,7 +87,7 @@ export async function drainOutboundQueue(): Promise<DrainResult> {
        AND last_attempt_at < now() - (${cfg.stuckSendingSeconds} * interval '1 second')
   `);
   const recoveredCount = Number(
-    (recovered as unknown as { rowCount?: number }).rowCount ?? 0
+    (recovered as unknown as { count?: number }).count ?? 0
   );
 
   // 2. Claim a bounded chunk.

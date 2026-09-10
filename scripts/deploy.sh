@@ -19,14 +19,52 @@ set -e
 cd "$(dirname "$0")/.."
 
 MODE="full"
+SKIP_VERIFY=0
+ALLOW_DIRTY=0
 for arg in "$@"; do
   case "$arg" in
     --fast) MODE="fast" ;;
     --full) MODE="full" ;;
+    --skip-verify) SKIP_VERIFY=1 ;;
+    --allow-dirty) ALLOW_DIRTY=1 ;;
   esac
 done
 
 START=$(date +%s)
+
+# ── PREFLIGHT ───────────────────────────────────────────────────────────────
+# This script builds the WORKING TREE, not a revision. That is how a
+# half-finished directory move once left the tree unable to compile, with
+# nothing to say so until someone tried to deploy. Two checks close that:
+#
+#   1. the tree must match a commit, so whatever ships can be named, reverted
+#      and bisected  (override: --allow-dirty)
+#   2. types and tests must pass  (override: --skip-verify)
+#
+# The overrides exist because a 3 a.m. outage is not the moment to argue with
+# a linter — but they have to be typed on purpose.
+
+if [ "$ALLOW_DIRTY" = "0" ]; then
+  DIRTY=$(git status --porcelain -- app components lib server db scripts middleware.ts instrumentation.ts package.json next.config.mjs 2>/dev/null)
+  if [ -n "$DIRTY" ]; then
+    echo "✖ Working tree has uncommitted source changes — this build could not be reproduced:"
+    echo "$DIRTY" | sed 's/^/    /'
+    echo "  Commit them, or re-run with --allow-dirty if you know why."
+    exit 1
+  fi
+fi
+
+if [ "$SKIP_VERIFY" = "0" ]; then
+  echo "▶ Preflight: types…"
+  npm run typecheck
+  echo "▶ Preflight: tests…"
+  npm run test
+else
+  echo "⚠ Preflight SKIPPED (--skip-verify)"
+fi
+
+DEPLOY_SHA=$(git rev-parse --short HEAD 2>/dev/null || echo unknown)
+echo "▶ Deploying $DEPLOY_SHA ($(git rev-parse --abbrev-ref HEAD 2>/dev/null))"
 
 echo "▶ Building (${MODE} mode)…"
 # Override DB URL so static-page generation reaches the host-mapped port

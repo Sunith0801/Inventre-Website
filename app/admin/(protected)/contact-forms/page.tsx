@@ -34,7 +34,7 @@ function kindBadge(kind: string) {
   if (kind === "parent") return <Badge tone="info" size="sm">parent</Badge>;
   if (kind === "school") return <Badge tone="success" size="sm">school</Badge>;
   if (kind === "business") return <Badge tone="warning" size="sm">business</Badge>;
-  return <Badge tone="neutral" size="sm">{kind}</Badge>;
+  return <Badge tone="default" size="sm">{kind}</Badge>;
 }
 
 function statusBadge(status: string) {
@@ -42,7 +42,7 @@ function statusBadge(status: string) {
   if (status === "in_progress")
     return <Badge tone="info" size="sm">in progress</Badge>;
   if (status === "done") return <Badge tone="success" size="sm">done</Badge>;
-  return <Badge tone="neutral" size="sm">{status}</Badge>;
+  return <Badge tone="default" size="sm">{status}</Badge>;
 }
 
 export default async function ContactFormsPage({

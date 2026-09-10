@@ -788,7 +788,7 @@ export async function listProductsForStudent(args: {
     const productBadge = badges.find((b) => b.productId === product.id);
     const isKit = ['kit', 'set'].includes(kindMap.get(product.id) ?? '');
     const hasTemplateLang = isKit && parseBookkitLangs(
-      productVariantsList.map((v) => ({ id: v.id, size: v.size, pricePaise: v.pricePaise ?? undefined }))
+      productVariantsList.map((v) => ({ id: v.id, size: v.size, pricePaise: resolved.get(v.id)?.pricePaise ?? undefined }))
     ) !== null;
     // Multi-axis Item-Variant kits (e.g. SMS Grade 11 Bookkit with
     // Mandate × Core × Elective) have variants whose `size` column is

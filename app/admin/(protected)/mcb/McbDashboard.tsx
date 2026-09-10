@@ -87,7 +87,7 @@ function FeeStatusBadge({ date }: { date: string | null }) {
   if (s === "current") return <Badge tone="success" size="sm">✓ April+</Badge>;
   if (s === "march") return <Badge tone="warning" size="sm">⚠ March</Badge>;
   if (s === "earlier") return <Badge tone="danger" size="sm">✗ Behind</Badge>;
-  return <Badge tone="neutral" size="sm">— Unpaid</Badge>;
+  return <Badge tone="default" size="sm">— Unpaid</Badge>;
 }
 
 const TAB_LINK = "inline-flex items-center gap-2 px-4 py-2 rounded-lg text-[15px] font-medium transition-colors cursor-pointer";

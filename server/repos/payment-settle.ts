@@ -68,6 +68,10 @@ export async function settlePaymentAndDecrementStock(args: {
       .where(eq(orderItems.orderId, args.orderId));
 
     for (const it of items) {
+      // A line with no variant is not stock (bookkits, magic boxes): there is no
+      // bin to move. Passing null matched no bin and inserted one with a null
+      // variant — the phantom 0/0 rows cleaned out of production in July.
+      if (!it.variantId) continue;
       // applyStockChange opens its own transaction; under drizzle/postgres-js
       // this becomes a savepoint within the outer tx — atomic rollback on
       // shortfall propagates up and aborts the settle.

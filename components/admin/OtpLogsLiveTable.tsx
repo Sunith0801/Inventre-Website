@@ -22,7 +22,7 @@ function eventBadge(event: string) {
   if (event === "verified") return <Badge tone="info" size="sm">verified</Badge>;
   if (event === "send_failed" || event === "verify_failed")
     return <Badge tone="danger" size="sm">{event.replace("_", " ")}</Badge>;
-  return <Badge tone="neutral" size="sm">{event}</Badge>;
+  return <Badge tone="default" size="sm">{event}</Badge>;
 }
 
 function purposeLabel(p: string) {

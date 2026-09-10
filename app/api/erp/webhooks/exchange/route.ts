@@ -124,7 +124,7 @@ export async function POST(req: Request) {
         .update(returns)
         .set({ replacementArrivedAt: arrivedAt, updatedAt: new Date() })
         .where(and(eq(returns.id, ex.id), eq(returns.kind, "exchange")));
-      updated = res.rowCount ?? 0;
+      updated = res.count ?? 0;
     } else if (ex.return_number) {
       const res = await db
         .update(returns)
@@ -132,7 +132,7 @@ export async function POST(req: Request) {
         .where(
           and(eq(returns.returnNumber, ex.return_number), eq(returns.kind, "exchange"))
         );
-      updated = res.rowCount ?? 0;
+      updated = res.count ?? 0;
     }
     if (updated === 0) {
       return NextResponse.json({ error: "Exchange not found" }, { status: 404 });

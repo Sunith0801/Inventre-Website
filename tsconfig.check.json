@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "noEmit": true },
+  "include": [
+    "app/**/*.ts", "app/**/*.tsx",
+    "components/**/*.ts", "components/**/*.tsx",
+    "lib/**/*.ts", "lib/**/*.tsx",
+    "server/**/*.ts", "server/**/*.tsx",
+    "db/**/*.ts",
+    "tests/**/*.ts",
+    "middleware.ts", "instrumentation.ts", "next-env.d.ts"
+  ],
+  "exclude": ["node_modules", "scripts", ".next", ".next-dev", ".next-verify", ".next-cancelcheck"]
+}
