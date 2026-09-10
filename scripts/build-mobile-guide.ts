@@ -17,7 +17,7 @@ const DEMO_PHONE = process.env.GUIDE_DEMO_PHONE ?? "9000099001";
 const DEMO_PASSWORD = process.env.GUIDE_DEMO_PASSWORD ?? "DemoPass2026";
 
 const ROOT = path.resolve(__dirname, "..");
-const SHOT_DIR = path.join(ROOT, "tmp/guide-shots");
+const SHOT_DIR = path.join(ROOT, "docs/guides/assets");
 const OUT_DIR = path.join(ROOT, "docs/guides");
 const OUT_PDF = path.join(OUT_DIR, "mobile-number-update-guide.pdf");
 const OUT_HTML = path.join(OUT_DIR, "mobile-number-update-guide.html");

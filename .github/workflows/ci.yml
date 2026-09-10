@@ -1,0 +1,48 @@
+name: CI
+
+# The gate that stops unverified code reaching a branch someone might deploy.
+#
+# scripts/deploy.sh runs the same two commands in its preflight, so a green
+# tick here means a deploy will not be blocked by them either. It runs on
+# every branch deliberately: this repository deploys from a WORKING TREE, so
+# a broken branch is one `git checkout` away from being what ships.
+#
+# Node 20 to match the Dockerfile (node:20-alpine); npm because deploy.sh
+# builds with npm and package-lock.json is the authoritative lockfile — the
+# pnpm-lock.yaml in the root is a leftover from June and should go once
+# somebody confirms nothing still uses it.
+#
+# NOT here yet: `npm run build`. Static generation reaches the database for
+# 173 pages, so a real build needs a Postgres service plus migrations. Worth
+# adding, but a fake green tick is worse than an honest missing step.
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  verify:
+    name: types + tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck
+        # tsconfig.check.json covers app, components, lib, server, db and
+        # tests. scripts/ is excluded: it holds 7 known errors in one-off ops
+        # tools that never ship, tracked separately via `npm run typecheck:scripts`.
+        run: npm run typecheck
+
+      - name: Tests
+        run: npm run test
