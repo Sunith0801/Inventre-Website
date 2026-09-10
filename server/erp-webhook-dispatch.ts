@@ -70,8 +70,12 @@ async function applyMirrorUpsert(env: WebhookEnvelope): Promise<string | null> {
       if (!isErpInboundEnabled()) return null;
       const c = env.payload as { name: string } | undefined;
       if (c?.name) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await upsertCustomerMirror(c as any);
+        // The ERP sends a customer payload far wider than the `{ name }` we
+        // narrow it to above; upsertCustomerMirror reads the rest of it. Cast
+        // rather than restate the ERP's whole customer shape here.
+        // (Was an eslint-disable for @typescript-eslint/no-explicit-any — that
+        // plugin is not configured, so the directive itself became the error.)
+        await upsertCustomerMirror(c as never);
       }
       return null;
     }

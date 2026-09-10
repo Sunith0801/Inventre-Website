@@ -35,6 +35,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The formatting ratchet diffs against the base branch.
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -57,6 +60,29 @@ jobs:
         # string is hardcoded in shipping code, and no client component
         # imports the database. Each encodes a real past incident.
         run: npm run test
+
+      - name: Lint
+        # Blocking on ERRORS only. The config splits defect rules (blocking)
+        # from next/core-web-vitals style rules (warnings): 86 warnings exist
+        # today and every one is cosmetic or a behavioural choice — swapping
+        # <a href> for <Link> turns a full page load into a client-side
+        # navigation, which is a product decision, not a lint fix. A gate that
+        # is red on day one teaches everyone to ignore it.
+        run: npm run lint
+
+      - name: Formatting of CHANGED files only
+        # THE RATCHET. 541 of 681 files predate any formatter; reformatting
+        # them would be a 15,000-line diff that buries every real change and
+        # collides with everyone working in parallel. So new and edited code
+        # must conform, and the rest converges as files are touched.
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
+          CHANGED=$(git diff --name-only "origin/${{ github.base_ref }}"...HEAD \
+                    | grep -E '\.(ts|tsx|mjs|json)$' \
+                    | grep -vE '^(db/migrate\.js|.*\.snapshot\.json)$' || true)
+          if [ -z "$CHANGED" ]; then echo "no formattable files changed"; exit 0; fi
+          echo "$CHANGED" | xargs npx prettier --check
 
       - name: No critical advisories
         # Blocking at `critical` rather than `high` on purpose. The five highs
