@@ -167,20 +167,24 @@ export function BuyBox({
   }, []);
 
   const noSizesAvailable = product.sizes.length === 0;
+  const variantStock = size ? product.variantStocks?.[size] : undefined;
+  // Refined below once the Colour × Size variant is resolved; the size-keyed
+  // map collapses colours sharing a size, so it is only the fallback.
+  const sizeKeyedOutOfStock = variantStock !== undefined && variantStock <= 0;
   // Stock is synced from the audit's Ground Stock every 5 minutes
   // (2026-09-16), so a size with nothing counted cannot be added. For the
   // single-axis picker the size keys `variantStocks`; for the multi-axis
   // picker the resolved Colour × Size variant carries its own figure.
-  const variantStock = size ? product.variantStocks?.[size] : undefined;
-  const sizeOutOfStock = variantStock !== undefined && variantStock <= 0;
+  const stockByVariantId = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const v of product.variants ?? []) m.set(v.id, v.stockQty);
+    return m;
+  }, [product.variants]);
   const resolvedVariantStock = resolvedVariantId
-    ? product.variants?.find((v) => v.id === resolvedVariantId)?.stockQty
+    ? stockByVariantId.get(resolvedVariantId)
     : undefined;
   const resolvedVariantOutOfStock =
     resolvedVariantStock !== undefined && resolvedVariantStock <= 0;
-  const canAdd = useMultiAxisPicker
-    ? Boolean(resolvedVariantId) && product.inStock && !resolvedVariantOutOfStock
-    : !noSizesAvailable && size && product.inStock && !sizeOutOfStock;
 
   // When the product has a non-size attribute (Colour, House, …), resolve
   // the variantId on the client using `variantsByAttributeKey`. The legacy
@@ -279,6 +283,46 @@ export function BuyBox({
     const key = buildAttributeKey(sel);
     return map[key] ?? null;
   }, [nonSizeAttrGroups.length, attrSel, size, sizeAxisName, sizeAxis, product.variantsByAttributeKey]);
+
+  // Stock of the exact variant the parent has picked. With a Colour axis
+  // the size-keyed map cannot tell "White S" from "Blue S", so ask the
+  // resolved variant first.
+  const attrResolvedStock = resolvedAttrVariantId
+    ? stockByVariantId.get(resolvedAttrVariantId)
+    : undefined;
+  const sizeOutOfStock =
+    attrResolvedStock !== undefined ? attrResolvedStock <= 0 : sizeKeyedOutOfStock;
+
+  // Sizes that are sold out for the CURRENT colour (or other non-size
+  // choice) — rendered struck through with a "Sold out" title, the same
+  // treatment the single-axis pills already give. Falls back to the
+  // size-keyed map when there is no attribute lookup.
+  const soldOutSizes = useMemo<Set<string>>(() => {
+    const out = new Set<string>();
+    if (!sizeAxis || !sizeAxisName) return out;
+    const map = product.variantsByAttributeKey ?? {};
+    const hasMap = Object.keys(map).length > 0 && nonSizeAttrGroups.length > 0;
+    for (const v of sizeAxis.values) {
+      let stock: number | undefined;
+      if (hasMap) {
+        const sel: Record<string, string> = { ...attrSel, [sizeAxisName]: v };
+        const id = map[buildAttributeKey(sel)];
+        stock = id ? stockByVariantId.get(id) : undefined;
+      } else {
+        stock = product.variantStocks?.[v];
+      }
+      if (stock !== undefined && stock <= 0) out.add(v);
+    }
+    return out;
+  }, [sizeAxis, sizeAxisName, attrSel, nonSizeAttrGroups.length, product.variantsByAttributeKey, product.variantStocks, stockByVariantId]);
+
+  const canAdd = useMultiAxisPicker
+    ? Boolean(resolvedVariantId) && product.inStock && !resolvedVariantOutOfStock
+    : !noSizesAvailable && size && product.inStock && !sizeOutOfStock;
+  // What the Add-to-cart button says: the whole product sold out, or the
+  // size (and colour) the parent has picked.
+  const selectedOutOfStock =
+    !product.inStock || (useMultiAxisPicker ? resolvedVariantOutOfStock : sizeOutOfStock);
 
   const handleAdd = async () => {
     if (!canAdd || addBusy) return;
@@ -557,6 +601,7 @@ export function BuyBox({
             attrValue={attrSel[group.name] ?? group.values[0] ?? ""}
             onAttrChange={(v) => setAttrSel((s) => ({ ...s, [group.name]: v }))}
             availableValues={isSize ? availableSizes : null}
+            soldOutValues={isSize ? soldOutSizes : null}
           />
         );
       })}
@@ -732,6 +777,17 @@ export function BuyBox({
               >
                 <Check className="h-4 w-4" /> Added to cart
               </motion.span>
+            ) : selectedOutOfStock ? (
+              <motion.span
+                key="oos"
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -6 }}
+                className="inline-flex items-center gap-2"
+              >
+                <ShoppingBag className="h-4 w-4" />
+                Out of stock
+              </motion.span>
             ) : !activePriced ? (
               <motion.span
                 key="nopx"
@@ -856,6 +912,7 @@ function AttributeGroupPicker({
   attrValue,
   onAttrChange,
   availableValues,
+  soldOutValues,
 }: {
   name: string;
   values: string[];
@@ -871,6 +928,10 @@ function AttributeGroupPicker({
    *  a parent shopping for "blue" sees that "30" exists in the catalog but
    *  isn't stocked in blue. Null = no filtering (all values enabled). */
   availableValues?: Set<string> | null;
+  /** Sizes with nothing on the shelf for the current colour — rendered
+   *  struck through and titled "Sold out"; still visible so the parent
+   *  sees the size exists. */
+  soldOutValues?: Set<string> | null;
 }) {
   const value = isSize ? selectedSize : attrValue ?? values[0] ?? "";
   const setValue = isSize ? onSelectSize : (onAttrChange ?? (() => {}));
@@ -899,7 +960,8 @@ function AttributeGroupPicker({
       <div className="mt-2.5 flex flex-wrap gap-2">
         {values.map((v) => {
           const active = v === cleanValue;
-          const unavailable = availableValues != null && !availableValues.has(v);
+          const soldOut = !!soldOutValues?.has(v);
+          const unavailable = (availableValues != null && !availableValues.has(v)) || soldOut;
           return (
             <button
               key={v}
@@ -909,7 +971,7 @@ function AttributeGroupPicker({
                 setValue(isSize ? `${prefix}${v}` : v);
               }}
               disabled={unavailable}
-              title={unavailable ? "Not available for the selected colour" : undefined}
+              title={soldOut ? "Sold out" : unavailable ? "Not available for the selected colour" : undefined}
               className={
                 "h-11 min-w-11 px-4 rounded-md border text-[13px] font-semibold transition-all " +
                 (unavailable
