@@ -64,6 +64,7 @@ export default async function GroundStockPage({
           ilike(productVariants.sku, `%${q}%`),
           ilike(products.name, `%${q}%`),
           ilike(groundStockSync.keeperSku, `%${q}%`),
+          ilike(groundStockSync.keeperDescription, `%${q}%`),
           ilike(groundStockSync.itemCode, `%${q}%`)
         )
       : undefined,
@@ -113,6 +114,7 @@ export default async function GroundStockPage({
         productName: products.name,
         productSlug: products.slug,
         keeperSku: groundStockSync.keeperSku,
+        keeperDescription: groundStockSync.keeperDescription,
         itemCode: groundStockSync.itemCode,
         schoolName: groundStockSync.schoolName,
         available: groundStockSync.available,
@@ -258,7 +260,7 @@ export default async function GroundStockPage({
                 <Th>Product</Th>
                 <Th>Size</Th>
                 <Th>Storefront SKU</Th>
-                <Th>Keeper SKU</Th>
+                <Th>Audit item</Th>
                 <Th>Shelf</Th>
                 <Th right>On shelf</Th>
                 <Th>Counted</Th>
@@ -280,7 +282,11 @@ export default async function GroundStockPage({
                       <span className="font-mono text-[12px]">{r.sku}</span>
                     </Td>
                     <Td>
-                      <span className="font-mono text-[12px]">{r.keeperSku ?? "—"}</span>
+                      {/* What the audit calls the pile — for shared merchandise this is
+                          the only honest name ("Black 10S Shoes"), the storefront product
+                          being one school's copy of it. */}
+                      <div>{r.keeperDescription ?? "—"}</div>
+                      <span className="font-mono text-[11px] text-ink-400">{r.keeperSku ?? ""}</span>
                     </Td>
                     <Td muted>
                       {r.kind === "book"

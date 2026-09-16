@@ -141,13 +141,14 @@ describe("keeperRowsToFigures — shared General Merchandise via the keeper map"
 
   it("an All-schools row with no old_skus fans out to every school's code with the shared Avail.", () => {
     const m = keeperRowsToFigures(
-      [{ keeper_sku: "BLSHOE-10S", school_code: "ALL", school_name: "All schools", all_schools: true, qty: 329, gs_linked: true, gs_available: 312, old_skus: [], covers_codes: ["KLINK", "SASBP", "SMSAW"] }],
+      [{ keeper_sku: "BLSHOE-10S", keeper_description: "Black 10S Shoes", school_code: "ALL", school_name: "All schools", all_schools: true, qty: 329, gs_linked: true, gs_available: 312, old_skus: [], covers_codes: ["KLINK", "SASBP", "SMSAW"] }],
       keeperMap
     );
     expect(m.get("SAS BP ShoesI10S$")!.available).toBe(312);
     expect(m.get("SMS ShoesI10S$")!.available).toBe(312);
     expect(m.get("KIDLINK SHOESI10S$$")!.available).toBe(312);
     expect(m.get("SAS BP ShoesI10S$")!.keeperSku).toBe("BLSHOE-10S");
+    expect(m.get("SAS BP ShoesI10S$")!.keeperDescription).toBe("Black 10S Shoes");
   });
 
   it("a per-school row only takes the map's codes for its own school", () => {

@@ -281,6 +281,7 @@ export async function runGroundStockSync(
           snapshotAt: fig.snapshotAt ? new Date(fig.snapshotAt) : null,
           matchKind: m.matchKind,
           keeperSku: fig.keeperSku,
+          keeperDescription: fig.keeperDescription,
           source: SOURCE,
           syncedAt: now,
         })
@@ -296,6 +297,7 @@ export async function runGroundStockSync(
             snapshotAt: fig.snapshotAt ? new Date(fig.snapshotAt) : null,
             matchKind: m.matchKind,
             keeperSku: fig.keeperSku,
+            keeperDescription: fig.keeperDescription,
             source: SOURCE,
             syncedAt: now,
           },

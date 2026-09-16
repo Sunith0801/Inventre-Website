@@ -208,6 +208,7 @@ export function matchItemCodes(
 
 export type KeeperStockRow = {
   keeper_sku?: string | null;
+  keeper_description?: string | null;
   school_code?: string | null;
   school_name?: string | null;
   /** True for the merged General Merchandise line (one shelf, every school). */
@@ -224,7 +225,10 @@ export type KeeperStockRow = {
   snapshot_at?: string | null;
 };
 
-export type KeeperFigure = GroundStockFigure & { keeperSku: string | null };
+export type KeeperFigure = GroundStockFigure & {
+  keeperSku: string | null;
+  keeperDescription: string | null;
+};
 
 /**
  * One entry of the audit's keeper map (/api/inventre-catalogue/keeper-map):
@@ -302,6 +306,7 @@ export function keeperRowsToFigures(
       out.set(code, {
         itemCode: code,
         keeperSku: r.keeper_sku ?? null,
+        keeperDescription: r.keeper_description ?? null,
         schoolCode: r.school_code ?? null,
         schoolName: r.school_name ?? null,
         available: Math.max(0, Math.trunc(avail)),
