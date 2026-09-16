@@ -54,16 +54,16 @@ export default async function GroundStockPage({
   const page = Math.max(1, parseInt(sp.page ?? "1", 10) || 1);
   const stock =
     sp.stock === "books" ? "books" : sp.stock === "merch" ? "merch" : sp.stock === "school" ? "school" : "all";
-  // The school dropdown applies to school stock AND to shoes · bags · bottles
-  // (bags and bottles are held per school on the audit; shared shoes are
-  // shown for every school). Only the books shelf has no school.
-  const school = stock === "books" ? "" : (sp.school ?? "").trim();
+  // Shoes, bags and bottles are one shelf for every school (the bridge folds
+  // the audit's per-school bag/bottle rows), and the books shelf has no
+  // school either — the dropdown applies to school stock only.
+  const school = stock === "books" || stock === "merch" ? "" : (sp.school ?? "").trim();
 
   // Shelf per size: the audit's school for school stock, "All schools" for
   // the merged General Merchandise line, "Books shelf" for the books sheet.
   const shelfExpr = sql<string>`case
       when g.keeper_group = 'Books' or p.kind = 'book' then 'Books shelf · all schools'
-      when g.school_name = ${ALL_SCHOOLS} then 'Shared · all schools'
+      when g.school_name = ${ALL_SCHOOLS} or g.keeper_group = 'General Merchandise' then 'Shared · all schools'
       else coalesce(g.school_name, '—') end`;
   const groupCase = sql`case
       when g.keeper_group = 'Books' or p.kind = 'book' then 'books'
@@ -72,13 +72,7 @@ export default async function GroundStockPage({
 
   const conds: ReturnType<typeof sql>[] = [];
   if (stock !== "all") conds.push(sql`${groupCase} = ${stock}`);
-  if (school) {
-    conds.push(
-      stock === "merch"
-        ? sql`(g.school_name = ${school} or g.school_name = ${ALL_SCHOOLS})`
-        : sql`g.school_name = ${school}`
-    );
-  }
+  if (school) conds.push(sql`g.school_name = ${school}`);
   if (q) {
     const like = `%${q}%`;
     conds.push(
@@ -127,7 +121,7 @@ export default async function GroundStockPage({
         join products p on p.id = v.product_id
        where g.school_name is not null and g.school_name <> ${ALL_SCHOOLS}
          and not (g.keeper_group = 'Books' or p.kind = 'book')
-         ${stock === "merch" ? sql`and g.keeper_group = 'General Merchandise'` : stock === "school" ? sql`and coalesce(g.keeper_group, '') <> 'General Merchandise'` : sql``}
+         and coalesce(g.keeper_group, '') <> 'General Merchandise'
        order by 1`),
   ]);
   const rows = (rowsRaw as unknown as Array<Record<string, unknown>>).map<Row>((r) => ({
@@ -199,7 +193,7 @@ export default async function GroundStockPage({
               ).map(([k, label]) => (
                 <a
                   key={k}
-                  href={link({ stock: k, page: 1, school: k === "books" ? "" : school })}
+                  href={link({ stock: k, page: 1, school: k === "books" || k === "merch" ? "" : school })}
                   className={
                     "px-3 h-9 inline-flex items-center " +
                     (stock === k ? "bg-ink-900 text-white" : "text-ink-700 hover:bg-ink-50")
@@ -213,8 +207,8 @@ export default async function GroundStockPage({
               id="ground-stock-school"
               name="school"
               defaultValue={school}
-              disabled={stock === "books"}
-              title={stock === "books" ? "The books shelf is not held per school" : undefined}
+              disabled={stock === "books" || stock === "merch"}
+              title={stock === "books" || stock === "merch" ? "Shared shelf — not held per school" : undefined}
               className="h-9 rounded-md border border-ink-200 px-2 text-[13px] bg-white disabled:opacity-40"
             >
               <option value="">All schools</option>

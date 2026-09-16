@@ -295,12 +295,57 @@ function codesForRow(
   return codes;
 }
 
+const SHARED_GROUP = "General Merchandise";
+
+/**
+ * General Merchandise — shoes, bags, bottles — is one shelf for every
+ * school (user's rule, 2026-09-16). The audit already merges shoes into an
+ * "All schools" line, but bags and bottles still arrive one row per school
+ * with that school's mirror figure, which reads as "Samyuktha has 174 Dino
+ * Charm bags, everyone else has none" when it is one pile. So every
+ * merchandise keeper SKU is folded into one All-schools row carrying the
+ * LARGEST figure among its school rows (the pile counted; the others echo
+ * it or read zero), and its codes reach every school's SKU.
+ */
+function foldSharedMerchandise(rows: KeeperStockRow[]): KeeperStockRow[] {
+  const out: KeeperStockRow[] = [];
+  const shared = new Map<string, KeeperStockRow>();
+  for (const r of rows) {
+    if (r.merch_group !== SHARED_GROUP || !r.keeper_sku) {
+      out.push(r);
+      continue;
+    }
+    const cur = shared.get(r.keeper_sku);
+    if (!cur) {
+      shared.set(r.keeper_sku, {
+        ...r,
+        all_schools: true,
+        school_code: null,
+        school_name: "All schools",
+        old_skus: [...(r.old_skus ?? [])],
+        covers_codes: [...(r.covers_codes ?? [])],
+      });
+      continue;
+    }
+    cur.old_skus = [...(cur.old_skus ?? []), ...(r.old_skus ?? [])];
+    cur.covers_codes = [...(cur.covers_codes ?? []), ...(r.covers_codes ?? [])];
+    if (r.gs_linked && (!cur.gs_linked || num(r.gs_available) > num(cur.gs_available))) {
+      cur.gs_linked = true;
+      cur.gs_available = r.gs_available;
+      cur.gs_stock = r.gs_stock;
+      cur.gs_packed = r.gs_packed;
+      cur.gs_snapshot_at = r.gs_snapshot_at ?? cur.gs_snapshot_at;
+    }
+  }
+  return [...out, ...shared.values()];
+}
+
 export function keeperRowsToFigures(
   rows: KeeperStockRow[],
   keeperMap?: Map<string, { code: string; schoolCode: string | null }[]>
 ): Map<string, KeeperFigure> {
   const out = new Map<string, KeeperFigure>();
-  for (const r of rows) {
+  for (const r of foldSharedMerchandise(rows)) {
     if (!r.gs_linked) continue;
     const avail = num(r.gs_available);
     const codes = codesForRow(r, keeperMap);

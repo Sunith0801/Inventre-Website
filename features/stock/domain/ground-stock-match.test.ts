@@ -160,6 +160,21 @@ describe("keeperRowsToFigures — shared General Merchandise via the keeper map"
     expect(m.has("WM JK Girls PantM22$$")).toBe(false);
   });
 
+  it("bags and bottles are one shelf: school rows fold into All schools with the largest figure", () => {
+    const m = keeperRowsToFigures(
+      [
+        { keeper_sku: "PPRCRIBAG-S", merch_group: "General Merchandise", category: "Bags", school_code: "SMSAW", school_name: "SMSAW-St. Michaels School", gs_linked: true, gs_available: 0, old_skus: ["SMS PP BagS$$"] },
+        { keeper_sku: "PPRCRIBAG-S", merch_group: "General Merchandise", category: "Bags", school_code: "SASAND", school_name: "SASAND", gs_linked: true, gs_available: 57, old_skus: ["SAS BP PP BagS$$", "SAS KS PP BagS$$"] },
+        { keeper_sku: "PPRCRIBAG-S", merch_group: "General Merchandise", category: "Bags", school_code: "TSUSC", school_name: "TSUSC", gs_linked: false, gs_available: null, old_skus: ["TSUSC BagS$$"] },
+      ],
+      indexKeeperMap([{ old_sku: "WM JK PP BagS$$", keeper_sku: "PPRCRIBAG-S", school_code: "WMAJK" }])
+    );
+    for (const code of ["SMS PP BagS$$", "SAS BP PP BagS$$", "SAS KS PP BagS$$", "TSUSC BagS$$", "WM JK PP BagS$$"]) {
+      expect(m.get(code)!.available).toBe(57);
+      expect(m.get(code)!.schoolName).toBe("All schools");
+    }
+  });
+
   it("works without a map (old_skus only) and ignores blank map entries", () => {
     expect(keeperMap.has("X")).toBe(false);
     const m = keeperRowsToFigures([{ keeper_sku: "BLSHOE-10S", all_schools: true, gs_linked: true, gs_available: 5, old_skus: [] }]);
