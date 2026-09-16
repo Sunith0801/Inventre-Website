@@ -770,7 +770,7 @@ export function BuyBox({
             // Sold out is a message, not a dimmed button: keep it fully
             // legible in the warning colour rather than fading it to 40%.
             (selectedOutOfStock && !added
-              ? "bg-red-50 text-red-700 border-2 border-red-300 disabled:opacity-100 tracking-wide uppercase"
+              ? "bg-brand-50 text-brand-700 border-2 border-brand-300 disabled:opacity-100 tracking-wide uppercase"
               : "bg-brand text-white hover:bg-brand-600 disabled:opacity-40 shadow-[inset_0_1px_0_rgba(255,255,255,0.25)]")
           }
         >
