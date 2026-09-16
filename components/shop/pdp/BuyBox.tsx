@@ -721,7 +721,6 @@ export function BuyBox({
                 key={s}
                 type="button"
                 onClick={() => setSize(s)}
-                disabled={oos}
                 title={
                   oos
                     ? "Sold out"
@@ -731,10 +730,12 @@ export function BuyBox({
                 }
                 className={
                   "relative h-11 min-w-11 px-4 rounded-md border text-[14px] font-semibold transition-all " +
-                  (oos
-                    ? "bg-cream-50 text-ink-300 border-ink-100 line-through cursor-not-allowed"
-                    : active
-                    ? "bg-ink-900 text-white border-ink-900"
+                  // Sold-out sizes stay selectable: picking one turns the
+                  // Add-to-cart button into "Out of stock".
+                  (active
+                    ? "bg-ink-900 text-white border-ink-900" + (oos ? " line-through" : "")
+                    : oos
+                    ? "bg-cream-50 text-ink-400 border-ink-200 line-through hover:border-ink-900"
                     : "bg-white text-ink-800 border-ink-200 hover:border-ink-900")
                 }
               >
@@ -961,7 +962,11 @@ function AttributeGroupPicker({
         {values.map((v) => {
           const active = v === cleanValue;
           const soldOut = !!soldOutValues?.has(v);
-          const unavailable = (availableValues != null && !availableValues.has(v)) || soldOut;
+          const unavailable = availableValues != null && !availableValues.has(v);
+          // A sold-out size stays selectable (user's call, 2026-09-16): picking
+          // it turns the Add-to-cart button into "Out of stock", which is the
+          // clearer message. Only a size that does not exist in this colour
+          // is disabled.
           return (
             <button
               key={v}
@@ -977,8 +982,10 @@ function AttributeGroupPicker({
                 (unavailable
                   ? "bg-ink-50 text-ink-300 border-ink-100 line-through cursor-not-allowed"
                   : active
-                    ? "bg-ink-900 text-white border-ink-900"
-                    : "bg-white text-ink-800 border-ink-200 hover:border-ink-900")
+                    ? "bg-ink-900 text-white border-ink-900" + (soldOut ? " line-through" : "")
+                    : soldOut
+                      ? "bg-white text-ink-400 border-ink-200 line-through hover:border-ink-900"
+                      : "bg-white text-ink-800 border-ink-200 hover:border-ink-900")
               }
             >
               {v}
