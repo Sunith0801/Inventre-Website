@@ -7,9 +7,8 @@ export default function BulkImportStudentsPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="People"
+        eyebrow="Customer Relationship (CRM)"
         title="Bulk import students"
-        description="Upload a CSV (or Excel) sheet to add many students at once. Each parent can sign in straight after the import — OTP + set-password runs on first login."
       />
       <Card>
         <BulkImport />

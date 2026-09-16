@@ -5,12 +5,8 @@ export default function NewCustomerPage() {
   return (
     <div className="max-w-2xl">
       <PageHeader
-        breadcrumb={[
-          { label: "Customers", href: "/admin/customers" },
-          { label: "New customer" },
-        ]}
+        breadcrumb={[{ label: "Customers", href: "/admin/customers" }, { label: "New customer" }]}
         title="New customer"
-        description="Create a parent record manually. Customers normally self-register via OTP."
       />
       <Card>
         <NewCustomerForm />

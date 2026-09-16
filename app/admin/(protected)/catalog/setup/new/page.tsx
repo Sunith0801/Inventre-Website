@@ -14,7 +14,7 @@ function rowsOf<T>(res: unknown): T[] {
 }
 
 export default async function NewSchoolWizardPage() {
-  const guard = await requireAnyPermission("catalog.read", "catalog.write");
+  const guard = await requireAnyPermission("catalog-setup.read", "catalog-setup.write", "catalog.read", "catalog.write");
   if (isResponse(guard)) redirect("/admin/dashboard");
 
   // ── Grade master list (active rows only). The wizard offers these as
@@ -67,15 +67,9 @@ export default async function NewSchoolWizardPage() {
   return (
     <div>
       <PageHeader
-        eyebrow="Catalog · Setup"
+        eyebrow="Catalog"
         title="Add a new school"
-        description="Two short steps: basics first, then which grades the school serves. After that you'll get a launch pad to tag items, add Magic Boxes, or preview as a parent."
-        breadcrumb={[
-          { label: "Admin", href: "/admin/dashboard" },
-          { label: "Catalog", href: "/admin/catalog" },
-          { label: "Setup", href: "/admin/catalog/setup" },
-          { label: "New school" },
-        ]}
+        breadcrumb={[{ label: "School Setup", href: "/admin/catalog/setup" }, { label: "New school" }]}
       />
 
       <NewSchoolWizard masterGrades={merged} />

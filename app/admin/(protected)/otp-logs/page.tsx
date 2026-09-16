@@ -4,6 +4,7 @@ import { otpLogs } from "@/db/schema";
 import {
   PageHeader,
   Card,
+  FilterSelect,
 } from "@/components/admin/ui/primitives";
 import { OtpLogsLiveTable, type OtpLogRow } from "@/components/admin/OtpLogsLiveTable";
 import { redirect } from "next/navigation";
@@ -68,9 +69,9 @@ export default async function OtpLogsPage({
   return (
     <div>
       <PageHeader
-        eyebrow="Auth"
+        eyebrow="System Configuration"
         title="OTP Logs"
-        description={`${Number(total).toLocaleString()} total entries · all OTP send and verify events`}
+        description={`${Number(total).toLocaleString()} total entries`}
       />
 
       {/* Filters */}
@@ -81,38 +82,23 @@ export default async function OtpLogsPage({
           placeholder="Filter by phone…"
           className="h-9 rounded-lg border border-ink-200 bg-white px-3 text-[13px] text-ink-900 placeholder:text-ink-400 focus:border-ink-900 focus:outline-none focus:ring-2 focus:ring-brand/20"
         />
-        <select
-          name="purpose"
-          defaultValue={purpose ?? ""}
-          className="h-9 rounded-lg border border-ink-200 bg-white px-3 text-[13px] text-ink-900 focus:border-ink-900 focus:outline-none"
-        >
-          <option value="">All purposes</option>
+        <FilterSelect label="Purpose" name="purpose" defaultValue={purpose ?? ""}>
           <option value="login">Login</option>
           <option value="first-time">First time</option>
           <option value="recover-old">Recovery (old)</option>
           <option value="recover-new">Recovery (new)</option>
-        </select>
-        <select
-          name="event"
-          defaultValue={event ?? ""}
-          className="h-9 rounded-lg border border-ink-200 bg-white px-3 text-[13px] text-ink-900 focus:border-ink-900 focus:outline-none"
-        >
-          <option value="">All events</option>
+        </FilterSelect>
+        <FilterSelect label="Event" name="event" defaultValue={event ?? ""}>
           <option value="sent">Sent</option>
           <option value="send_failed">Send failed</option>
           <option value="verified">Verified</option>
           <option value="verify_failed">Verify failed</option>
-        </select>
-        <select
-          name="since"
-          defaultValue={since ?? ""}
-          className="h-9 rounded-lg border border-ink-200 bg-white px-3 text-[13px] text-ink-900 focus:border-ink-900 focus:outline-none"
-        >
-          <option value="">All time</option>
+        </FilterSelect>
+        <FilterSelect label="Period" allLabel="All time" name="since" defaultValue={since ?? ""}>
           <option value="today">Today</option>
           <option value="7d">Last 7 days</option>
           <option value="30d">Last 30 days</option>
-        </select>
+        </FilterSelect>
         <input type="hidden" name="page" value="1" />
         <button
           type="submit"

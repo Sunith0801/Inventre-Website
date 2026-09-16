@@ -3,6 +3,8 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Save, Trash2 } from "lucide-react";
 import { Button } from "@/components/admin/ui/primitives-client";
+import { Field, Input, FormGrid, FormError } from "@/components/admin/ui/primitives";
+import { ConfirmDialog } from "@/components/admin/ui/dialog";
 
 type Form = {
   guardianName: string;
@@ -19,6 +21,7 @@ export function GuardianEditor({ mode, guardianId, initial }: { mode: "create" |
   const [form, setForm] = useState<Form>({ ...empty, ...initial });
   const [busy, start] = useTransition();
   const [err, setErr] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   function save() {
     setErr(null);
@@ -43,10 +46,10 @@ export function GuardianEditor({ mode, guardianId, initial }: { mode: "create" |
   }
 
   function remove() {
-    if (!guardianId || !confirm("Delete this guardian? Student-guardian links remain (with the name preserved) but the guardian master record is gone.")) return;
+    if (!guardianId) return;
     start(async () => {
       const r = await fetch(`/api/admin/data/guardians/${guardianId}`, { method: "DELETE" });
-      if (!r.ok) { setErr("Delete failed"); return; }
+      if (!r.ok) { setErr("Delete failed"); setConfirmDelete(false); return; }
       router.push("/admin/guardians");
     });
   }
@@ -54,32 +57,49 @@ export function GuardianEditor({ mode, guardianId, initial }: { mode: "create" |
   function set<K extends keyof Form>(k: K, v: Form[K]) { setForm((f) => ({ ...f, [k]: v })); }
 
   return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Field label="Guardian Name *"  value={form.guardianName}    onChange={(v) => set("guardianName", v)} placeholder="Full name" />
-        <Field label="Email Address"    value={form.emailAddress}    onChange={(v) => set("emailAddress", v)} placeholder="example@…" />
-        <Field label="Mobile Number *"  value={form.mobileNumber}    onChange={(v) => set("mobileNumber", v)} mono placeholder="10-digit" />
-        <Field label="Email (secondary)" value={form.email}          onChange={(v) => set("email", v)} placeholder="optional" />
-        <Field label="Alternate Number" value={form.alternateNumber} onChange={(v) => set("alternateNumber", v)} mono />
-        <Field label="Date of Birth"    value={form.dateOfBirth}     onChange={(v) => set("dateOfBirth", v)} placeholder="YYYY-MM-DD" />
-      </div>
-      <div className="flex items-center justify-between pt-4 border-t border-ink-100/70">
-        <div>{err ? <span className="text-[13px] text-red-700">{err}</span> : null}</div>
-        <div className="flex items-center gap-2">
-          {mode === "edit" ? <Button busy={busy} onClick={remove} type="button" variant="danger" icon={<Trash2 className="h-3.5 w-3.5" />}>Delete</Button> : null}
-          <Button busy={busy} onClick={save} type="button" variant="primary" icon={<Save className="h-3.5 w-3.5" />}>{mode === "create" ? "Create guardian" : "Save"}</Button>
+    <div className="space-y-5">
+      <FormGrid cols={2}>
+        <Field label="Guardian name" htmlFor="g-name" required className="md:col-span-2">
+          <Input id="g-name" value={form.guardianName} onChange={(e) => set("guardianName", e.target.value)} placeholder="Full name" autoComplete="off" />
+        </Field>
+        <Field label="Mobile number" htmlFor="g-mobile" required hint="The number the parent signs in with">
+          <Input id="g-mobile" inputMode="numeric" value={form.mobileNumber} onChange={(e) => set("mobileNumber", e.target.value)} placeholder="10 digits" className="font-mono" />
+        </Field>
+        <Field label="Alternate number" htmlFor="g-alt">
+          <Input id="g-alt" inputMode="numeric" value={form.alternateNumber} onChange={(e) => set("alternateNumber", e.target.value)} className="font-mono" />
+        </Field>
+        <Field label="Email address" htmlFor="g-email">
+          <Input id="g-email" type="email" value={form.emailAddress} onChange={(e) => set("emailAddress", e.target.value)} placeholder="name@example.com" />
+        </Field>
+        <Field label="Secondary email" htmlFor="g-email2">
+          <Input id="g-email2" type="email" value={form.email} onChange={(e) => set("email", e.target.value)} placeholder="Optional" />
+        </Field>
+        {/* Text, not type="date": ERPNext stores this as free text (e.g. "05-03-89")
+            and a date control would blank it and save null. */}
+        <Field label="Date of birth" htmlFor="g-dob">
+          <Input id="g-dob" value={form.dateOfBirth} onChange={(e) => set("dateOfBirth", e.target.value)} placeholder="YYYY-MM-DD" className="font-mono" />
+        </Field>
+      </FormGrid>
+      <FormError>{err}</FormError>
+      <div className="flex items-center justify-between gap-2 border-t border-ink-100/70 pt-4">
+        <div>
+          {mode === "edit" ? (
+            <Button busy={busy} onClick={() => setConfirmDelete(true)} type="button" variant="danger" icon={<Trash2 className="h-3.5 w-3.5" />}>Delete guardian</Button>
+          ) : null}
         </div>
+        <Button busy={busy} onClick={save} type="button" variant="primary" icon={<Save className="h-3.5 w-3.5" />}>{mode === "create" ? "Create guardian" : "Save changes"}</Button>
       </div>
-    </div>
-  );
-}
 
-function Field({ label, value, onChange, placeholder, mono }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string; mono?: boolean }) {
-  return (
-    <div>
-      <label className="text-[11px] uppercase tracking-wide text-ink-500 mb-1 block">{label}</label>
-      <input type="text" value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder}
-        className={(mono ? "font-mono text-[12px] " : "text-[13px] ") + "w-full h-9 px-3 rounded-lg bg-white border border-ink-200 placeholder:text-ink-400 focus:outline-none focus:border-ink-400 focus:ring-2 focus:ring-brand-300/30"} />
+      <ConfirmDialog
+        open={confirmDelete}
+        onClose={() => (busy ? undefined : setConfirmDelete(false))}
+        onConfirm={remove}
+        title="Delete this guardian?"
+        description="The guardian record is removed. Links from students keep the guardian's name, so student records are not affected."
+        confirmLabel="Delete guardian"
+        busy={busy}
+        error={err}
+      />
     </div>
   );
 }

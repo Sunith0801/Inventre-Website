@@ -46,7 +46,6 @@ export const ADMIN_PAGES: AdminPage[] = [
   { slug: "shipments",            label: "Shipments",             group: "Sales" },
   { slug: "invoices",             label: "Invoices",              group: "Sales" },
   { slug: "returns",              label: "Returns",               group: "Sales" },
-  { slug: "spoc-exchange",        label: "Raise Exchange",        group: "Sales" },
   { slug: "schools",              label: "Schools",               group: "Network" },
   { slug: "grades",               label: "Grades",                group: "Network" },
   { slug: "delivery-fees",        label: "Delivery fees",         group: "Network" },
@@ -62,19 +61,34 @@ export const ADMIN_PAGES: AdminPage[] = [
   // reaches every staff admin. See lib/fees-users.ts.
   { slug: "fees-users",           label: "Fee ledger access",     group: "People" },
   { slug: "guardians",            label: "Guardians",             group: "People" },
-  { slug: "catalog",              label: "Catalog",               group: "Catalog" },
+  // Catalog is a FAMILY. `catalog` itself is the hub page and the preview;
+  // each module beneath it is its own key, so a stock clerk can be given
+  // Stock without Products, and a merchandiser Products without Pricing.
+  // Migration 0076 fans existing `catalog.*` grants onto every module so the
+  // split changes nobody's access on the day it lands.
+  { slug: "catalog",              label: "Catalog overview",      group: "Catalog" },
+  { slug: "products",             label: "Products",              group: "Catalog" },
+  { slug: "boms",                 label: "BOMs",                  group: "Catalog" },
+  { slug: "categories",           label: "Categories",            group: "Catalog" },
+  { slug: "catalog-attributes",   label: "Attributes",            group: "Catalog" },
+  { slug: "catalog-bundles",      label: "Bundles",               group: "Catalog" },
+  { slug: "catalog-build",        label: "Build (bookkit / uniform)", group: "Catalog" },
+  { slug: "catalog-pricing",      label: "Pricing",               group: "Catalog" },
+  { slug: "catalog-setup",        label: "School setup",          group: "Catalog" },
+  { slug: "catalog-stock",        label: "Stock",                 group: "Catalog" },
   { slug: "discounts",            label: "Discounts",             group: "Pricing & Tax" },
-  { slug: "tax",                  label: "Tax & GST",             group: "Pricing & Tax" },
   { slug: "payment-charges",      label: "Payment charges",       group: "Payment Charges" },
-  { slug: "suppliers",            label: "Suppliers",             group: "Buying" },
-  { slug: "purchase-orders",      label: "Purchase orders",       group: "Buying" },
-  { slug: "payments",             label: "Payments",              group: "Accounting" },
-  { slug: "payments-ccavenue",    label: "CCAvenue Payment Logs", group: "Accounting" },
+  // Gateway (CCAvenue) transactions — every online checkout.
+  // `payments-ccavenue.*` grants were folded into this key by migration 0082.
+  { slug: "payments",             label: "Payments (gateway)",    group: "Accounting" },
+  // The manual ledger: cheques, bank transfers, cash and refunds recorded by
+  // hand. Its own module so a cashier can be given it without the gateway log.
+  { slug: "payment-entries",      label: "Manual payment entries", group: "Accounting" },
   { slug: "reviews",              label: "Reviews",               group: "Engagement" },
-  { slug: "testimonials",         label: "Testimonials",          group: "Engagement" },
-  { slug: "contact-forms",        label: "Contact forms",         group: "Engagement" },
-  { slug: "gift-cards",           label: "Gift cards",            group: "Engagement" },
-  { slug: "content",              label: "Pages & blocks",        group: "Content" },
+  { slug: "contact-forms",        label: "Inquiries",             group: "Engagement" },
+  // Testimonials moved under this key (migration 0077): they are homepage
+  // copy like the hero and the FAQs, edited from the same content hub.
+  { slug: "content",              label: "Pages & content blocks", group: "Content" },
   { slug: "import",               label: "Import CSV/XLSX",       group: "Tools" },
   { slug: "reports",              label: "Reports",               group: "Tools" },
   { slug: "activity",             label: "Activity log",          group: "Tools" },
@@ -90,7 +104,7 @@ export type AdminPermissionAction = "read" | "write";
 
 export const ADMIN_PERMISSION_GROUPS: readonly string[] = [
   "Overview", "Sales", "Network", "People", "Catalog",
-  "Pricing & Tax", "Payment Charges", "Buying", "Accounting",
+  "Pricing & Tax", "Payment Charges", "Accounting",
   "Engagement", "Content", "Tools", "Settings",
 ];
 
@@ -142,13 +156,17 @@ export function canSeePage(
  * `/admin/<slug>`. Everything else falls through to the default below.
  */
 const PAGE_HREF_OVERRIDES: Readonly<Record<string, string>> = {
-  "spoc-exchange": "/admin/exchanges/new",
   "delivery-fees": "/admin/delivery-fee-rules",
-  tax: "/admin/tax/rates",
-  "payments-ccavenue": "/admin/payments/ccavenue",
+  "catalog-attributes": "/admin/catalog/attributes",
+  "catalog-bundles": "/admin/catalog/bundles",
+  "catalog-build": "/admin/catalog/build",
+  "catalog-pricing": "/admin/catalog/pricing",
+  "catalog-setup": "/admin/catalog/setup",
+  "catalog-stock": "/admin/catalog/stock",
   "settings-users": "/admin/settings/users",
   "settings-otp": "/admin/settings/otp",
   "settings-erp-bridge": "/admin/settings/erp-bridge",
+  "payment-entries": "/admin/payments/entries",
   fees: "/fees",
   "fees-users": "/fees/users",
 };
@@ -165,7 +183,7 @@ export function pageHref(slug: string): string {
  * a permission but have no sidebar entry, so a user should never be dropped
  * on them as their post-login home.
  */
-const NON_LANDING_SLUGS: ReadonlySet<string> = new Set(["spoc-exchange"]);
+const NON_LANDING_SLUGS: ReadonlySet<string> = new Set([]);
 
 /**
  * Path of the first browsable page (in ADMIN_PAGES order) this admin is

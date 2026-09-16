@@ -15,13 +15,8 @@ export default async function NotificationsRulesPage() {
   return (
     <div className="max-w-5xl">
       <PageHeader
-        breadcrumb={[
-          { label: "Settings", href: "/admin/settings" },
-          { label: "Notification rules" },
-        ]}
-        eyebrow="Settings"
+        eyebrow="System Configuration"
         title="Notification rules"
-        description="Map domain events to email or SMS channels. Variables like {{orderNumber}} are substituted from the event payload."
       />
       <NotificationRulesEditor
         initial={rules.map((r) => ({

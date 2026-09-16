@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { GraduationCap, Wallet, Download } from "lucide-react";
-import { PageHeader, Card, Th, Td, Tr, Badge, EmptyState, Button } from "@/components/admin/ui/primitives";
+import { GraduationCap, Wallet, Download, Search, ChevronLeft, ChevronRight } from "lucide-react";
+import { PageHeader, Card, Th, Td, Tr, Badge, EmptyState, Button, FilterSelect } from "@/components/admin/ui/primitives";
 import GrantAccessButton from "./GrantAccessButton";
 import { mcbGenderToLabel, mcbGradeToCbse } from "@/lib/mcb/mappings";
 import { bulkGrantMcbAccess } from "./actions";
@@ -20,6 +20,7 @@ const SCHOOLS: School[] = [
   { code: "WMAWF", name: "Winmore Whitefield",  mcbBranch: "Winmore Academy Whitefield" },
   { code: "CAGSM", name: "Crimson Anisha Marunji", mcbBranch: "Crimson Anisha Global School Marunji" },
   { code: "CAGSU", name: "Crimson Anisha Undri",   mcbBranch: "Crimson Anisha Global School Undri" },
+  { code: "CWSAG", name: "Crimson World Agra",    mcbBranch: "Crimson World School Agra" },
 ];
 
 // MUST match PAGE_SIZE in /api/admin/mcb/data and /admin/mcb (server page).
@@ -90,8 +91,6 @@ function FeeStatusBadge({ date }: { date: string | null }) {
   return <Badge tone="default" size="sm">— Unpaid</Badge>;
 }
 
-const TAB_LINK = "inline-flex items-center gap-2 px-4 py-2 rounded-lg text-[15px] font-medium transition-colors cursor-pointer";
-const SUBTAB = "inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-[14px] font-medium transition-colors cursor-pointer";
 
 /** Schools where the enrolment column should display the MCB Ref/Adm code
  *  (StudentReferencesCode, e.g. KS260293) instead of the internal enrolment_number.
@@ -318,12 +317,19 @@ export default function McbDashboard({ initialData }: { initialData: InitialData
   return (
     <div>
       <PageHeader
-        eyebrow="MCB"
+        eyebrow="Customer Relationship (CRM)"
         title="MyClassBoard students"
         description={
           tab === "master"
-            ? `${total.toLocaleString("en-IN")} student${total === 1 ? "" : "s"} in ${activeSchool.name} · page ${data.page}/${lastPage}`
-            : `Fee payments ${rangeLabel} · page ${data.page}/${lastPage}`
+            ? `${total.toLocaleString("en-IN")} student${total === 1 ? "" : "s"} in ${activeSchool.name}`
+            : `Fee payments ${rangeLabel} · ${activeSchool.name}`
+        }
+        actions={
+          <a href={exportHref} download>
+            <Button variant="secondary" icon={<Download className="h-3.5 w-3.5" />}>
+              Export Excel
+            </Button>
+          </a>
         }
       />
 
@@ -332,22 +338,23 @@ export default function McbDashboard({ initialData }: { initialData: InitialData
           also surface the latest payment_date MCB has returned, since fees
           may be back-stamped weeks late (see import-from-mcb.ts window). */}
       {initialData.syncStatus ? (
-        <div className="flex flex-wrap gap-2 mb-4">
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-500">Sync</span>
           <SyncPill
-            label="Students last synced"
+            label="Students"
             iso={initialData.syncStatus.studentsLastSynced}
             warnAfterH={30}
             failAfterH={48}
           />
           <SyncPill
-            label="Fees last synced"
+            label="Fees"
             iso={initialData.syncStatus.feesLastSynced}
             warnAfterH={30}
             failAfterH={48}
             detail={`${initialData.syncStatus.feesRowsLast24h} rows / 24h`}
           />
           <SyncPill
-            label="Newest fee payment"
+            label="Newest payment"
             iso={initialData.syncStatus.feesLastPaymentDate}
             warnAfterH={72}
             failAfterH={168}
@@ -355,138 +362,8 @@ export default function McbDashboard({ initialData }: { initialData: InitialData
         </div>
       ) : null}
 
-      {/* top tabs */}
-      <div className="flex gap-2 mb-4">
-        <button
-          type="button"
-          onClick={() => setStateAndResetPage(() => setTab("master"))}
-          className={`${TAB_LINK} ${tab === "master" ? "bg-brand-600 text-white" : "bg-cream-100 text-ink-700 hover:bg-cream-200"}`}
-        >
-          <GraduationCap className="h-4 w-4" /> Student Master Data
-        </button>
-        <button
-          type="button"
-          onClick={() => setStateAndResetPage(() => setTab("fees"))}
-          className={`${TAB_LINK} ${tab === "fees" ? "bg-brand-600 text-white" : "bg-cream-100 text-ink-700 hover:bg-cream-200"}`}
-        >
-          <Wallet className="h-4 w-4" /> Fee-Paid Students
-        </button>
-        {isPending && (
-          <span className="self-center text-[13px] text-ink-400 ml-2">Loading…</span>
-        )}
-        {error && (
-          <span className="self-center text-[13px] text-rose-700 ml-2">{error}</span>
-        )}
-        <div className="ml-auto flex items-center gap-2">
-          <a href={exportHref} download>
-            <Button variant="secondary" icon={<Download className="h-3.5 w-3.5" />}>
-              Export Excel
-            </Button>
-          </a>
-          <input
-            type="search"
-            value={qInput}
-            onChange={(e) => setQInput(e.target.value)}
-            placeholder="Search name / enrolment / mobile…"
-            className="h-9 w-72 px-3 rounded-lg border border-ink-200 text-[14px] bg-white"
-            aria-label="Search MCB students"
-          />
-          {qInput && (
-            <button
-              type="button"
-              onClick={() => { setQInput(""); setPage(1); setQ(""); }}
-              className="text-[13px] text-ink-500 hover:text-ink-800"
-            >
-              Clear
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* access + month filters (master) */}
-      {tab === "master" && (
-        <div className="mb-3 flex flex-wrap items-center gap-2">
-          <span className="text-[13px] text-ink-500">Show:</span>
-          {(["all", "not", "granted"] as Access[]).map((a) => (
-            <button
-              key={a}
-              type="button"
-              onClick={() => setStateAndResetPage(() => setAccess(a))}
-              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[13px] font-medium ring-1 transition-colors ${
-                access === a
-                  ? "bg-brand-600 text-white ring-brand-700 shadow-sm"
-                  : "bg-white text-ink-700 ring-ink-200 hover:bg-cream-50"
-              }`}
-            >
-              {access === a && <span aria-hidden>●</span>}
-              {a === "all" ? "All students" : a === "not" ? "Not granted" : "Granted"}
-            </button>
-          ))}
-          <span className="mx-2 text-ink-300">·</span>
-          <label className="text-[13px] text-ink-500">Last tuition paid in:</label>
-          <select
-            value={month}
-            onChange={(e) => setStateAndResetPage(() => setMonth(e.target.value))}
-            className="h-9 px-2.5 rounded-lg border border-ink-200 text-[13px] bg-white"
-          >
-            <option value="">Any month</option>
-            {monthOptions.map((m) => (
-              <option key={m.value} value={m.value}>{m.label}</option>
-            ))}
-          </select>
-          {month && (
-            <button
-              type="button"
-              onClick={() => setStateAndResetPage(() => setMonth(""))}
-              className="text-[13px] text-ink-500 hover:text-ink-800"
-            >
-              Clear
-            </button>
-          )}
-        </div>
-      )}
-
-      {/* date range (fees) */}
-      {tab === "fees" && (
-        <div className="mb-3 flex flex-wrap items-center gap-2">
-          <label className="text-[13px] text-ink-500">From</label>
-          <input
-            type="date"
-            value={from}
-            onChange={(e) => setStateAndResetPage(() => setFrom(e.target.value))}
-            className="h-9 px-2.5 rounded-lg border border-ink-200 text-[13px]"
-          />
-          <label className="text-[13px] text-ink-500">To</label>
-          <input
-            type="date"
-            value={to}
-            onChange={(e) => setStateAndResetPage(() => setTo(e.target.value))}
-            className="h-9 px-2.5 rounded-lg border border-ink-200 text-[13px]"
-          />
-          <span className="mx-2 text-ink-300">·</span>
-          {[
-            ["Today", today, today],
-            ["Last 7d", minusDays(6), today],
-            ["Last 30d", minusDays(29), today],
-            ["FY 25-26→", "2025-04-01", today],
-          ].map(([label, f, t]) => (
-            <button
-              key={label}
-              type="button"
-              onClick={() => setStateAndResetPage(() => {
-                setFrom(f as string);
-                setTo(t as string);
-              })}
-              className="text-[13px] text-brand-700 hover:underline"
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* school sub-tabs */}
-      <div className="flex flex-wrap gap-2 mb-4 pb-3 border-b border-ink-100">
+      {/* Which school — one chip per MCB branch, count = rows synced */}
+      <div className="mb-4 flex flex-wrap gap-1.5">
         {SCHOOLS.map((s) => {
           const n = countByCode.get(s.code) ?? 0;
           const isActive = s.code === school;
@@ -495,64 +372,174 @@ export default function McbDashboard({ initialData }: { initialData: InitialData
               key={s.code}
               type="button"
               onClick={() => setStateAndResetPage(() => setSchool(s.code))}
-              className={`${SUBTAB} ${isActive ? "bg-ink-900 text-white" : "bg-white border border-ink-200 text-ink-700 hover:bg-cream-50"}`}
+              aria-pressed={isActive}
+              className={`inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-[12.5px] font-semibold transition-colors ${
+                isActive ? "bg-ink-900 text-white" : "bg-white text-ink-600 ring-1 ring-ink-100 hover:bg-cream-50 hover:text-ink-900"
+              }`}
             >
               {s.name}
-              <Badge tone={isActive ? "info" : "default"} size="sm">
+              <span className={`rounded-full px-1.5 py-0.5 text-[10.5px] tabular-nums ${isActive ? "bg-white/15 text-white" : "bg-ink-100 text-ink-500"}`}>
                 {n.toLocaleString("en-IN")}
-              </Badge>
+              </span>
             </button>
           );
         })}
       </div>
 
-      <Card padded={false}>
+      {/* Toolbar — view switch, search, filters. Everything applies as you pick it. */}
+      <div className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-ink-100/70 bg-white p-2">
+        <div className="inline-flex h-9 items-center rounded-lg bg-cream-100 p-0.5" role="tablist">
+          {([
+            ["master", "Student master", GraduationCap],
+            ["fees", "Fee payments", Wallet],
+          ] as const).map(([key, label, Icon]) => (
+            <button
+              key={key}
+              type="button"
+              role="tab"
+              aria-selected={tab === key}
+              onClick={() => setStateAndResetPage(() => setTab(key))}
+              className={`inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-[12.5px] font-semibold transition-colors ${
+                tab === key ? "bg-white text-ink-900 shadow-sm" : "text-ink-500 hover:text-ink-800"
+              }`}
+            >
+              <Icon className="h-3.5 w-3.5" /> {label}
+            </button>
+          ))}
+        </div>
+
+        <div className="relative min-w-[200px] flex-1">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-400" />
+          <input
+            type="search"
+            value={qInput}
+            onChange={(e) => setQInput(e.target.value)}
+            placeholder="Search name, enrolment or mobile…"
+            className="h-9 w-full rounded-lg border border-ink-100 bg-cream-50 pl-9 pr-3 text-[13px] placeholder:text-ink-400 transition-[background,border,box-shadow] focus:border-ink-300 focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-300/40"
+            aria-label="Search MCB students"
+          />
+        </div>
+
+        {tab === "master" ? (
+          <>
+            <FilterSelect
+              label="Website access"
+              value={access === "all" ? "" : access}
+              onChange={(e) => setStateAndResetPage(() => setAccess((e.target.value || "all") as Access))}
+            >
+              <option value="granted">Granted</option>
+              <option value="not">Not granted</option>
+            </FilterSelect>
+            <FilterSelect
+              label="Tuition paid in"
+              allLabel="Any month"
+              value={month}
+              onChange={(e) => setStateAndResetPage(() => setMonth(e.target.value))}
+            >
+              {monthOptions.map((m) => (
+                <option key={m.value} value={m.value}>{m.label}</option>
+              ))}
+            </FilterSelect>
+          </>
+        ) : (
+          <>
+            <label className="inline-flex h-9 items-center overflow-hidden rounded-lg border border-ink-100 bg-white text-[13px]">
+              <span className="flex h-full items-center border-r border-ink-100 bg-cream-50 px-2.5 text-[12px] font-medium text-ink-500">From</span>
+              <input
+                type="date"
+                value={from}
+                max={to}
+                onChange={(e) => setStateAndResetPage(() => setFrom(e.target.value))}
+                className="h-full bg-transparent px-2.5 text-[13px] outline-none"
+              />
+            </label>
+            <label className="inline-flex h-9 items-center overflow-hidden rounded-lg border border-ink-100 bg-white text-[13px]">
+              <span className="flex h-full items-center border-r border-ink-100 bg-cream-50 px-2.5 text-[12px] font-medium text-ink-500">To</span>
+              <input
+                type="date"
+                value={to}
+                min={from}
+                max={today}
+                onChange={(e) => setStateAndResetPage(() => setTo(e.target.value))}
+                className="h-full bg-transparent px-2.5 text-[13px] outline-none"
+              />
+            </label>
+            <div className="flex items-center gap-1">
+              {[
+                ["Today", today, today],
+                ["7 days", minusDays(6), today],
+                ["30 days", minusDays(29), today],
+                ["This FY", "2025-04-01", today],
+              ].map(([label, f, t]) => {
+                const on = from === f && to === t;
+                return (
+                  <button
+                    key={label}
+                    type="button"
+                    onClick={() => setStateAndResetPage(() => { setFrom(f as string); setTo(t as string); })}
+                    className={`h-8 rounded-lg px-2.5 text-[12px] font-medium transition-colors ${on ? "bg-ink-900 text-white" : "text-ink-600 hover:bg-cream-100 hover:text-ink-900"}`}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          </>
+        )}
+
+        {isPending ? <span className="text-[12px] text-ink-400">Loading…</span> : null}
+        {error ? <span className="text-[12px] font-medium text-red-600">{error}</span> : null}
+      </div>
+
+      <Card padded={false} className="overflow-hidden">
+        {ungrantedVisible.length > 0 && data.rows.length > 0 ? (
+          <div className="flex flex-wrap items-center gap-3 border-b border-ink-100 bg-cream-50/60 px-5 py-2.5 text-[13px]">
+            <span className="text-ink-600">
+              {checked.size > 0
+                ? <><strong className="text-ink-900">{checked.size}</strong> selected</>
+                : `${ungrantedVisible.length} on this page without website access`}
+            </span>
+            <Button
+              variant="primary"
+              size="sm"
+              disabled={checked.size === 0 || bulkPending}
+              onClick={runBulkGrant}
+            >
+              {bulkPending ? "Granting…" : checked.size ? `Grant access to ${checked.size}` : "Grant access"}
+            </Button>
+            {bulkMsg ? <span className="text-ink-600">{bulkMsg}</span> : null}
+          </div>
+        ) : null}
+
         {tab === "master" ? (
           data.rows.length === 0 ? (
             <EmptyState
               icon={GraduationCap}
-              title="No students match this filter"
-              description={`No ${access === "all" ? "" : access === "granted" ? "granted " : "ungranted "}students in ${activeSchool.name}.`}
+              title="No students match"
+              description={`No ${access === "all" ? "" : access === "granted" ? "granted " : "ungranted "}students in ${activeSchool.name}${q ? ` for "${q}"` : ""}.`}
             />
           ) : (
-          <>
-          {ungrantedVisible.length > 0 && (
-            <div className="flex items-center gap-3 px-3 py-2 border-b border-ink-100 bg-cream-50/60 text-[13px]">
-              <span className="text-ink-500">
-                {checked.size > 0
-                  ? `${checked.size} selected`
-                  : `${ungrantedVisible.length} ungranted on this page`}
-              </span>
-              <Button
-                variant="primary"
-                disabled={checked.size === 0 || bulkPending}
-                onClick={runBulkGrant}
-              >
-                {bulkPending ? "Granting…" : `Grant access to ${checked.size || ""}`.trim()}
-              </Button>
-              {bulkMsg && <span className="text-ink-600">{bulkMsg}</span>}
-            </div>
-          )}
-            <table className="w-full text-[14px]">
+            <div className="overflow-x-auto">
+            <table className="w-full">
               <thead>
                 <tr>
-                  <Th>
+                  <Th className="w-10">
                     <input
                       type="checkbox"
                       checked={allChecked}
                       onChange={toggleAll}
                       aria-label="Select all ungranted on this page"
+                      className="accent-brand"
                     />
                   </Th>
-                  <Th>{REF_CODE_SCHOOLS.has(school) ? "Ref / Adm No" : "Enrolment"}</Th>
-                  <Th>Name</Th>
-                  <Th>Grade · Section</Th>
+                  <Th>Student</Th>
+                  <Th>Class</Th>
                   <Th>Gender</Th>
                   <Th>Mobile</Th>
                   <Th>Email</Th>
-                  <Th>Tuition fee last paid</Th>
+                  <Th>Tuition last paid</Th>
                   {school === "SMSAW" && <Th>Magic Box last paid</Th>}
-                  <Th>Access</Th>
+                  <Th>Website access</Th>
                 </tr>
               </thead>
               <tbody>
@@ -576,41 +563,34 @@ export default function McbDashboard({ initialData }: { initialData: InitialData
                             checked={checked.has(m.enrolment_number)}
                             onChange={() => toggleOne(m.enrolment_number)}
                             aria-label={`Select ${m.enrolment_number}`}
+                            className="accent-brand"
                           />
                         )}
                       </Td>
                       <Td>
-                        <span className="font-mono text-[13px] font-semibold text-ink-800">{displayEnrolment(school, m)}</span>
+                        <span className="block font-semibold text-ink-900">{m.student_name || "—"}</span>
+                        <span className="mt-0.5 block font-mono text-[11.5px] font-normal text-ink-500">{displayEnrolment(school, m)}</span>
                       </Td>
-                      <Td>{m.student_name || "—"}</Td>
                       <Td muted>
                         {m.grade ?? "—"}
                         {m.section ? ` · ${m.section}` : ""}
                       </Td>
                       <Td muted>{gender || "—"}</Td>
-                      <Td muted>{m.mobile_number || "—"}</Td>
+                      <Td muted><span className="font-mono">{m.mobile_number || "—"}</span></Td>
                       <Td muted>{m.email || "—"}</Td>
                       <Td muted>
-                        <div className="flex items-start gap-2">
+                        <span className="inline-flex items-center gap-2 whitespace-nowrap">
                           {/* Status badge tracks tuition specifically —
                               ops's "behind on fees" question is about
                               tuition installments, not activity top-ups. */}
                           <FeeStatusBadge date={m.last_tuition_paid_date} />
-                          <div>
-                            {m.last_tuition_paid_date
-                              ? new Date(m.last_tuition_paid_date).toLocaleDateString("en-IN")
-                              : "—"}
-                          </div>
-                        </div>
+                          {m.last_tuition_paid_date ? fmtDay(m.last_tuition_paid_date) : null}
+                        </span>
                       </Td>
                       {school === "SMSAW" && (
-                        <Td muted>
-                          {m.last_magic_box_paid_date
-                            ? new Date(m.last_magic_box_paid_date).toLocaleDateString("en-IN")
-                            : "—"}
-                        </Td>
+                        <Td muted>{m.last_magic_box_paid_date ? fmtDay(m.last_magic_box_paid_date) : "—"}</Td>
                       )}
-                      <Td>
+                      <Td className="whitespace-nowrap">
                         <GrantAccessButton
                           enrolmentNumber={m.enrolment_number}
                           granted={!!m.website_access}
@@ -634,7 +614,7 @@ export default function McbDashboard({ initialData }: { initialData: InitialData
                 })}
               </tbody>
             </table>
-          </>
+            </div>
           )
         ) : data.rows.length === 0 ? (
           <EmptyState
@@ -643,44 +623,27 @@ export default function McbDashboard({ initialData }: { initialData: InitialData
             description={`Nothing recorded for ${activeSchool.name} between ${from} and ${to}.`}
           />
         ) : (
-          <>
-          {ungrantedVisible.length > 0 && (
-            <div className="flex items-center gap-3 px-3 py-2 border-b border-ink-100 bg-cream-50/60 text-[13px]">
-              <span className="text-ink-500">
-                {checked.size > 0
-                  ? `${checked.size} selected`
-                  : `${ungrantedVisible.length} ungranted on this page`}
-              </span>
-              <Button
-                variant="primary"
-                disabled={checked.size === 0 || bulkPending}
-                onClick={runBulkGrant}
-              >
-                {bulkPending ? "Granting…" : `Grant access to ${checked.size || ""}`.trim()}
-              </Button>
-              {bulkMsg && <span className="text-ink-600">{bulkMsg}</span>}
-            </div>
-          )}
-          <table className="w-full text-[14px]">
+          <div className="overflow-x-auto">
+          <table className="w-full">
             <thead>
               <tr>
-                <Th>
+                <Th className="w-10">
                   <input
                     type="checkbox"
                     checked={allChecked}
                     onChange={toggleAll}
                     aria-label="Select all ungranted on this page"
+                    className="accent-brand"
                   />
                 </Th>
-                <Th>{REF_CODE_SCHOOLS.has(school) ? "Ref / Adm No" : "Enrolment"}</Th>
-                <Th>Name</Th>
-                <Th>Grade · Section</Th>
+                <Th>Student</Th>
+                <Th>Class</Th>
                 <Th>Parent</Th>
                 <Th>Mobile</Th>
                 <Th>Email</Th>
                 <Th>Last fee paid</Th>
-                <Th>Paid in range</Th>
-                <Th>Access</Th>
+                <Th right>Paid in range</Th>
+                <Th>Website access</Th>
               </tr>
             </thead>
             <tbody>
@@ -699,44 +662,43 @@ export default function McbDashboard({ initialData }: { initialData: InitialData
                           checked={checked.has(r.enrolment_number)}
                           onChange={() => toggleOne(r.enrolment_number)}
                           aria-label={`Select ${r.enrolment_number}`}
+                          className="accent-brand"
                         />
                       )}
                     </Td>
-                    <Td><span className="font-mono text-[13px] font-semibold text-ink-800">{displayEnrolment(school, r)}</span></Td>
-                    <Td>{r.student_name || "—"}</Td>
+                    <Td>
+                      <span className="block font-semibold text-ink-900">{r.student_name || "—"}</span>
+                      <span className="mt-0.5 block font-mono text-[11.5px] font-normal text-ink-500">{displayEnrolment(school, r)}</span>
+                    </Td>
                     <Td muted>{r.grade ?? "—"}{r.section ? ` · ${r.section}` : ""}</Td>
                     <Td muted>{parentName || "—"}</Td>
-                    <Td muted>{mobile || r.mobile_number || "—"}</Td>
+                    <Td muted><span className="font-mono">{mobile || r.mobile_number || "—"}</span></Td>
                     <Td muted>{email || "—"}</Td>
                     <Td muted>
-                      <div className="flex items-start gap-2">
+                      <span className="inline-flex items-center gap-2 whitespace-nowrap">
                         <FeeStatusBadge date={r.last_fee_paid_date} />
-                        <div>
-                          {r.last_fee_paid_date ? new Date(r.last_fee_paid_date).toLocaleDateString("en-IN") : "—"}
-                          {r.last_fee_paid_amount && (
-                            <div className="text-[13px] text-ink-500">
-                              ₹{Number(r.last_fee_paid_amount).toLocaleString("en-IN")}
-                            </div>
-                          )}
-                        </div>
-                      </div>
+                        {r.last_fee_paid_date ? fmtDay(r.last_fee_paid_date) : null}
+                        {r.last_fee_paid_amount ? (
+                          <span className="text-ink-500">₹{Number(r.last_fee_paid_amount).toLocaleString("en-IN")}</span>
+                        ) : null}
+                      </span>
                     </Td>
-                    <Td>
+                    <Td right>
                       {r.day_amount ? (
                         <>
                           <span className="font-semibold">₹{Number(r.day_amount).toLocaleString("en-IN")}</span>
                           {(r.day_receipts ?? 0) > 1 && (
-                            <div className="text-[13px] text-ink-500">
+                            <span className="block text-[12px] font-normal text-ink-500">
                               {r.day_receipts} receipts
-                              {r.last_paid_in_range && from !== to ? ` · last ${new Date(r.last_paid_in_range).toLocaleDateString("en-IN")}` : ""}
-                            </div>
+                              {r.last_paid_in_range && from !== to ? ` · last ${fmtDay(r.last_paid_in_range)}` : ""}
+                            </span>
                           )}
                         </>
                       ) : (
-                        "—"
+                        <span className="text-ink-300">—</span>
                       )}
                     </Td>
-                    <Td>
+                    <Td className="whitespace-nowrap">
                       <GrantAccessButton
                         enrolmentNumber={r.enrolment_number}
                         granted={!!r.website_access}
@@ -760,32 +722,40 @@ export default function McbDashboard({ initialData }: { initialData: InitialData
               })}
             </tbody>
           </table>
-          </>
-        )}
-      </Card>
-
-      {total > PAGE_SIZE && (
-        <div className="flex items-center justify-between mt-3 text-[13px] text-ink-500">
-          <span>Showing {offset + 1}–{Math.min(offset + PAGE_SIZE, total)} of {total.toLocaleString("en-IN")}</span>
-          <div className="flex items-center gap-1.5">
-            <PgBtn label="« First" enabled={data.page > 1} onClick={() => setPage(1)} />
-            <PgBtn label="‹ Prev" enabled={data.page > 1} onClick={() => setPage(data.page - 1)} />
-            <span className="px-3 tabular-nums">{data.page} / {lastPage}</span>
-            <PgBtn label="Next ›" enabled={data.page < lastPage} onClick={() => setPage(data.page + 1)} />
-            <PgBtn label="Last »" enabled={data.page < lastPage} onClick={() => setPage(lastPage)} />
           </div>
-        </div>
-      )}
+        )}
+
+        {total > 0 ? (
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-ink-100/70 px-5 py-3 text-[12.5px] text-ink-500">
+            <span>
+              Showing <strong className="font-semibold text-ink-800">{(offset + 1).toLocaleString("en-IN")}–{Math.min(offset + PAGE_SIZE, total).toLocaleString("en-IN")}</strong> of{" "}
+              <strong className="font-semibold text-ink-800">{total.toLocaleString("en-IN")}</strong> student{total === 1 ? "" : "s"}
+            </span>
+            {total > PAGE_SIZE ? (
+              <div className="flex items-center gap-1.5">
+                <PgBtn label="Previous" enabled={data.page > 1} onClick={() => setPage(data.page - 1)} icon="prev" />
+                <span className="px-2 tabular-nums">Page {data.page} of {lastPage}</span>
+                <PgBtn label="Next" enabled={data.page < lastPage} onClick={() => setPage(data.page + 1)} icon="next" />
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+      </Card>
     </div>
   );
 }
 
-function PgBtn({ label, enabled, onClick }: { label: string; enabled: boolean; onClick: () => void }) {
-  return enabled ? (
-    <button type="button" onClick={onClick} className="px-2 py-1 rounded border border-ink-200 hover:bg-cream-50">
+const fmtDay = (iso: string) => new Date(iso).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+
+function PgBtn({ label, enabled, onClick, icon }: { label: string; enabled: boolean; onClick: () => void; icon: "prev" | "next" }) {
+  const cls = `inline-flex h-8 items-center gap-1 rounded-lg border px-2.5 text-[12.5px] font-semibold transition-colors ${
+    enabled ? "border-ink-200 bg-white text-ink-800 hover:border-ink-300 hover:bg-cream-100" : "cursor-not-allowed border-ink-100 bg-cream-50 text-ink-300"
+  }`;
+  return (
+    <button type="button" onClick={onClick} disabled={!enabled} className={cls} aria-label={label}>
+      {icon === "prev" ? <ChevronLeft className="h-3.5 w-3.5" /> : null}
       {label}
+      {icon === "next" ? <ChevronRight className="h-3.5 w-3.5" /> : null}
     </button>
-  ) : (
-    <span className="px-2 py-1 rounded border border-ink-100 text-ink-300">{label}</span>
   );
 }

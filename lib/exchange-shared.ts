@@ -137,9 +137,43 @@ export type ExchangePhoto = {
 // client order page share ONE source of truth for the wording the
 // customer sees.
 //
-// NOTE (2026-07-23): the post-delivery time window was fully removed —
-// a delivered item is eligible for Exchange / Missing forever. Eligibility
-// now depends only on delivery + the one-active-request-per-item lock.
+// ─── Post-delivery request window ───────────────────────────────────
+//
+// 2026-09-16: a 7-day window is back (it was removed 2026-07-23). The clock
+// starts on the day the LAST item of the order is delivered — until every
+// item has arrived the window stays open, so a partially-delivered order
+// never times out on the pieces still on the way. The parent can raise an
+// Exchange / Missing request through the end of the 7th calendar day (IST)
+// after that delivery date. Server truth lives in
+// server/return-line-eligibility.ts::computeReturnsWindow.
+export const RETURNS_WINDOW_DAYS = 7;
+
+/** "16 Sep 2026" in IST — for the window copy on the order page + popups. */
+export function formatWindowDate(d: Date | string): string {
+  const dt = typeof d === "string" ? new Date(d) : d;
+  return dt.toLocaleDateString("en-IN", {
+    timeZone: "Asia/Kolkata",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+/** Last calendar day (IST) on which a request can still be raised. `expiresAt`
+ *  is the exclusive cut-off instant (IST midnight), so the last open day is
+ *  the day before it. */
+export function windowLastDay(expiresAt: Date | string): Date {
+  const dt = typeof expiresAt === "string" ? new Date(expiresAt) : expiresAt;
+  return new Date(dt.getTime() - 60 * 60 * 1000);
+}
+
+export function windowClosedMessage(
+  kind: "exchange" | "missing",
+  expiresAt: Date | string,
+): string {
+  const what = kind === "exchange" ? "Exchange requests" : "Missing-item claims";
+  return `${what} can be raised only within ${RETURNS_WINDOW_DAYS} days of delivery. The request period for this order ended on ${formatWindowDate(windowLastDay(expiresAt))}.`;
+}
 
 /** Indefinite article for a request-kind label ("An Exchange" / "A Missing"). */
 function articleFor(kind: "exchange" | "missing"): string {

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { ReactNode } from "react";
 import { eq, or, sql, inArray } from "drizzle-orm";
 import { notFound } from "next/navigation";
@@ -21,6 +22,7 @@ import { RecordHistory } from "@/components/admin/RecordHistory";
 import { DeleteOrderButton } from "@/components/admin/DeleteOrderButton";
 import { CancelOrderButton } from "@/components/admin/CancelOrderButton";
 import { RefreshCcaButton } from "@/components/admin/RefreshCcaButton";
+import { OrderTrackingCard } from "@/components/admin/OrderTrackingCard";
 import {
   PageHeader,
   Card,
@@ -30,6 +32,7 @@ import {
   Th,
   Td,
   Tr,
+  Stat,
   statusTone,
 } from "@/components/admin/ui/primitives";
 
@@ -225,35 +228,26 @@ export default async function AdminOrderDetailPage({
   };
   const totalChildren = items.reduce((n, it) => n + childrenFor(it).length, 0);
 
+  const placed = new Date(order.placedAt ?? order.createdAt);
+  const totalQty = items.reduce((n, it) => n + it.qty, 0);
+  const anyHsn = items.some((it) => !!it.hsnCodeSnapshot);
+  const paymentLabel = paymentRow?.paymentMode ?? paymentRow?.method ?? null;
+  const fmtDay = (d: Date | string | null | undefined) =>
+    d ? new Date(d).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric" }) : "—";
+
   return (
     <div>
       <PageHeader
-        breadcrumb={[
-          { label: "Orders", href: "/admin/orders" },
-          { label: order.orderNumber },
-        ]}
+        eyebrow="Sales & Distribution"
+        breadcrumb={[{ label: "Sales Orders", href: "/admin/orders" }, { label: order.orderNumber }]}
         title={order.orderNumber}
         description={
-          <span className="flex flex-wrap items-center gap-3 text-[13px]">
+          <span className="flex flex-wrap items-center gap-2 text-[13px]">
             <span className="text-ink-500">
-              Placed{" "}
-              {new Date(order.placedAt ?? order.createdAt).toLocaleString("en-IN", {
-                timeZone: "Asia/Kolkata",
-                day: "2-digit",
-                month: "short",
-                year: "numeric",
-                hour: "2-digit",
-                minute: "2-digit",
-                hour12: true,
-              })}{" "}
-              IST
+              Placed {placed.toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true })}
             </span>
-            <Badge tone={statusTone(order.status)} dot size="sm">
-              {order.status}
-            </Badge>
-            <Badge tone={statusTone(order.paymentStatus)} size="sm">
-              {order.paymentStatus}
-            </Badge>
+            <Badge tone={statusTone(order.status)} dot size="sm" className="capitalize">{order.status}</Badge>
+            <Badge tone={statusTone(order.paymentStatus)} size="sm" className="capitalize">{order.paymentStatus}</Badge>
             {/* Audit-sync state. Post-fix we expect erpSoName === orderNumber
                 on every paid order. The "Audit: <id>" variant is a canary
                 that fires if drift ever re-emerges — should never show. */}
@@ -267,324 +261,240 @@ export default async function AdminOrderDetailPage({
           </span>
         }
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <OrderStatusForm orderId={order.id} status={order.status} />
-            <CancelOrderButton
-              orderId={order.id}
-              orderNumber={order.orderNumber}
-              status={order.status}
-            />
-            <DeleteOrderButton
-              orderId={order.id}
-              orderNumber={order.orderNumber}
-            />
+            <CancelOrderButton orderId={order.id} orderNumber={order.orderNumber} status={order.status} />
+            <DeleteOrderButton orderId={order.id} orderNumber={order.orderNumber} />
           </div>
         }
       />
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        <div className="lg:col-span-2 space-y-5">
-          {/* Sub items — header row carries summary chips; bundle parents
-              expose their children via a native <details> accordion so the
-              page remains a pure server component (no JS state needed). */}
-          <Card padded={false}>
-            <CardHeader
-              title="Sub items"
-              description={`${items.length} line item${items.length === 1 ? "" : "s"}${
-                totalChildren > 0
-                  ? ` · ${totalChildren} bundle child${totalChildren === 1 ? "" : "ren"}`
-                  : ""
-              }`}
-              className="px-5 pt-5"
-            />
-            <table className="w-full">
-              <thead className="bg-cream-50/70">
-                <tr>
-                  <Th className="pl-5">Item</Th>
-                  <Th>ERP code / size</Th>
-                  <Th>HSN</Th>
-                  <Th right>Qty</Th>
-                  <Th right>Unit price</Th>
-                  <Th right className="pr-5">Total</Th>
-                </tr>
-              </thead>
-              <tbody className="[&>tr:nth-child(odd)]:bg-white [&>tr:nth-child(even)]:bg-cream-50/40">
-                {items.map((it) => {
-                  // Look up bundle children by the ERP item_code we
-                  // snapshotted into `size` at import time. The ERPNext
-                  // sub-items table joins on parent_item_code.
-                  const children = childrenFor(it);
-                  const hasChildren = children.length > 0;
-                  return (
-                    <Tr key={it.id} className="align-top">
-                      <Td className="pl-5">
-                        {hasChildren ? (
-                          <details className="group">
-                            <summary className="flex items-start gap-2 cursor-pointer list-none -ml-1 select-none">
-                              <span
-                                className="mt-0.5 inline-flex h-5 w-5 items-center justify-center rounded-md bg-brand-50 text-brand-700 text-[12px] font-bold transition-transform group-open:rotate-90"
-                                aria-hidden
-                              >
-                                ›
-                              </span>
-                              <span className="flex-1 min-w-0">
-                                <span className="font-semibold text-ink-900 break-words">
-                                  {it.nameSnapshot}
-                                </span>
-                                <span className="ml-2 inline-flex items-center rounded-full bg-brand-50 border border-brand-200/70 px-2 py-0.5 text-[10px] font-semibold text-brand-700">
-                                  Bundle · {children.length} item{children.length === 1 ? "" : "s"}
-                                </span>
-                                {it.variantId === null && (
-                                  <span className="ml-1.5 inline-flex items-center rounded-full bg-amber-50 border border-amber-200 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
-                                    unmapped SKU
+      {/* The four numbers an operator asks for first. */}
+      <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
+        <Stat label="Order total" value={<Money paise={order.total} />} hint={`${items.length} line${items.length === 1 ? "" : "s"} · ${totalQty} unit${totalQty === 1 ? "" : "s"}`} />
+        <Stat
+          label="Payment"
+          value={<span className="capitalize">{paymentRow?.status ?? order.paymentStatus}</span>}
+          hint={[paymentRow?.gatewayProvider ?? paymentRow?.provider, paymentLabel].filter(Boolean).join(" · ") || "No gateway record"}
+        />
+        <Stat
+          label="Invoice"
+          value={existingInvoice ? <span className="font-mono text-[20px]">{existingInvoice.invoiceNumber}</span> : <span className="text-ink-300">—</span>}
+          hint={existingInvoice ? "Generated" : "Not generated yet"}
+        />
+        <Stat
+          label="Delivery"
+          value={<span className="capitalize">{order.status}</span>}
+          hint={`${order.deliveredAt ? `Delivered ${fmtDay(order.deliveredAt)}` : order.shippedAt ? `Shipped ${fmtDay(order.shippedAt)}` : order.confirmedAt ? `Confirmed ${fmtDay(order.confirmedAt)}` : "Awaiting confirmation"} · from audit ERP`}
+        />
+      </div>
+
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+        <div className="space-y-5 lg:col-span-2">
+          {/* Items — bundle parents expose their children via a native
+              <details> accordion so the page stays a pure server component. */}
+          <Card padded={false} className="overflow-hidden">
+            <div className="px-5 pt-5 lg:px-6">
+              <CardHeader
+                title="Items"
+                description={`${items.length} line${items.length === 1 ? "" : "s"}${totalChildren > 0 ? ` · ${totalChildren} bundle item${totalChildren === 1 ? "" : "s"}` : ""}`}
+                className="mb-3"
+              />
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr>
+                    <Th>Item</Th>
+                    <Th>ERP code / size</Th>
+                    {anyHsn ? <Th>HSN</Th> : null}
+                    <Th right>Qty</Th>
+                    <Th right>Unit price</Th>
+                    <Th right>Total</Th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map((it) => {
+                    // Bundle children are keyed by the ERP item_code we
+                    // snapshotted into `size` at import time.
+                    const children = childrenFor(it);
+                    const hasChildren = children.length > 0;
+                    const colour = it.variantId ? colourByVariant.get(it.variantId) : undefined;
+                    return (
+                      <Tr key={it.id} className="align-top">
+                        <Td>
+                          {hasChildren ? (
+                            <details className="group">
+                              <summary className="flex cursor-pointer list-none items-start gap-2 select-none">
+                                <span className="mt-0.5 inline-flex h-5 w-5 items-center justify-center rounded-md bg-brand-50 text-[12px] font-bold text-brand-700 transition-transform group-open:rotate-90" aria-hidden>›</span>
+                                <span className="min-w-0 flex-1">
+                                  <span className="font-semibold text-ink-900">{it.nameSnapshot}</span>
+                                  <span className="ml-2 inline-flex items-center rounded-full border border-brand-200/70 bg-brand-50 px-2 py-0.5 text-[10.5px] font-semibold text-brand-700">
+                                    Bundle · {children.length}
                                   </span>
-                                )}
-                              </span>
-                            </summary>
-                            {/* Inline child list — indented, condensed,
-                                without its own table so it visually nests
-                                under the parent row. */}
-                            <div className="mt-3 ml-6 rounded-lg border border-ink-100/80 bg-cream-50/60 overflow-hidden">
-                              <div className="grid grid-cols-[minmax(0,1fr)_70px] gap-x-3 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-ink-500 bg-cream-100/70">
-                                <span>Child item (ERP code)</span>
-                                <span className="text-right">Qty</span>
-                              </div>
-                              <ul className="divide-y divide-ink-100/70">
+                                  {it.variantId === null ? <span className="ml-1.5 inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10.5px] font-semibold text-amber-700">unmapped SKU</span> : null}
+                                </span>
+                              </summary>
+                              <ul className="ml-7 mt-2 divide-y divide-ink-100/70 rounded-lg border border-ink-100/80 bg-cream-50/60 text-[12.5px]">
                                 {children
                                   .slice()
                                   .sort((a, b) => (a.idx ?? 0) - (b.idx ?? 0))
                                   .map((c) => (
-                                    <li
-                                      key={c.item_code + "-" + (c.idx ?? 0)}
-                                      className="grid grid-cols-[minmax(0,1fr)_70px] gap-x-3 px-3 py-1.5 text-[12px]"
-                                    >
-                                      <span className="font-mono text-ink-800 break-words">
+                                    <li key={c.item_code + "-" + (c.idx ?? 0)} className="flex items-center justify-between gap-3 px-3 py-1.5">
+                                      <span className="min-w-0 font-mono text-ink-800">
                                         {c.item_code}
-                                        {c.status && (
-                                          <span
-                                            className={`ml-2 inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                                              /deliver/i.test(c.status)
-                                                ? "bg-green-50 border border-green-200 text-green-700"
-                                                : /pack/i.test(c.status)
-                                                  ? "bg-blue-50 border border-blue-200 text-blue-700"
-                                                  : "bg-amber-50 border border-amber-200 text-amber-700"
-                                            }`}
-                                          >
-                                            {c.status}
-                                          </span>
-                                        )}
+                                        {c.status ? (
+                                          <Badge size="sm" className="ml-2" tone={/deliver/i.test(c.status) ? "success" : /pack/i.test(c.status) ? "info" : "warning"}>{c.status}</Badge>
+                                        ) : null}
                                       </span>
-                                      <span className="text-right tabular-nums text-ink-700">{c.qty}</span>
+                                      <span className="tabular-nums text-ink-600">× {c.qty}</span>
                                     </li>
                                   ))}
                               </ul>
-                            </div>
-                          </details>
-                        ) : (
-                          <span className="flex items-start gap-2">
-                            <span className="mt-1.5 inline-block h-1.5 w-1.5 rounded-full bg-ink-300" aria-hidden />
-                            <span className="flex-1 min-w-0">
-                              <span className="font-medium text-ink-900 break-words">{it.nameSnapshot}</span>
-                              {it.variantId && colourByVariant.get(it.variantId) && (
-                                <span className="ml-2 inline-flex items-center rounded-full bg-ink-50 border border-ink-200 px-2 py-0.5 text-[10px] font-semibold text-ink-700">
-                                  {colourByVariant.get(it.variantId)}
-                                </span>
-                              )}
-                              {it.variantId === null && (
-                                <span className="ml-2 inline-flex items-center rounded-full bg-amber-50 border border-amber-200 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
-                                  unmapped SKU
-                                </span>
-                              )}
+                            </details>
+                          ) : (
+                            <span>
+                              <span className="font-semibold text-ink-900">{it.nameSnapshot}</span>
+                              {colour ? <span className="ml-2 inline-flex items-center rounded-full border border-ink-200 bg-ink-50 px-2 py-0.5 text-[10.5px] font-semibold text-ink-700">{colour}</span> : null}
+                              {it.variantId === null ? <span className="ml-1.5 inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10.5px] font-semibold text-amber-700">unmapped SKU</span> : null}
                             </span>
-                          </span>
-                        )}
-                      </Td>
-                      <Td muted>
-                        <span className="font-mono text-[12px] break-words">{it.size}</span>
-                      </Td>
-                      <Td muted>
-                        <span className="font-mono text-[12px]">{it.hsnCodeSnapshot ?? "—"}</span>
-                      </Td>
-                      <Td right>
-                        <span className="inline-flex items-center justify-center min-w-[28px] h-6 px-2 rounded-md bg-ink-50 text-ink-800 font-semibold tabular-nums">
-                          {it.qty}
-                        </span>
-                      </Td>
-                      <Td right>
-                        <Money paise={it.unitPrice} />
-                      </Td>
-                      <Td right className="pr-5">
-                        <Money paise={it.total} className="font-semibold" />
-                      </Td>
-                    </Tr>
-                  );
-                })}
-              </tbody>
-              <tfoot>
-                <tr className="border-t-2 border-ink-200 bg-cream-50/60">
-                  <td colSpan={5} className="py-3 pl-5 pr-4 text-right text-[12px] font-semibold uppercase tracking-wider text-ink-600">
-                    Order total
-                  </td>
-                  <td className="py-3 px-5 text-right">
-                    <Money
-                      paise={order.total}
-                      className="font-display text-[18px] font-extrabold text-ink-900"
-                    />
-                  </td>
-                </tr>
-              </tfoot>
-            </table>
+                          )}
+                        </Td>
+                        <Td muted><span className="font-mono">{it.size}</span></Td>
+                        {anyHsn ? <Td muted><span className="font-mono">{it.hsnCodeSnapshot ?? "—"}</span></Td> : null}
+                        <Td right>{it.qty}</Td>
+                        <Td right muted><Money paise={it.unitPrice} /></Td>
+                        <Td right><Money paise={it.total} className="font-semibold" /></Td>
+                      </Tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            {/* Totals block — the arithmetic behind the number at the top. */}
+            <div className="flex justify-end border-t border-ink-100/70 bg-cream-50/40 px-5 py-4 lg:px-6">
+              <dl className="w-full max-w-[300px] space-y-1.5 text-[13px]">
+                <div className="flex justify-between text-ink-600"><dt>Subtotal</dt><dd><Money paise={order.subtotal} /></dd></div>
+                {order.discount > 0 ? <div className="flex justify-between text-ink-600"><dt>Discount</dt><dd className="text-emerald-700">− <Money paise={order.discount} /></dd></div> : null}
+                <div className="flex justify-between text-ink-600"><dt>Delivery</dt><dd>{order.shipping > 0 ? <Money paise={order.shipping} /> : "Free"}</dd></div>
+                {order.tax > 0 ? <div className="flex justify-between text-ink-600"><dt>Tax</dt><dd><Money paise={order.tax} /></dd></div> : null}
+                <div className="flex justify-between border-t border-ink-200 pt-2 text-[15px] font-bold text-ink-900"><dt>Total</dt><dd><Money paise={order.total} /></dd></div>
+              </dl>
+            </div>
           </Card>
 
-          {/* Shipping address — read-only by default with an inline "Edit"
-              affordance (delivery address, delivery mobile, and the account
-              login mobile). Saving recomputes place_of_supply and re-pushes
-              the order to audit. */}
-          <OrderShippingCard
-            orderId={order.id}
-            address={addr}
-            accountPhone={parent?.phone ?? ""}
-          />
+          {/* Delivery tracking — the audit ERP's shipments + carrier scans. */}
+          <OrderTrackingCard parentId={order.parentId} orderNumber={order.orderNumber} />
 
-          {/* Payment Details — sectioned: a hero status pill at the top,
-              then Transaction / Identifiers / Refund groups in a striped
-              table. Reading from the local payments row populated by
-              importSalesOrder. */}
-          <Card padded={false}>
+          {/* Delivery address — inline edit; saving re-pushes to audit. */}
+          <OrderShippingCard orderId={order.id} address={addr} accountPhone={parent?.phone ?? ""} />
+
+          {/* Payment — the gateway record captured from ERPNext. */}
+          <Card>
             <CardHeader
-              title="Payment details"
-              description={
-                paymentRow
-                  ? "All gateway fields captured from ERPNext at sync time"
-                  : "No payment row recorded yet"
-              }
-              className="px-5 pt-5 pb-3"
+              title="Payment"
+              description={paymentRow ? "Gateway fields as captured at sync; Refresh asks CCAvenue for the latest." : "No gateway record for this order."}
               actions={paymentRow ? <RefreshCcaButton orderId={order.id} /> : undefined}
             />
             {paymentRow ? (
               <>
-                {/* Hero strip: gateway · status · paid amount · mode */}
-                <div className="px-5 pb-4 flex flex-wrap items-center gap-2">
-                  <Badge tone={statusTone(paymentRow.status)} size="md" dot>
-                    {paymentRow.status}
-                  </Badge>
-                  <Badge tone="brand" size="md">
-                    {paymentRow.gatewayProvider ?? paymentRow.provider}
-                  </Badge>
-                  {(paymentRow.paymentMode ?? paymentRow.method) ? (
-                    <Badge tone="info" size="md">
-                      {paymentRow.paymentMode ?? paymentRow.method}
-                    </Badge>
-                  ) : null}
-                  {paymentRow.paymentFlow ? (
-                    <Badge tone="subtle" size="md">
-                      {paymentRow.paymentFlow}
-                    </Badge>
-                  ) : null}
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge tone={statusTone(paymentRow.status)} size="md" dot className="capitalize">{paymentRow.status}</Badge>
+                  <Badge tone="brand" size="md">{paymentRow.gatewayProvider ?? paymentRow.provider}</Badge>
+                  {paymentLabel ? <Badge tone="info" size="md">{paymentLabel}</Badge> : null}
+                  {paymentRow.paymentFlow ? <Badge tone="subtle" size="md">{paymentRow.paymentFlow}</Badge> : null}
                   {paymentRow.paidAmount ? (
-                    <span className="ml-auto font-display text-[15px] font-extrabold text-ink-900 tabular-nums">
+                    <span className="ml-auto text-[16px] font-bold tabular-nums text-ink-900">
                       {paymentRow.paidCurrency ?? "INR"} {paymentRow.paidAmount}
                     </span>
                   ) : null}
                 </div>
-
-                {/* Two columns of grouped fields */}
-                <div className="grid sm:grid-cols-2 gap-x-5 border-t border-ink-100">
-                  <PaymentSection title="Identifiers">
-                    <PaymentRow label="CCAvenue tracking ID" value={gatewayTrackingId} mono />
-                    <PaymentRow label="Gateway order ID" value={gatewayOrderId} mono />
-                    <PaymentRow label="Provider payment ID" value={providerPaymentId} mono />
-                    <PaymentRow label="Internal ref" value={internalPaymentReference} mono />
-                    <PaymentRow label="Payment date" value={paymentDateDisplay} mono />
-                  </PaymentSection>
-                  <PaymentSection title="Refund & audit" className="border-l border-ink-100">
-                    <PaymentRow
-                      label="Refund status"
-                      value={paymentRow.refundStatus}
-                      tone={
-                        paymentRow.refundStatus === "NOT_REQUESTED"
-                          ? "subtle"
-                          : paymentRow.refundStatus === "SUCCESS"
-                          ? "violet"
-                          : paymentRow.refundStatus === "FAILED"
-                          ? "danger"
-                          : "warning"
-                      }
-                    />
-                    <PaymentRow label="Attempts" value={String(paymentRow.paymentAttemptCount ?? 0)} />
-                    <PaymentRow label="Retries" value={String(paymentRow.paymentRetryCount ?? 0)} />
-                    <PaymentRow
-                      label="Finalised"
-                      value={paymentRow.paymentFinalized ? "Yes" : "No"}
-                      tone={paymentRow.paymentFinalized ? "success" : "warning"}
-                    />
-                  </PaymentSection>
-                </div>
-
+                <dl className="mt-4 grid grid-cols-1 gap-x-8 gap-y-3 border-t border-ink-100/70 pt-4 text-[13px] sm:grid-cols-2">
+                  <Fact label="CCAvenue tracking ID" value={gatewayTrackingId} mono />
+                  <Fact label="Payment date" value={paymentDateDisplay} mono />
+                  <Fact label="Gateway order ID" value={gatewayOrderId} mono />
+                  <Fact label="Provider payment ID" value={providerPaymentId} mono />
+                  <Fact label="Internal reference" value={internalPaymentReference} mono />
+                  <Fact label="Attempts · retries" value={`${paymentRow.paymentAttemptCount ?? 0} · ${paymentRow.paymentRetryCount ?? 0}`} />
+                  <Fact
+                    label="Refund"
+                    value={
+                      <Badge size="sm" tone={paymentRow.refundStatus === "NOT_REQUESTED" ? "subtle" : paymentRow.refundStatus === "SUCCESS" ? "violet" : paymentRow.refundStatus === "FAILED" ? "danger" : "warning"}>
+                        {(paymentRow.refundStatus ?? "—").replace(/_/g, " ").toLowerCase()}
+                      </Badge>
+                    }
+                  />
+                  <Fact label="Finalised" value={<Badge size="sm" tone={paymentRow.paymentFinalized ? "success" : "warning"}>{paymentRow.paymentFinalized ? "Yes" : "No"}</Badge>} />
+                </dl>
                 {paymentRow.gatewayResponseMessage ? (
-                  <div className="border-t border-ink-100 px-5 py-4">
-                    <p className="text-[11px] font-semibold text-ink-500 uppercase tracking-wider mb-1">
-                      Gateway response
-                    </p>
-                    <pre className="m-0 whitespace-pre-wrap break-all text-[12px] font-mono text-ink-700 bg-cream-50/70 border border-ink-100 rounded-md p-3">
-                      {paymentRow.gatewayResponseMessage}
-                    </pre>
-                  </div>
+                  <Fact label="Gateway response" value={paymentRow.gatewayResponseMessage} mono className="mt-4 border-t border-ink-100/70 pt-4" />
                 ) : null}
               </>
-            ) : (
-              <p className="px-5 pb-5 text-[13px] text-ink-500">
-                No payment row exists for this order yet.
-              </p>
-            )}
+            ) : null}
           </Card>
         </div>
 
         <div className="space-y-5">
-          <Card>
-            <CardHeader title="Actions" description="Generate downstream documents" />
-            <OrderActions orderId={order.id} hasInvoice={!!existingInvoice} />
-            {existingInvoice ? (
-              <p className="mt-3 text-[12px] text-ink-500">
-                Invoice:{" "}
-                <a
-                  href={`/admin/invoices/${existingInvoice.id}/print`}
-                  className="font-mono font-semibold text-brand-700 hover:underline"
-                >
-                  {existingInvoice.invoiceNumber}
-                </a>
-              </p>
-            ) : null}
-          </Card>
-
+          {/* Who — parent, the student it is for, and the school; each a link. */}
           <Card>
             <CardHeader title="Customer" />
-            <p className="font-semibold text-ink-900">
-              {parent?.name ?? <span className="text-ink-400">— no name —</span>}
-            </p>
-            <p className="text-[13px] text-ink-700 font-mono">+91 {parent?.phone}</p>
-            {parent?.email ? (
-              <p className="text-[13px] text-ink-700">{parent.email}</p>
-            ) : null}
-            {student ? (
-              <p className="mt-2 text-[12px] text-ink-500">
-                For:{" "}
-                <span className="font-semibold text-ink-800">{student.name}</span>
-                {student.grade ? ` · ${student.grade}` : ""}
-                {student.section ? ` · ${student.section}` : ""}
+            <div className="space-y-4 text-[13px]">
+              <div>
+                {parent ? (
+                  <Link href={`/admin/customers/${parent.id}`} className="block text-[14px] font-semibold text-ink-900 hover:text-brand-700">
+                    {parent.name?.trim() || <span className="text-ink-400">No name</span>}
+                  </Link>
+                ) : (
+                  <span className="text-ink-400">No customer record</span>
+                )}
+                {parent?.phone ? <div className="font-mono text-ink-600">+91 {parent.phone}</div> : null}
+                {parent?.email ? <div className="text-ink-600">{parent.email}</div> : null}
+              </div>
+              <div className="border-t border-ink-100/70 pt-3">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-500">Student</div>
+                {student ? (
+                  <>
+                    <Link href={`/admin/students/${student.id}`} className="mt-1 block font-semibold text-ink-900 hover:text-brand-700">{student.name}</Link>
+                    <div className="text-ink-600">
+                      {student.enrollmentNumber ? <span className="font-mono">{student.enrollmentNumber}</span> : <span className="text-ink-400">No student ID</span>}
+                      {student.grade ? ` · ${student.grade}` : ""}
+                      {student.section ? ` · ${student.section}` : ""}
+                    </div>
+                  </>
+                ) : (
+                  <div className="mt-1 text-ink-400">Not linked to a student</div>
+                )}
+              </div>
+              <div className="border-t border-ink-100/70 pt-3">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-500">School</div>
+                {school ? (
+                  <>
+                    <Link href={`/admin/schools/${school.id}`} className="mt-1 block font-semibold text-ink-900 hover:text-brand-700">{school.name}</Link>
+                    {school.city ? <div className="text-ink-600">{school.city}{school.state ? `, ${school.state}` : ""}</div> : null}
+                  </>
+                ) : (
+                  <div className="mt-1 text-ink-400">—</div>
+                )}
+              </div>
+            </div>
+          </Card>
+
+          <Card>
+            <CardHeader title="Invoice" description={existingInvoice ? "Opens the printable invoice." : "Generate the tax invoice for this order."} />
+            <OrderActions orderId={order.id} hasInvoice={!!existingInvoice} />
+            {existingInvoice ? (
+              <p className="mt-3 text-[12.5px] text-ink-600">
+                <Link href={`/admin/invoices/${existingInvoice.id}/print`} className="font-mono font-semibold text-brand-700 hover:text-brand-900">{existingInvoice.invoiceNumber}</Link>
               </p>
             ) : null}
           </Card>
 
-          <Card>
-            <CardHeader title="School" />
-            <p className="font-semibold text-ink-900">{school?.name ?? "—"}</p>
-            {school?.city ? (
-              <p className="text-[13px] text-ink-700">
-                {school.city}, {school.state}
-              </p>
-            ) : null}
-          </Card>
+          {order.notes ? (
+            <Card>
+              <CardHeader title="Notes" />
+              <p className="whitespace-pre-wrap text-[13px] text-ink-700">{order.notes}</p>
+            </Card>
+          ) : null}
         </div>
       </div>
 
@@ -669,10 +579,8 @@ async function renderErpReadOnly(erpName: string) {
   return (
     <div>
       <PageHeader
-        breadcrumb={[
-          { label: "Orders", href: "/admin/orders" },
-          { label: so.erp_name },
-        ]}
+        eyebrow="Sales & Distribution"
+        breadcrumb={[{ label: "Sales Orders", href: "/admin/orders" }, { label: so.erp_name }]}
         title={so.erp_name}
         description={`Read-only — sourced from ${so.source === "mirror" ? "ERP poll-back" : "legacy ERPNext sync"} (no local storefront record).`}
       />
@@ -738,61 +646,24 @@ async function renderErpReadOnly(erpName: string) {
   );
 }
 
-// Section header + striped row helpers for the Payment Details card.
-// All server-rendered; no client-state needed. Each PaymentRow renders
-// a label / value pair, optionally as a status pill when `tone` is set.
-function PaymentSection({
-  title,
-  children,
-  className,
-}: {
-  title: string;
-  children: ReactNode;
-  className?: string;
-}) {
-  return (
-    <div className={`px-5 py-4 ${className ?? ""}`}>
-      <p className="text-[10px] font-bold text-ink-500 uppercase tracking-[0.08em] mb-2">
-        {title}
-      </p>
-      <dl className="divide-y divide-ink-100/70">{children}</dl>
-    </div>
-  );
-}
-
-function PaymentRow({
+/** One label / value pair in a facts list. */
+function Fact({
   label,
   value,
   mono,
-  tone,
+  className,
 }: {
   label: string;
-  value: string | null | undefined;
+  value: ReactNode;
   mono?: boolean;
-  tone?: "default" | "subtle" | "success" | "warning" | "danger" | "violet" | "info" | "brand";
+  className?: string;
 }) {
-  const shown = value === null || value === undefined || value === "" ? "—" : value;
+  const empty = value === null || value === undefined || value === "";
   return (
-    <div className="grid grid-cols-[150px_minmax(0,1fr)] gap-x-3 py-1.5 items-center">
-      <dt className="text-[11px] font-semibold text-ink-500 uppercase tracking-wider">
-        {label}
-      </dt>
-      <dd className="min-w-0">
-        {tone ? (
-          <Badge tone={tone} size="sm">
-            {shown}
-          </Badge>
-        ) : (
-          <span
-            className={
-              mono
-                ? "text-[12px] font-mono text-ink-800 break-all"
-                : "text-[13px] text-ink-800"
-            }
-          >
-            {shown}
-          </span>
-        )}
+    <div className={className}>
+      <dt className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-500">{label}</dt>
+      <dd className={"mt-0.5 min-w-0 break-all text-ink-800 " + (mono ? "font-mono text-[12.5px]" : "")}>
+        {empty ? <span className="text-ink-300">—</span> : value}
       </dd>
     </div>
   );

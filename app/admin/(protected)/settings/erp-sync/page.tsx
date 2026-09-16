@@ -15,13 +15,8 @@ export default function ErpSyncPage() {
   return (
     <div className="max-w-4xl space-y-8">
       <PageHeader
-        breadcrumb={[
-          { label: "Settings", href: "/admin/settings" },
-          { label: "ERP sync" },
-        ]}
-        eyebrow="Settings"
+        eyebrow="System Configuration"
         title="ERP sync"
-        description="Two integrations live here: the item-export feed (audit.inventre.online — primary, see ITEMS_EXPORT_FEED.md) and the legacy multi-doctype ERPNext puller."
       />
 
       {/* ──────────────────────────────────────────────────────────────
@@ -29,9 +24,8 @@ export default function ErpSyncPage() {
           ────────────────────────────────────────────────────────────── */}
       <section>
         <PageHeader
-          eyebrow="Catalog"
+          eyebrow="System Configuration"
           title="Item feed (audit.inventre.online)"
-          description="Pulls the full item master from /api/items/export and upserts keyed by erp_name. New items land as draft — promote in the products list before they're sellable. Scheduled trigger: /api/cron/sync-items"
         />
 
         <Card className="mb-5">
@@ -65,7 +59,6 @@ export default function ErpSyncPage() {
           <Card>
             <CardHeader
               title="Run item-feed sync"
-              description="Idempotent — re-runs upsert by erp_name. Polls automatically while a run is in flight."
             />
             <ErpItemFeedSyncTrigger />
           </Card>
@@ -87,7 +80,6 @@ export default function ErpSyncPage() {
       <PageHeader
         eyebrow="Legacy"
         title="Pull from ERPNext"
-        description="Multi-doctype puller for the original erp.inventre.in. Item Group → Attributes → Items → Item Prices → Bins → Customers → Addresses → Open Sales Orders → Sales Invoices. Prefer the item feed above for item catalog."
       />
 
       <Card className="mb-5">
@@ -117,7 +109,6 @@ export default function ErpSyncPage() {
         <Card>
           <CardHeader
             title="Run sync"
-            description="The sync is idempotent — re-runs only insert new rows or update changed ones. May take several minutes on large catalogs."
           />
           <ErpSyncTrigger />
         </Card>

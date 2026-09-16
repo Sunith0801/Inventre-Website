@@ -79,13 +79,9 @@ export default async function NewBomPage({
   return (
     <div className="max-w-3xl">
       <PageHeader
-        breadcrumb={[
-          { label: "BOM Master", href: "/admin/boms" },
-          { label: "New BOM" },
-        ]}
-        eyebrow="Catalog"
+        breadcrumb={[{ label: "BOM Master", href: "/admin/boms" }, { label: "New BOM" }]}
+        eyebrow="Bundles"
         title="Create a BOM"
-        description="Pick a school + grade, choose the Bookkit / Magic Box item, and map its components."
       />
       <Card>
         <NewBomForm

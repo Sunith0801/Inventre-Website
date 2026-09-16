@@ -3,6 +3,9 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Ban } from "lucide-react";
+import { Button } from "@/components/admin/ui/primitives-client";
+import { Field, Input } from "@/components/admin/ui/primitives";
+import { ConfirmDialog } from "@/components/admin/ui/dialog";
 
 /**
  * Cancels an order via PATCH /api/admin/orders/{id} { status: "cancelled" }.
@@ -23,44 +26,30 @@ export function CancelOrderButton({
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState("Admin cancelled");
   const [error, setError] = useState<string | null>(null);
 
   // Cancellation only makes sense before the order ships; later states must
   // go through returns so stock + credit notes stay consistent.
-  const cancellable = !["cancelled", "shipped", "delivered", "returned"].includes(
-    status
-  );
+  const cancellable = !["cancelled", "shipped", "delivered", "returned"].includes(status);
   if (!cancellable) return null;
 
   const run = () => {
-    if (
-      !window.confirm(
-        `Cancel order ${orderNumber}? This marks it cancelled, releases reserved stock, and notifies audit (the order stays as a cancelled record — it is not deleted).`
-      )
-    ) {
-      return;
-    }
-    const reason =
-      window.prompt("Cancellation reason (optional):", "Admin cancelled") ??
-      "Admin cancelled";
     setError(null);
     startTransition(async () => {
       try {
         const res = await fetch(`/api/admin/orders/${orderId}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            status: "cancelled",
-            cancellationReason: reason,
-          }),
+          body: JSON.stringify({ status: "cancelled", cancellationReason: reason.trim() || "Admin cancelled" }),
         });
         if (!res.ok) {
-          const body = (await res.json().catch(() => null)) as
-            | { error?: string }
-            | null;
+          const body = (await res.json().catch(() => null)) as { error?: string } | null;
           setError(body?.error ?? `Cancel failed (HTTP ${res.status})`);
           return;
         }
+        setOpen(false);
         router.refresh();
       } catch (e) {
         setError(e instanceof Error ? e.message : "Network error");
@@ -69,24 +58,24 @@ export function CancelOrderButton({
   };
 
   return (
-    <div className="flex flex-col gap-1.5">
-      <button
-        type="button"
-        onClick={run}
-        disabled={pending}
-        className={
-          "inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border text-[13px] font-semibold transition " +
-          (pending
-            ? "border-ink-200 text-ink-400"
-            : "border-amber-300 bg-white text-amber-700 hover:bg-amber-50")
-        }
+    <>
+      <Button type="button" variant="secondary" icon={<Ban className="h-3.5 w-3.5" />} onClick={() => setOpen(true)}>
+        Cancel order
+      </Button>
+      <ConfirmDialog
+        open={open}
+        onClose={() => (pending ? undefined : setOpen(false))}
+        onConfirm={run}
+        title={`Cancel order ${orderNumber}?`}
+        description="The order stays on record as cancelled, reserved stock is released and the audit ERP is told. It is not deleted."
+        confirmLabel="Cancel order"
+        busy={pending}
+        error={error}
       >
-        <Ban className="h-3.5 w-3.5" />
-        {pending ? "Cancelling…" : "Cancel order"}
-      </button>
-      {error && (
-        <p className="text-[11px] text-rose-700 leading-snug">{error}</p>
-      )}
-    </div>
+        <Field label="Reason" htmlFor="cancel-reason">
+          <Input id="cancel-reason" value={reason} onChange={(e) => setReason(e.target.value)} />
+        </Field>
+      </ConfirmDialog>
+    </>
   );
 }

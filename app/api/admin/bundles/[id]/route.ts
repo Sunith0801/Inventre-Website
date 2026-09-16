@@ -9,7 +9,7 @@ import {
   bundleSelectors,
   bundleConfigs,
 } from "@/db/schema";
-import { isResponse, requirePermission } from "@/server/admin-guard";
+import { isResponse, requirePermission, requireAnyPermission } from "@/server/admin-guard";
 import { invalidateCatalog } from "@/server/cache";
 import { logAdminActivity } from "@/server/activity";
 
@@ -59,7 +59,7 @@ export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const guard = await requirePermission("catalog.write");
+  const guard = await requireAnyPermission("catalog-bundles.write", "catalog.write");
   if (isResponse(guard)) return guard;
   const { id } = await params;
   const parsed = await parseBody(req, Body);
@@ -141,7 +141,7 @@ export async function DELETE(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const guard = await requirePermission("catalog.write");
+  const guard = await requireAnyPermission("catalog-bundles.write", "catalog.write");
   if (isResponse(guard)) return guard;
   const { id } = await params;
   await db.delete(productBundles).where(eq(productBundles.id, id));

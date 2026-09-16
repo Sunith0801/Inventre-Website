@@ -31,11 +31,12 @@
   "include": [
     "**/*.ts",
     "**/*.tsx",
+    ".next-cancelcheck/types/**/*.ts",
     ".next-dev/types/**/*.ts",
     ".next-verify/types/**/*.ts",
     ".next/types/**/*.ts",
     "next-env.d.ts",
-    ".next-cancelcheck/types/**/*.ts"
+    ".next-uistaging/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"

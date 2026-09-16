@@ -33,8 +33,6 @@ import {
   itemPrices,
   warehouses,
   bins,
-  taxRates,
-  hsnCodes,
 } from "./schema";
 import * as schema from "./schema";
 
@@ -89,88 +87,6 @@ async function main() {
     ])
     .returning();
 
-  await db.insert(taxRates).values([
-    {
-      name: "GST 18%",
-      cgstRate: "9",
-      sgstRate: "9",
-      igstRate: "18",
-      isDefault: false,
-    },
-    {
-      name: "GST 12%",
-      cgstRate: "6",
-      sgstRate: "6",
-      igstRate: "12",
-      isDefault: false,
-    },
-    {
-      name: "GST 5%",
-      cgstRate: "2.5",
-      sgstRate: "2.5",
-      igstRate: "5",
-      isDefault: false,
-    },
-    {
-      name: "Nil Rated",
-      cgstRate: "0",
-      sgstRate: "0",
-      igstRate: "0",
-      isDefault: true,
-    },
-    {
-      name: "Exempt",
-      cgstRate: "0",
-      sgstRate: "0",
-      igstRate: "0",
-      isDefault: false,
-    },
-  ]);
-
-  await db.insert(hsnCodes).values([
-    {
-      code: "61012000",
-      description: "Garments, knitted, men/boys (Nil-Rated for school uniforms)",
-      defaultGstRate: "0",
-      category: "uniform",
-    },
-    {
-      code: "61022000",
-      description: "Garments, knitted, women/girls (Nil-Rated for school uniforms)",
-      defaultGstRate: "0",
-      category: "uniform",
-    },
-    {
-      code: "64041100",
-      description: "Sports footwear",
-      defaultGstRate: "18",
-      category: "footwear",
-    },
-    {
-      code: "64041900",
-      description: "Other footwear, textile uppers",
-      defaultGstRate: "18",
-      category: "footwear",
-    },
-    {
-      code: "84713010",
-      description: "Stationery, notebooks",
-      defaultGstRate: "12",
-      category: "stationery",
-    },
-    {
-      code: "39239090",
-      description: "Plastic articles (water bottles, lunch boxes)",
-      defaultGstRate: "18",
-      category: "accessories",
-    },
-    {
-      code: "42022200",
-      description: "School bags, backpacks",
-      defaultGstRate: "18",
-      category: "accessories",
-    },
-  ]);
 
   // ─── SCHOOLS ─────────────────────────────────────────────
   console.log("→ schools");

@@ -516,7 +516,8 @@ export async function readCart(
     const info = resolved.get(v.id);
     const pricePaise = info?.pricePaise ?? ps?.overridePrice ?? product.basePrice;
     const mrpPaise = info?.mrpPaise ?? ps?.overrideMrp ?? product.baseMrp;
-    const stockLeft = info?.available ?? v.stockQty;
+    // Resolver figure only (Ground Stock bins) — never the legacy column.
+    const stockLeft = info?.available ?? 0;
     const unitPrice = Math.round(pricePaise / 100);
     const unitMrp = mrpPaise != null ? Math.round(mrpPaise / 100) : null;
     count += qty;
@@ -536,11 +537,10 @@ export async function readCart(
       unitPrice,
       unitMrp,
       imageUrl: safeImgUrl(ps?.customImageUrl ?? imageByProduct.get(product.id) ?? null),
-      // Per ops directive (2026-05-26): never out-of-stock. Stock tracking
-      // is decoupled from the storefront — bins are no longer synced from
-      // ERP, so stockLeft is unreliable. Always treat cart lines as in
-      // stock; keep stockLeft on the DTO for admin diagnostics.
-      inStock: true,
+      // Since 2026-09-16 the bins ARE synced — from the audit's Ground Stock,
+      // every 5 minutes — so a line is in stock exactly when units remain.
+      // The CCAvenue create-order gate refuses qty > stockLeft on top of this.
+      inStock: stockLeft > 0,
       stockLeft,
       // Enrich each Magic Box pick with its variant's attribute breakdown
       // so downstream UI can render "Mandate · Commerce · Mathematics"

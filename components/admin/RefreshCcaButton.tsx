@@ -3,15 +3,14 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { RefreshCw, Check, AlertTriangle } from "lucide-react";
+import { Button } from "@/components/admin/ui/primitives-client";
 
 /**
- * Renders next to the CCAvenue tracking ID in the order detail page's
- * Payment Details card. Click → POST /api/admin/orders/[id]/refresh-cca,
- * which calls CCAvenue's Status API and merges the fresh values into
- * the local `payments` row, then `router.refresh()` so the cards update.
- *
- * Inline result indicator: green check + "ok · <status>" or red warning
- * + the error message. Auto-clears after 6 s so the chip stays clean.
+ * Renders in the order's Payment card. Click → POST
+ * /api/admin/orders/[id]/refresh-cca, which calls CCAvenue's Status API and
+ * merges the fresh values into the local `payments` row, then
+ * `router.refresh()` so the card updates. The result shows inline for a few
+ * seconds, then clears.
  */
 export function RefreshCcaButton({ orderId }: { orderId: string }) {
   const router = useRouter();
@@ -24,9 +23,7 @@ export function RefreshCcaButton({ orderId }: { orderId: string }) {
     setFeedback(null);
     void (async () => {
       try {
-        const r = await fetch(`/api/admin/orders/${encodeURIComponent(orderId)}/refresh-cca`, {
-          method: "POST",
-        });
+        const r = await fetch(`/api/admin/orders/${encodeURIComponent(orderId)}/refresh-cca`, { method: "POST" });
         const data = (await r.json().catch(() => null)) as {
           ok?: boolean;
           status?: string;
@@ -39,7 +36,7 @@ export function RefreshCcaButton({ orderId }: { orderId: string }) {
         } else {
           setFeedback({
             ok: true,
-            msg: `CCAvenue: ${data.rawStatus ?? data.status ?? "ok"}${data.trackingId ? ` · ${data.trackingId}` : ""}`,
+            msg: `CCAvenue says ${data.rawStatus ?? data.status ?? "ok"}${data.trackingId ? ` · ${data.trackingId}` : ""}`,
           });
           startTransition(() => router.refresh());
         }
@@ -47,8 +44,6 @@ export function RefreshCcaButton({ orderId }: { orderId: string }) {
         setFeedback({ ok: false, msg: e instanceof Error ? e.message : "Network error" });
       } finally {
         setBusy(false);
-        // Auto-clear the indicator after a few seconds so the chip
-        // stops competing with the rest of the panel.
         setTimeout(() => setFeedback(null), 6000);
       }
     })();
@@ -56,32 +51,15 @@ export function RefreshCcaButton({ orderId }: { orderId: string }) {
 
   return (
     <div className="inline-flex items-center gap-2">
-      <button
-        type="button"
-        onClick={refresh}
-        disabled={busy}
-        className={
-          "inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-[11.5px] font-semibold " +
-          (busy
-            ? "border-ink-200 text-ink-400 cursor-wait"
-            : "border-brand-200 bg-brand-50 text-brand-700 hover:bg-brand-100")
-        }
-        title="Hit CCAvenue's Status API and merge fresh values into this payment row"
-      >
-        <RefreshCw className={"h-3 w-3 " + (busy ? "animate-spin" : "")} />
-        {busy ? "Refreshing…" : "Refresh from CCAvenue"}
-      </button>
       {feedback ? (
-        <span
-          className={
-            "inline-flex items-center gap-1 text-[11.5px] " +
-            (feedback.ok ? "text-emerald-700" : "text-red-700")
-          }
-        >
+        <span className={"inline-flex items-center gap-1 text-[12px] " + (feedback.ok ? "text-emerald-700" : "text-red-700")}>
           {feedback.ok ? <Check className="h-3 w-3" /> : <AlertTriangle className="h-3 w-3" />}
           {feedback.msg}
         </span>
       ) : null}
+      <Button variant="secondary" size="sm" busy={busy} onClick={refresh} icon={<RefreshCw className="h-3.5 w-3.5" />} title="Ask CCAvenue for the latest status of this payment">
+        Refresh from CCAvenue
+      </Button>
     </div>
   );
 }

@@ -6,8 +6,8 @@ import { db } from "@/db/client";
 import { requireAnyPermission, isResponse } from "@/server/admin-guard";
 import {
   PageHeader,
+  Button,
   Card,
-  SectionTitle,
   EmptyState,
 } from "@/components/admin/ui/primitives";
 import { SchoolHealthRow, type SchoolHealth } from "@/components/admin/SchoolHealthRow";
@@ -20,7 +20,7 @@ function rowsOf<T>(res: unknown): T[] {
 }
 
 export default async function CatalogSetupPage() {
-  const guard = await requireAnyPermission("catalog.read", "catalog.write");
+  const guard = await requireAnyPermission("catalog-setup.read", "catalog-setup.write", "catalog.read", "catalog.write");
   if (isResponse(guard)) redirect("/admin/dashboard");
 
   // ── Per-school summary: grades defined, products tagged, magic boxes ────
@@ -121,49 +121,19 @@ export default async function CatalogSetupPage() {
     <div>
       <PageHeader
         eyebrow="Catalog"
-        title="Setup"
-        description={
-          <>
-            One screen for the full lifecycle of a school&apos;s catalog. See where each
-            active school is in its setup, click a row to drill into per-grade gaps,
-            and follow the action links to the right editor. To onboard a brand new
-            school, use{" "}
-            <Link href="/admin/catalog/setup/new" className="font-semibold text-brand-700 hover:underline">
-              + Add new school
-            </Link>.
-          </>
-        }
-        breadcrumb={[
-          { label: "Admin", href: "/admin/dashboard" },
-          { label: "Catalog", href: "/admin/catalog" },
-          { label: "Setup" },
-        ]}
+        title="School Setup"
+        description={`${schools.length} school${schools.length === 1 ? "" : "s"} — grades, tagged items and Magic Boxes per school. Open a row to see each grade.`}
         actions={
           <div className="flex items-center gap-2">
-            <Link
-              href="/admin/catalog"
-              className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border border-ink-200 text-ink-700 text-[13px] font-semibold hover:bg-cream-100"
-            >
-              <Eye className="h-3.5 w-3.5" /> Catalog Preview
+            <Link href="/admin/catalog">
+              <Button variant="secondary" icon={<Eye className="h-3.5 w-3.5" />}>Shop Preview</Button>
             </Link>
-            <Link
-              href="/admin/catalog/setup/new"
-              className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg bg-ink-900 text-white text-[13px] font-semibold hover:bg-ink-800"
-            >
-              <Plus className="h-3.5 w-3.5" /> Add new school
+            <Link href="/admin/catalog/setup/new">
+              <Button variant="primary" icon={<Plus className="h-3.5 w-3.5" />}>Add new school</Button>
             </Link>
           </div>
         }
       />
-
-      <div className="mb-3 flex items-center gap-2">
-        <span className="grid h-5 w-5 place-items-center rounded-full bg-ink-900 text-white text-[11px] font-bold">
-          ①
-        </span>
-        <span className="text-[12px] font-semibold text-ink-700 uppercase tracking-[0.12em]">
-          {schools.length} active school{schools.length === 1 ? "" : "s"} · click a row to drill in
-        </span>
-      </div>
 
       {schools.length === 0 ? (
         <EmptyState
@@ -171,16 +141,13 @@ export default async function CatalogSetupPage() {
           title="No active schools yet"
           description="Click 'Add new school' above to onboard the first one."
           action={
-            <Link
-              href="/admin/catalog/setup/new"
-              className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg bg-ink-900 text-white text-[13px] font-semibold hover:bg-ink-800"
-            >
-              <Plus className="h-3.5 w-3.5" /> Add new school
+            <Link href="/admin/catalog/setup/new">
+              <Button variant="primary" icon={<Plus className="h-3.5 w-3.5" />}>Add new school</Button>
             </Link>
           }
         />
       ) : (
-        <Card className="overflow-hidden">
+        <Card padded={false} className="overflow-hidden">
           {/* Column header */}
           <div className="grid grid-cols-[1fr_90px_90px_90px_140px] items-center gap-3 px-4 py-2.5 bg-cream-50 border-b border-ink-100 text-[11px] font-semibold tracking-[0.12em] uppercase text-ink-500">
             <div>School</div>
@@ -197,26 +164,6 @@ export default async function CatalogSetupPage() {
         </Card>
       )}
 
-      <div className="mt-5">
-        <SectionTitle>How to read this</SectionTitle>
-        <div className="mt-2 text-[13px] text-ink-600 space-y-1.5">
-          <p>
-            <span className="font-semibold text-ink-900">Grades</span> = rows in{" "}
-            <code className="text-[12px] text-ink-700 bg-cream-100 px-1 py-0.5 rounded">school_grade_mappings</code>{" "}
-            (the grades this school officially serves).
-          </p>
-          <p>
-            <span className="font-semibold text-ink-900">Items</span> = distinct products tagged to this
-            school in <code className="text-[12px] text-ink-700 bg-cream-100 px-1 py-0.5 rounded">product_school</code>,
-            counted regardless of grade.
-          </p>
-          <p>
-            <span className="font-semibold text-ink-900">Magic boxes</span> = items above where{" "}
-            <code className="text-[12px] text-ink-700 bg-cream-100 px-1 py-0.5 rounded">kind = magic_box</code>.
-            Required for new students.
-          </p>
-        </div>
-      </div>
     </div>
   );
 }

@@ -30,13 +30,8 @@ export default async function BulkMarkupPage() {
   return (
     <div className="max-w-5xl">
       <PageHeader
-        breadcrumb={[
-          { label: "Catalog", href: "/admin/catalog/pricing" },
-          { label: "Pricing", href: "/admin/catalog/pricing" },
-          { label: "Bulk markup" },
-        ]}
+        breadcrumb={[{ label: "Price Lists", href: "/admin/catalog/pricing" }, { label: "Pricing", href: "/admin/catalog/pricing" }, { label: "Bulk markup" }]}
         title="Bulk markup"
-        description="Apply a percentage markup over each product's cost price (or base price if cost is unset). Writes new Item Price rows on the chosen price list."
       />
       <Card>
         <BulkMarkupForm

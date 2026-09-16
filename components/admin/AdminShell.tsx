@@ -2,168 +2,13 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import {
-  LayoutDashboard,
-  School,
-  Package,
-  ListTree,
-  ShoppingBag,
-  Users,
-  MessageSquareQuote,
-  Star,
-  Image as ImageIcon,
-  Settings,
-  LogOut,
-  Menu,
-  X,
-  Truck,
-  FileText,
-  Tag,
-  Boxes,
-  IndianRupee,
-  Receipt,
-  PackageOpen,
-  Layers,
-  BarChart3,
-  Upload,
-  GraduationCap,
-  Library,
-  ClipboardList,
-  CreditCard,
-  Activity,
-  Truck as TruckSupplier,
-  Gift,
-  MessageSquare,
-  Eye,
-  KeyRound,
-  Wallet,
-  Inbox,
-  Send,
-  LifeBuoy,
-} from "lucide-react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { LogOut, Menu, X, ChevronRight, ArrowLeft } from "lucide-react";
 import type { CurrentAdmin } from "@/server/session";
-import { isReadOnlyAdmin, canSeePage } from "@/lib/admin-permissions";
+import { isReadOnlyAdmin } from "@/lib/admin-permissions";
+import { navSections, visibleItems, sectionHref, findActive } from "@/lib/admin-nav";
+import { useAdminBackLink, markBackNavigation } from "@/components/admin/useAdminBackLink";
 import { cn } from "@/lib/cn";
-import { TopProgressBar } from "@/components/admin/TopProgressBar";
-
-type NavItem = {
-  href: string;
-  label: string;
-  icon: React.ComponentType<{ className?: string }>;
-  /** Permission key from lib/admin-permissions.ts. Item is hidden when
-   *  the current admin's permissions Set doesn't include it. Omit to
-   *  always show (rare — used only for items pre-RBAC). */
-  perm?: string;
-};
-
-type NavGroup = { kicker: string; items: NavItem[] };
-
-const groups: NavGroup[] = [
-  {
-    kicker: "Overview",
-    items: [{ href: "/admin/dashboard", label: "Dashboard", icon: LayoutDashboard, perm: "nav:dashboard" }],
-  },
-  {
-    kicker: "Sales",
-    items: [
-      { href: "/admin/orders",    label: "Orders",    icon: ShoppingBag, perm: "nav:orders" },
-      { href: "/admin/shipments", label: "Shipments", icon: Truck,       perm: "nav:shipments" },
-      { href: "/admin/invoices",  label: "Invoices",  icon: FileText,    perm: "nav:invoices" },
-      { href: "/admin/returns",   label: "Returns",   icon: PackageOpen, perm: "nav:returns" },
-    ],
-  },
-  {
-    kicker: "Network",
-    items: [
-      { href: "/admin/schools",            label: "Schools",       icon: School,        perm: "nav:schools" },
-      { href: "/admin/grades",             label: "Grades",        icon: GraduationCap, perm: "nav:grades" },
-      { href: "/admin/delivery-fee-rules", label: "Delivery fees", icon: Truck,         perm: "nav:delivery-fees" },
-    ],
-  },
-  {
-    kicker: "People",
-    items: [
-      { href: "/admin/customers", label: "Customers (Parents)", icon: Users,         perm: "nav:customers" },
-      { href: "/admin/students",  label: "Students",            icon: GraduationCap, perm: "nav:students" },
-      { href: "/admin/mcb",       label: "MCB",                 icon: Wallet,        perm: "nav:mcb" },
-      { href: "/admin/guardians", label: "Guardians",           icon: Users,         perm: "nav:guardians" },
-    ],
-  },
-  {
-    // One door for catalog. The Catalog page is the Shop Preview — pick
-    // (school, grade, new/returning) and see what parents see. Deep
-    // editors (Products, BOMs, Pricing, Stock, etc.) are linked from
-    // within that page so the sidebar stays uncluttered and there's no
-    // "which tab do I click first?" confusion.
-    kicker: "Catalog",
-    items: [
-      { href: "/admin/catalog", label: "Catalog", icon: Eye, perm: "nav:catalog" },
-    ],
-  },
-  {
-    kicker: "Pricing & Tax",
-    items: [
-      { href: "/admin/discounts", label: "Discounts", icon: Tag,     perm: "nav:discounts" },
-      { href: "/admin/tax/rates", label: "Tax & GST", icon: Receipt, perm: "nav:tax" },
-    ],
-  },
-  {
-    kicker: "Payment Charges",
-    items: [
-      { href: "/admin/payment-charges", label: "Payment charges", icon: IndianRupee, perm: "nav:payment-charges" },
-    ],
-  },
-  {
-    kicker: "Buying",
-    items: [
-      { href: "/admin/suppliers",       label: "Suppliers",       icon: TruckSupplier,  perm: "nav:suppliers" },
-      { href: "/admin/purchase-orders", label: "Purchase orders", icon: ClipboardList,  perm: "nav:purchase-orders" },
-    ],
-  },
-  {
-    kicker: "Accounting",
-    items: [
-      { href: "/admin/payments",          label: "Payments",              icon: CreditCard, perm: "nav:payments" },
-      { href: "/admin/payments/ccavenue", label: "CCAvenue Payment Logs", icon: Receipt,    perm: "nav:payments-ccavenue" },
-    ],
-  },
-  {
-    kicker: "Engagement",
-    items: [
-      { href: "/admin/reviews",       label: "Reviews",       icon: Star,                perm: "nav:reviews" },
-      { href: "/admin/testimonials",  label: "Testimonials",  icon: MessageSquareQuote,  perm: "nav:testimonials" },
-      { href: "/admin/contact-forms", label: "Contact forms", icon: Inbox,               perm: "nav:contact-forms" },
-      { href: "/admin/parent-concerns", label: "Parent Concerns", icon: LifeBuoy,        perm: "nav:contact-forms" },
-      { href: "/admin/gift-cards",    label: "Gift cards",    icon: Gift,                perm: "nav:gift-cards" },
-    ],
-  },
-  {
-    kicker: "Content",
-    items: [
-      { href: "/admin/content", label: "Pages & blocks", icon: ImageIcon, perm: "nav:content" },
-    ],
-  },
-  {
-    kicker: "Tools",
-    items: [
-      { href: "/admin/import",   label: "Import CSV/XLSX", icon: Upload,        perm: "nav:import" },
-      { href: "/admin/reports",  label: "Reports",         icon: BarChart3,     perm: "nav:reports" },
-      { href: "/admin/activity", label: "Activity log",    icon: Activity,      perm: "nav:activity" },
-      { href: "/admin/otp-logs", label: "OTP Logs",        icon: MessageSquare, perm: "nav:otp-logs" },
-      { href: "/admin/order-notifications", label: "Order Notifications", icon: Send, perm: "nav:order-notifications" },
-    ],
-  },
-  {
-    kicker: "Settings",
-    items: [
-      { href: "/admin/settings/users",       label: "Admin users",       icon: Settings, perm: "nav:settings-users" },
-      { href: "/admin/roles",                label: "Roles & permissions", icon: KeyRound, perm: "nav:roles" },
-      { href: "/admin/settings/otp",         label: "SMS / SMTP OTP",    icon: KeyRound, perm: "nav:settings-otp" },
-      { href: "/admin/settings/erp-bridge",  label: "ERP bridge (live)", icon: Activity, perm: "nav:settings-erp-bridge" },
-    ],
-  },
-];
 
 export function AdminShell({
   user,
@@ -173,17 +18,12 @@ export function AdminShell({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
-  // Longest-match-wins so a nested route like `/admin/payments/ccavenue`
-  // highlights only the CCAvenue Logs item — not also `/admin/payments`,
-  // which would otherwise match via the startsWith() check below.
-  const activeHref = (() => {
-    const candidates = groups
-      .flatMap((g) => g.items.map((i) => i.href))
-      .filter((h) => pathname === h || pathname.startsWith(h + "/"));
-    if (candidates.length === 0) return null;
-    return candidates.sort((a, b) => b.length - a.length)[0];
-  })();
+  const active = findActive(pathname);
+  const activeSection = active?.section ?? null;
+  const activeItem = active?.item ?? null;
   const router = useRouter();
+  const search = useSearchParams().toString();
+  const backLink = useAdminBackLink(pathname, search, activeSection, activeItem, user.permissions);
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const logout = async () => {
@@ -194,56 +34,49 @@ export function AdminShell({
     router.push("/admin/login");
   };
 
+  // The sidebar shows only the sections. A section with a single visible
+  // module links straight to it; otherwise it opens the section landing
+  // page, and the module strip above the content does the second level.
   const NavList = ({ onClick }: { onClick?: () => void }) => (
-    <div className="space-y-5 py-2">
-      {groups.map((g) => {
-        const visible = g.items.filter((it) => {
-          if (!it.perm) return true;
-          // Legacy nav:<slug> keys map to (<slug>.read OR <slug>.write).
-          // The 0046 migration replaced nav:* in the DB with .read/.write
-          // pairs; AdminShell still labels sidebar items by their legacy
-          // nav: identifier for now.
-          const slug = it.perm.startsWith("nav:") ? it.perm.slice(4) : it.perm;
-          return canSeePage(user.permissions, slug);
-        });
+    <ul className="space-y-0.5 py-2">
+      {navSections.map((sec) => {
+        const visible = visibleItems(user.permissions, sec);
         if (visible.length === 0) return null;
+        const href = visible.length === 1 ? visible[0]!.href : sectionHref(sec);
+        const isActive = activeSection?.slug === sec.slug;
         return (
-        <div key={g.kicker}>
-          <div className="px-3 mb-1.5 text-[10px] font-semibold tracking-[0.18em] uppercase text-ink-400">
-            {g.kicker}
-          </div>
-          <ul className="space-y-0.5">
-            {visible.map((it) => {
-              const active = it.href === activeHref;
-              return (
-                <li key={it.href}>
-                  <Link
-                    href={it.href}
-                    onClick={onClick}
-                    scroll={false}
-                    className={cn(
-                      "group relative flex items-center gap-2.5 px-3 h-9 rounded-lg text-[13px] font-medium transition-[background,color] duration-150",
-                      active
-                        ? "bg-ink-900 text-white shadow-[0_1px_2px_rgba(10,10,10,0.1)]"
-                        : "text-ink-600 hover:bg-cream-100 hover:text-ink-900"
-                    )}
-                  >
-                    <it.icon
-                      className={cn(
-                        "h-[15px] w-[15px] flex-shrink-0",
-                        active ? "text-white" : "text-ink-400 group-hover:text-ink-700"
-                      )}
-                    />
-                    <span className="truncate">{it.label}</span>
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
-        </div>
+          <li key={sec.slug}>
+            <Link
+              href={href}
+              onClick={onClick}
+              scroll={false}
+              className={cn(
+                "group relative flex items-center gap-2.5 px-2.5 2xl:px-3 min-h-9 py-1.5 rounded-lg text-[inherit] font-medium leading-tight transition-[background,color] duration-150",
+                isActive
+                  ? "bg-ink-900 text-white shadow-[0_1px_2px_rgba(10,10,10,0.1)]"
+                  : "text-ink-600 hover:bg-cream-100 hover:text-ink-900"
+              )}
+            >
+              <sec.icon
+                className={cn(
+                  "h-[15px] w-[15px] flex-shrink-0",
+                  isActive ? "text-white" : "text-ink-400 group-hover:text-ink-700"
+                )}
+              />
+              <span className="min-w-0 flex-1">{sec.kicker}</span>
+              {visible.length > 1 ? (
+                <ChevronRight
+                  className={cn(
+                    "ml-auto h-3.5 w-3.5 flex-shrink-0",
+                    isActive ? "text-white/70" : "text-ink-300 group-hover:text-ink-500"
+                  )}
+                />
+              ) : null}
+            </Link>
+          </li>
         );
       })}
-    </div>
+    </ul>
   );
 
   const UserChip = () => (
@@ -270,10 +103,9 @@ export function AdminShell({
   );
 
   return (
-    <div className="min-h-screen bg-cream-50 grid grid-cols-1 lg:grid-cols-[256px_1fr]">
-      <TopProgressBar />
+    <div className="min-h-screen bg-cream-50 grid grid-cols-1 lg:grid-cols-[220px_1fr] 2xl:grid-cols-[256px_1fr]">
       {/* Desktop sidebar */}
-      <aside className="hidden lg:flex lg:flex-col border-r border-ink-100/70 bg-white sticky top-0 h-screen">
+      <aside className="hidden lg:flex lg:flex-col border-r border-ink-100/70 bg-white sticky top-0 h-screen text-[12.5px] 2xl:text-[13px]">
         <div className="px-5 py-4 border-b border-ink-100/70 flex items-center gap-2.5">
           <Link href="/admin/dashboard" className="flex items-center gap-2.5">
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -333,7 +165,20 @@ export function AdminShell({
       )}
 
       {/* Main content */}
-      <main className="min-h-screen">
+      {/*
+        `min-w-0` is load-bearing, not cosmetic.
+
+        A grid item's default `min-width` is `auto`, which refuses to shrink
+        below the intrinsic width of its content. So the `1fr` track above does
+        NOT cap this column: one wide table (Orders, Roles, the permission
+        matrix) stretches <main>, which stretches the page, and the whole
+        layout — sidebar included — scrolls sideways. Every `overflow-x-auto`
+        rail inside is powerless while its parent is still free to grow.
+
+        With `min-w-0` the column is finally bounded by the viewport and the
+        rails do their job: wide tables scroll inside their own card.
+      */}
+      <main className="min-h-screen min-w-0">
         <div className="lg:hidden border-b border-ink-100/70 bg-white px-5 py-3 flex items-center justify-between sticky top-0 z-10">
           <button
             aria-label="Open menu"
@@ -358,7 +203,26 @@ export function AdminShell({
             Your role can browse all data but cannot save changes — writes are blocked by the API.
           </div>
         )}
-        <div className="px-5 lg:px-10 py-6 lg:py-9 max-w-[1600px]">{children}</div>
+        <div className="admin-scale px-5 lg:px-8 2xl:px-10 py-6 lg:py-8 2xl:py-9 max-w-[1600px]">
+          {/* The way out. Where the user came from when that was another
+              module (a customer opened from a payment goes back to that
+              payment), otherwise one level up — see useAdminBackLink. */}
+          {backLink ? (
+            <Link
+              href={backLink.href}
+              // Tells the trail this visit is a step BACK, so the page reached
+              // does not then offer the page just left as its own "back".
+              onClick={() => markBackNavigation(backLink.href)}
+              className="group -mt-2 mb-4 inline-flex items-center gap-1.5 text-[12.5px] font-medium text-ink-500 hover:text-ink-900"
+            >
+              <span className="grid h-6 w-6 place-items-center rounded-md border border-ink-200 bg-white text-ink-500 transition-colors group-hover:border-ink-300 group-hover:text-ink-900">
+                <ArrowLeft className="h-3.5 w-3.5" />
+              </span>
+              {backLink.label}
+            </Link>
+          ) : null}
+          {children}
+        </div>
       </main>
     </div>
   );

@@ -12,19 +12,17 @@ import { eq, desc } from "drizzle-orm";
 import {
   PageHeader,
   Card,
+  CardHeader,
   Stat,
   Money,
   Th,
   Td,
   Tr,
-  EmptyState,
 } from "@/components/admin/ui/primitives";
-import { Receipt } from "lucide-react";
 import {
   WebsiteCartCouponForm,
   type CouponInitial,
 } from "@/components/admin/WebsiteCartCouponForm";
-import { RecordHistory } from "@/components/admin/RecordHistory";
 
 export const dynamic = "force-dynamic";
 
@@ -109,48 +107,38 @@ export default async function EditDiscountPage({
   const totalDiscount = usages.reduce((s, u) => s + (u.amountSaved ?? 0), 0);
 
   return (
-    <div className="max-w-6xl">
+    <div>
       <PageHeader
-        breadcrumb={[
-          { label: "Discounts", href: "/admin/discounts" },
-          { label: c.couponCode },
-        ]}
+        breadcrumb={[{ label: "Discounts & Promotions", href: "/admin/discounts" }, { label: c.couponCode }]}
+        eyebrow="Pricing & Tax"
         title={c.couponCode}
-        description="Edits round-trip to ERPNext."
+        description={`${c.discountType === "Percentage" ? `${Number(c.discount)}% off` : `₹${Number(c.discount).toLocaleString("en-IN")} off`} · ${c.isActive ? "active" : "inactive"}${c.erpName ? ` · ERPNext ${c.erpName}` : " · not yet in ERPNext"}`}
       />
-      <Card>
-        <WebsiteCartCouponForm mode="edit" initial={initial} />
-      </Card>
 
-      <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <Stat
-          label="Total redemptions"
-          value={totalUsage.toLocaleString("en-IN")}
-          iconTone="info"
-        />
-        <Stat
-          label="Total discount given"
-          value={<Money paise={totalDiscount} />}
-          iconTone="success"
-        />
+      {/* Form on the left, redemption totals beside it — one screen, no scrolling
+          past four stacked sections to find out whether it was ever used. */}
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_260px]">
+        <Card>
+          <WebsiteCartCouponForm mode="edit" initial={initial} />
+        </Card>
+        <div className="grid grid-cols-2 gap-3 self-start xl:grid-cols-1">
+          <Stat label="Redemptions" value={totalUsage.toLocaleString("en-IN")} />
+          <Stat label="Discount given" value={<Money paise={totalDiscount} />} />
+        </div>
       </div>
 
-      <Card padded={false} className="mt-3">
-        {usages.length === 0 ? (
-          <EmptyState
-            icon={Receipt}
-            title="No redemptions yet"
-            description="No paid orders reference this coupon. Usage rows are written when CCAvenue confirms payment success."
-          />
-        ) : (
+      {usages.length > 0 ? (
+        <Card padded={false} className="mt-5 overflow-hidden">
+          <div className="px-5 pt-5 lg:px-6">
+            <CardHeader title="Redemptions" description={`${totalUsage} order${totalUsage === 1 ? "" : "s"} used this coupon`} className="mb-3" />
+          </div>
           <div className="overflow-x-auto">
-            <table className="w-full text-[12.5px]">
+            <table className="w-full">
               <thead>
                 <tr>
-                  <Th>Order #</Th>
+                  <Th>Order</Th>
                   <Th>School</Th>
                   <Th>Student</Th>
-                  <Th>Enrollment</Th>
                   <Th>Used at (IST)</Th>
                   <Th right>Order amount</Th>
                   <Th right>Saved</Th>
@@ -163,76 +151,40 @@ export default async function EditDiscountPage({
                     u.studentName ||
                     u.customerName ||
                     "—";
-                  const orderLink = u.orderId
-                    ? `/admin/orders/${u.orderId}`
-                    : null;
-                  const orderLabel =
-                    u.orderNumber ?? u.erpSalesOrder ?? "—";
+                  const orderLink = u.orderId ? `/admin/orders/${u.orderId}` : null;
+                  const orderLabel = u.orderNumber ?? u.erpSalesOrder ?? "—";
                   const usedAt = u.createdAt ?? u.orderPlacedAt ?? null;
                   const orderAmount = u.orderTotal ?? u.legacyOrderAmount ?? 0;
                   return (
                     <Tr key={u.id}>
                       <Td>
                         {orderLink ? (
-                          <Link
-                            href={orderLink}
-                            className="font-mono text-[12.5px] font-semibold text-ink-900 hover:text-brand"
-                          >
+                          <Link href={orderLink} className="font-mono font-semibold text-ink-900 hover:text-brand-700">
                             {orderLabel}
                           </Link>
                         ) : (
-                          <span className="font-mono text-[12.5px] font-semibold text-ink-700">
-                            {orderLabel}
-                          </span>
+                          <span className="font-mono font-semibold text-ink-700">{orderLabel}</span>
                         )}
-                        {u.orderPaymentStatus &&
-                        u.orderPaymentStatus !== "paid" ? (
-                          <span className="ml-1.5 text-[10px] uppercase text-amber-700">
-                            ({u.orderPaymentStatus})
-                          </span>
+                        {u.orderPaymentStatus && u.orderPaymentStatus !== "paid" ? (
+                          <span className="ml-1.5 text-[10px] uppercase text-amber-700">({u.orderPaymentStatus})</span>
                         ) : null}
                       </Td>
+                      <Td muted>{u.schoolName ?? <span className="text-ink-300">—</span>}</Td>
                       <Td muted>
-                        {u.schoolName ?? <span className="text-ink-400">—</span>}
-                        {u.schoolCode ? (
-                          <div className="text-[10px] text-ink-400 font-mono mt-0.5">
-                            {u.schoolCode}
-                          </div>
-                        ) : null}
+                        {studentName}
+                        {u.enrollmentNumber ? <span className="block font-mono text-[11.5px]">{u.enrollmentNumber}</span> : null}
                       </Td>
-                      <Td muted>{studentName}</Td>
-                      <Td muted>
-                        {u.enrollmentNumber ? (
-                          <span className="font-mono text-[11.5px]">
-                            {u.enrollmentNumber}
-                          </span>
-                        ) : (
-                          <span className="text-ink-400">—</span>
-                        )}
-                      </Td>
-                      <Td muted className="whitespace-nowrap">
-                        {fmtIst(usedAt)}
-                      </Td>
-                      <Td right>
-                        <Money paise={orderAmount} />
-                      </Td>
-                      <Td right>
-                        <span className="text-emerald-700 font-semibold">
-                          <Money paise={u.amountSaved ?? 0} />
-                        </span>
-                      </Td>
+                      <Td muted className="whitespace-nowrap">{fmtIst(usedAt)}</Td>
+                      <Td right><Money paise={orderAmount} /></Td>
+                      <Td right><span className="font-semibold text-emerald-700"><Money paise={u.amountSaved ?? 0} /></span></Td>
                     </Tr>
                   );
                 })}
               </tbody>
             </table>
           </div>
-        )}
-      </Card>
-
-      <div className="mt-5">
-        <RecordHistory entityType="coupon" entityId={id} title="Coupon history" />
-      </div>
+        </Card>
+      ) : null}
     </div>
   );
 }

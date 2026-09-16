@@ -1,78 +1,95 @@
-import Link from "next/link";
+/**
+ * Administration → Roles & permissions.
+ *
+ * Thin by design: guard, fetch, render. The permission algebra is in
+ * `lib/admin-roles-view.ts`, the SQL in `server/repos/admin-roles.ts`, the
+ * markup in `components/admin/roles/`.
+ *
+ * No search box and no pagination, unlike Users. Roles are authored by hand
+ * and there are eight; a filter over eight rows is furniture. The columns do
+ * the work instead — how many users hold the role, how much of the product it
+ * reaches, and whether its grants have drifted from the registry.
+ */
+
 import { redirect } from "next/navigation";
-import { sql } from "drizzle-orm";
-import { db } from "@/db/client";
-import { PageHeader, Button, Badge, Card, Th, Td, Tr } from "@/components/admin/ui/primitives";
-import { Plus, KeyRound } from "lucide-react";
-import { requirePermission } from "@/server/admin-guard";
-import { isResponse } from "@/server/admin-guard";
+import { KeyRound, ShieldAlert } from "lucide-react";
+import { requireAnyPermission, isResponse } from "@/server/admin-guard";
+import { canWritePage } from "@/lib/admin-permissions";
+import { PageHeader, Card, EmptyState, Stat } from "@/components/admin/ui/primitives";
+import { listRoles } from "@/server/repos/admin-roles";
+import { orphanGrants } from "@/lib/admin-roles-view";
+import { RolesTable } from "@/components/admin/roles/RolesTable";
+import { NewRoleDialog } from "@/components/admin/roles/NewRoleDialog";
 
 export const dynamic = "force-dynamic";
 
 export default async function RolesPage() {
-  const guard = await requirePermission("roles.read");
+  const guard = await requireAnyPermission("roles.read", "roles.write");
   if (isResponse(guard)) redirect("/admin/dashboard");
 
-  // List roles with per-role counts (permission count + assigned-user count).
-  const rows = (await db.execute(sql`
-    SELECT r.id, r.slug, r.name, r.description, r.is_system,
-           (SELECT COUNT(*) FROM admin_role_permissions p WHERE p.role_id = r.id)::int AS n_perms,
-           (SELECT COUNT(*) FROM users u WHERE u.role_id = r.id)::int AS n_users
-      FROM admin_roles r
-     ORDER BY r.is_system DESC, lower(r.name)
-  `)) as unknown as {
-    id: string;
-    slug: string;
-    name: string;
-    description: string | null;
-    is_system: boolean;
-    n_perms: number;
-    n_users: number;
-  }[];
+  const canWrite = canWritePage(guard.permissions, "roles");
+  const roles = await listRoles();
+
+  const unused = roles.filter((r) => r.userCount === 0).length;
+  const drifted = roles.filter((r) => orphanGrants(r.permissions).length > 0);
 
   return (
-    <div className="max-w-4xl">
+    <div>
       <PageHeader
-        eyebrow="Settings"
-        title="Roles & permissions"
-        description={`${rows.length} role${rows.length === 1 ? "" : "s"}. System roles are seeded and can't be deleted; their permissions are editable except for Super Admin (always all).`}
+        eyebrow="Administration"
+        title="Roles & Permissions"
+        description="What each role can open and change. Users inherit their role, plus any per-user exceptions."
         actions={
-          <Link href="/admin/roles/new">
-            <Button variant="primary" icon={<Plus className="h-3.5 w-3.5" />}>New role</Button>
-          </Link>
+          canWrite ? (
+            <NewRoleDialog
+              templates={roles.map((r) => ({
+                id: r.id,
+                name: r.name,
+                permissions: r.permissions,
+              }))}
+            />
+          ) : null
         }
       />
-      <Card padded={false}>
-        <table className="w-full text-[14px]">
-          <thead>
-            <tr>
-              <Th>Name</Th>
-              <Th>Description</Th>
-              <Th>Permissions</Th>
-              <Th>Users</Th>
-              <Th></Th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => (
-              <Tr key={r.id}>
-                <Td>
-                  <Link href={`/admin/roles/${r.id}`} className="font-semibold text-ink-900 hover:text-brand-700 inline-flex items-center gap-2">
-                    <KeyRound className="h-3.5 w-3.5 text-ink-400" />
-                    {r.name}
-                    {r.is_system && <Badge tone="info" size="sm">System</Badge>}
-                  </Link>
-                </Td>
-                <Td muted className="max-w-md">{r.description ?? "—"}</Td>
-                <Td muted>{r.n_perms}</Td>
-                <Td muted>{r.n_users}</Td>
-                <Td>
-                  <Link href={`/admin/roles/${r.id}`} className="text-[12px] text-brand-700 hover:underline">Edit →</Link>
-                </Td>
-              </Tr>
-            ))}
-          </tbody>
-        </table>
+
+      <div className="mb-5 grid grid-cols-3 gap-3 lg:gap-4">
+        <Stat label="Roles" value={roles.length} />
+        <Stat label="System" value={roles.filter((r) => r.isSystem).length} hint="Cannot be deleted" />
+        <Stat label="Not assigned" value={unused} hint={unused > 0 ? "Roles with no users" : "Every role is in use"} />
+      </div>
+
+      {/*
+        Registry drift, surfaced where it can be acted on.
+
+        A grant whose page no longer exists is harmless — every gate checks a
+        key the registry defines — but it inflates the permission count, and a
+        count nobody can reconcile is how an access review stops being
+        believed. Opening the role and saving it drops them.
+      */}
+      {drifted.length > 0 ? (
+        <div className="mb-3 flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+          <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+          <p className="text-[12.5px] leading-relaxed text-amber-900">
+            <span className="font-semibold">
+              {drifted.length} role{drifted.length === 1 ? "" : "s"} carr
+              {drifted.length === 1 ? "ies" : "y"} grants for pages that no longer exist
+            </span>{" "}
+            ({drifted.map((r) => r.name).join(", ")}). They grant nothing. Open the role
+            and save it to clear them.
+          </p>
+        </div>
+      ) : null}
+
+      <Card padded={false} className="overflow-hidden">
+        {roles.length === 0 ? (
+          <EmptyState
+            icon={KeyRound}
+            title="No roles defined"
+            description="Roles bundle page permissions so they can be granted to staff accounts as a set."
+          />
+        ) : (
+          <RolesTable roles={roles} canWrite={canWrite} />
+        )}
       </Card>
     </div>
   );

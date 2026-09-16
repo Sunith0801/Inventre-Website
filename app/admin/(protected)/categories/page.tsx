@@ -4,6 +4,7 @@ import { categories } from "@/db/schema";
 import { CategoryEditor } from "@/components/admin/CategoryEditor";
 import { redirect } from "next/navigation";
 import { requireAnyPermission, isResponse } from "@/server/admin-guard";
+import { PageHeader } from "@/components/admin/ui/primitives";
 
 export default async function CategoriesPage() {
   const guard = await requireAnyPermission("catalog.read", "catalog.write");
@@ -15,16 +16,13 @@ export default async function CategoriesPage() {
     .orderBy(asc(categories.path));
 
   return (
-    <div className="max-w-3xl">
-      <h1 className="font-display text-[28px] font-extrabold tracking-tight text-ink-900">
-        Categories
-      </h1>
-      <p className="mt-1 text-[14px] text-ink-500">
-        Hierarchical tree used by the shop filter sidebar. Path is auto-built
-        from slug + parent.
-      </p>
-      <div className="mt-6">
-        <CategoryEditor
+    <div className="max-w-5xl">
+      <PageHeader
+        eyebrow="Products"
+        title="Categories"
+        description={`${rows.length} categor${rows.length === 1 ? "y" : "ies"} — the tree products are filed under, as shown on the shop.`}
+      />
+      <CategoryEditor
           initial={rows.map((c) => ({
             id: c.id,
             slug: c.slug,
@@ -34,7 +32,6 @@ export default async function CategoriesPage() {
             sortOrder: c.sortOrder,
           }))}
         />
-      </div>
     </div>
   );
 }

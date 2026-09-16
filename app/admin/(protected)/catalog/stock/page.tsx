@@ -4,17 +4,15 @@ import {
   productVariants,
   products,
   warehouses,
-  purchaseOrderItems,
-  purchaseOrders,
 } from "@/db/schema";
-import { eq, sql, inArray } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { Boxes, AlertTriangle, Sliders, ClipboardCheck, Shuffle } from "lucide-react";
 import Link from "next/link";
 import {
   PageHeader,
   Card,
   Toolbar,
-  FilterChips,
+  FilterSelect,
   Button,
   Th,
   Td,
@@ -24,6 +22,8 @@ import {
   Stat,
 } from "@/components/admin/ui/primitives";
 import { ExportButton } from "@/components/admin/ExportButton";
+import { AutoSubmitForm } from "@/components/admin/AutoSubmitForm";
+import { GroundStockSyncCard } from "@/components/admin/GroundStockSyncCard";
 import { redirect } from "next/navigation";
 import { requireAnyPermission, isResponse } from "@/server/admin-guard";
 
@@ -34,7 +34,7 @@ export default async function StockPage({
 }: {
   searchParams: Promise<{ low?: string }>;
 }) {
-  const guard = await requireAnyPermission("catalog.read", "catalog.write");
+  const guard = await requireAnyPermission("catalog-stock.read", "catalog-stock.write", "catalog.read", "catalog.write");
   if (isResponse(guard)) redirect("/admin/dashboard");
 
   const { low } = await searchParams;
@@ -78,41 +78,12 @@ export default async function StockPage({
   ).length;
   const negCount = allRows.filter((r) => (r.actualQty ?? 0) - (r.reservedQty ?? 0) < 0).length;
 
-  // Projected (on-order) qty per variant — open POs (submitted / partially_received).
-  const variantIds = Array.from(
-    new Set(rows.map((r) => r.variantId).filter((v): v is string => !!v))
-  );
-  const projectedRows = variantIds.length
-    ? await db
-        .select({
-          variantId: purchaseOrderItems.variantId,
-          pending: sql<number>`COALESCE(SUM(${purchaseOrderItems.qty} - ${purchaseOrderItems.receivedQty}), 0)::int`,
-        })
-        .from(purchaseOrderItems)
-        .innerJoin(
-          purchaseOrders,
-          eq(purchaseOrders.id, purchaseOrderItems.poId)
-        )
-        .where(
-          sql`${purchaseOrders.status} IN ('submitted', 'partially_received') AND ${purchaseOrderItems.variantId} = ANY(${variantIds}::uuid[])`
-        )
-        .groupBy(purchaseOrderItems.variantId)
-    : [];
-  const projectedByVariant = new Map<string, number>();
-  for (const p of projectedRows) {
-    if (p.variantId) projectedByVariant.set(p.variantId, Number(p.pending));
-  }
-  const totalProjected = Array.from(projectedByVariant.values()).reduce(
-    (s, n) => s + n,
-    0
-  );
-
   return (
     <div>
       <PageHeader
-        eyebrow="Catalog"
+        eyebrow="Inventory"
         title="Stock"
-        description={`${rows.length} bins shown · live across all warehouses`}
+        description={`${rows.length} bins shown`}
         actions={
           <div className="flex items-center gap-2 flex-wrap">
             <ExportButton type="stock" />
@@ -144,16 +115,10 @@ export default async function StockPage({
         }
       />
 
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-5">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
         <Stat label="Bins tracked" value={allRows.length} iconTone="default" />
         <Stat label="Units on hand" value={totalActual.toLocaleString("en-IN")} iconTone="success" />
         <Stat label="Units reserved" value={totalReserved.toLocaleString("en-IN")} iconTone="info" />
-        <Stat
-          label="On order"
-          value={totalProjected.toLocaleString("en-IN")}
-          iconTone="violet"
-          hint="From open POs"
-        />
         <Stat
           label="Below min level"
           value={lowCount}
@@ -163,19 +128,22 @@ export default async function StockPage({
         />
       </div>
 
-      <Toolbar>
-        <FilterChips
-          options={[
-            { value: null, label: "All bins" },
-            { value: "1", label: "Below min level only" },
-          ]}
-          value={onlyLow ? "1" : null}
-          baseHref="/admin/catalog/stock"
-          paramName="low"
-        />
-      </Toolbar>
+      {/* The audit ERP's Ground Stock feeds these bins every 5 minutes; the
+          card shows the last tick and the gate switch. On prod this sat on
+          the stock report, which the redesign folded into this page. */}
+      <div className="mb-5">
+        <GroundStockSyncCard />
+      </div>
 
-      <Card padded={false}>
+      <AutoSubmitForm action="/admin/catalog/stock">
+        <Toolbar>
+          <FilterSelect label="Show" allLabel="All bins" name="low" defaultValue={onlyLow ? "1" : ""}>
+            <option value="1">Below minimum level</option>
+          </FilterSelect>
+        </Toolbar>
+      </AutoSubmitForm>
+
+      <Card padded={false} className="overflow-hidden">
         {rows.length === 0 ? (
           <EmptyState
             icon={Boxes}
@@ -196,7 +164,6 @@ export default async function StockPage({
                 <Th>Warehouse</Th>
                 <Th right>Actual</Th>
                 <Th right>Reserved</Th>
-                <Th right>On order</Th>
                 <Th right>Available</Th>
                 <Th right>Min</Th>
               </tr>
@@ -222,15 +189,6 @@ export default async function StockPage({
                     <Td right>{r.actualQty}</Td>
                     <Td right muted>
                       {r.reservedQty}
-                    </Td>
-                    <Td right muted>
-                      {projectedByVariant.get(r.variantId) ? (
-                        <span className="text-violet-700 font-medium">
-                          +{projectedByVariant.get(r.variantId)}
-                        </span>
-                      ) : (
-                        <span className="text-ink-300">—</span>
-                      )}
                     </Td>
                     <Td right>
                       {isNeg ? (

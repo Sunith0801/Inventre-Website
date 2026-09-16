@@ -3,12 +3,12 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Trash2 } from "lucide-react";
+import { Button } from "@/components/admin/ui/primitives-client";
+import { ConfirmDialog } from "@/components/admin/ui/dialog";
 
 /**
- * Hard-deletes an order via DELETE /api/admin/orders/{id}. Confirms
- * inline so an accidental click can't drop data, then redirects back
- * to the listing on success. Mirrors the UX of `DeleteRuleButton` in
- * the delivery-fee-rules admin so the affordances feel familiar.
+ * Hard-deletes an order via DELETE /api/admin/orders/{id}. Asks first —
+ * an accidental click must not drop data — then goes back to the listing.
  */
 export function DeleteOrderButton({
   orderId,
@@ -28,29 +28,20 @@ export function DeleteOrderButton({
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const run = () => {
-    if (
-      !window.confirm(
-        `Delete order ${orderNumber}? This removes the order and all related rows (items, payments, shipments, invoices, returns) locally. ERPNext is NOT touched. This cannot be undone.`
-      )
-    ) {
-      return;
-    }
     setError(null);
     startTransition(async () => {
       try {
-        const res = await fetch(`/api/admin/orders/${orderId}`, {
-          method: "DELETE",
-        });
+        const res = await fetch(`/api/admin/orders/${orderId}`, { method: "DELETE" });
         if (!res.ok) {
-          const body = (await res.json().catch(() => null)) as
-            | { error?: string }
-            | null;
+          const body = (await res.json().catch(() => null)) as { error?: string } | null;
           setError(body?.error ?? `Delete failed (HTTP ${res.status})`);
           return;
         }
+        setOpen(false);
         if (redirectTo) {
           router.push(redirectTo);
           router.refresh();
@@ -63,48 +54,37 @@ export function DeleteOrderButton({
     });
   };
 
-  if (compact) {
-    return (
-      <button
-        type="button"
-        onClick={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          run();
-        }}
-        disabled={pending}
-        title={error ?? `Delete ${orderNumber}`}
-        className={
-          "inline-flex h-7 w-7 items-center justify-center rounded-md border text-rose-600 transition " +
-          (pending
-            ? "opacity-50 border-ink-200"
-            : "border-rose-200 hover:border-rose-500 hover:bg-rose-50")
-        }
-      >
-        <Trash2 className="h-3.5 w-3.5" />
-      </button>
-    );
-  }
-
   return (
-    <div className="flex flex-col gap-1.5">
-      <button
-        type="button"
-        onClick={run}
-        disabled={pending}
-        className={
-          "inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border text-[13px] font-semibold transition " +
-          (pending
-            ? "border-ink-200 text-ink-400"
-            : "border-rose-200 bg-white text-rose-700 hover:bg-rose-50")
-        }
-      >
-        <Trash2 className="h-3.5 w-3.5" />
-        {pending ? "Deleting…" : "Delete order"}
-      </button>
-      {error && (
-        <p className="text-[11px] text-rose-700 leading-snug">{error}</p>
+    <>
+      {compact ? (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setOpen(true);
+          }}
+          disabled={pending}
+          title={`Delete ${orderNumber}`}
+          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-ink-300 transition hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </button>
+      ) : (
+        <Button type="button" variant="danger" icon={<Trash2 className="h-3.5 w-3.5" />} onClick={() => setOpen(true)}>
+          Delete order
+        </Button>
       )}
-    </div>
+      <ConfirmDialog
+        open={open}
+        onClose={() => (pending ? undefined : setOpen(false))}
+        onConfirm={run}
+        title={`Delete order ${orderNumber}?`}
+        description="Removes the order and everything attached to it here — items, payments, shipments, invoices, returns. ERPNext is not touched. This cannot be undone."
+        confirmLabel="Delete order"
+        busy={pending}
+        error={error}
+      />
+    </>
   );
 }

@@ -4,7 +4,7 @@ import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { productAttributeValues } from "@/db/schema";
-import { isResponse, requirePermission } from "@/server/admin-guard";
+import { isResponse, requirePermission, requireAnyPermission } from "@/server/admin-guard";
 import { logAdminActivity } from "@/server/activity";
 
 const Body = z.object({
@@ -20,7 +20,7 @@ export async function GET(
   _: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const guard = await requirePermission("catalog.read");
+  const guard = await requireAnyPermission("catalog-attributes.read", "catalog.read");
   if (isResponse(guard)) return guard;
   const { id } = await params;
   const rows = await db
@@ -34,7 +34,7 @@ export async function POST(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const guard = await requirePermission("catalog.write");
+  const guard = await requireAnyPermission("catalog-attributes.write", "catalog.write");
   if (isResponse(guard)) return guard;
   const { id } = await params;
   const parsed = await parseBody(req, Body);

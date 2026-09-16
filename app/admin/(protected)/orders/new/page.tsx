@@ -15,12 +15,10 @@ export default async function NewOrderPage() {
   return (
     <div className="max-w-5xl">
       <PageHeader
-        breadcrumb={[
-          { label: "Orders", href: "/admin/orders" },
-          { label: "New order" },
-        ]}
+        eyebrow="Sales & Distribution"
+        breadcrumb={[{ label: "Sales Orders", href: "/admin/orders" }, { label: "New order" }]}
         title="Create order"
-        description="Walk-in / phone order. Pick a customer and school, add items, capture payment offline."
+        description="Place an order on a parent's behalf — for example over the phone."
       />
       <Card>
         <AdminOrderBuilder schools={schoolRows} />

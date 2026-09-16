@@ -109,7 +109,6 @@ export function WebhooksEditor({ initial }: { initial: Endpoint[] }) {
       <Card>
         <CardHeader
           title="Add an endpoint"
-          description="Each delivery is signed: header X-Inventre-Signature: sha256=<hmac>."
         />
         <form onSubmit={create} className="space-y-3">
           <Field label="Name" required>

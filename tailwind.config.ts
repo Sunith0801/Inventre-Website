@@ -41,6 +41,12 @@ const config: Config = {
       fontFamily: {
         display: ["var(--font-jakarta)", "ui-sans-serif", "system-ui"],
         sans: ["var(--font-jakarta)", "ui-sans-serif", "system-ui"],
+        // ONE typeface everywhere. `font-mono` used to switch codes, SKUs and
+        // order numbers to the system monospace, which read as a second font
+        // family scattered through every table. It now stays in the brand
+        // face; `.font-mono` keeps tabular figures (globals.css) so columns of
+        // numbers still line up.
+        mono: ["var(--font-jakarta)", "ui-sans-serif", "system-ui"],
       },
       fontSize: {
         "display-xl": ["clamp(2.75rem, 6.2vw, 5.5rem)", { lineHeight: "1.02", letterSpacing: "-0.035em" }],

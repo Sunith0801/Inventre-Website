@@ -5,10 +5,8 @@ import { useRouter } from "next/navigation";
 import {
   Upload,
   Loader2,
-  Image as ImageIcon,
   Save,
   Trash2,
-  GraduationCap,
   Star,
   ArrowUp,
   ArrowDown,
@@ -16,7 +14,7 @@ import {
   Check,
   X,
 } from "lucide-react";
-import { Card, CardHeader, Badge } from "@/components/admin/ui/primitives";
+import { Card, CardHeader, Badge, Field as UiField, Input, Select, Checkbox, FormGrid, FormError } from "@/components/admin/ui/primitives";
 import { Button } from "@/components/admin/ui/primitives-client";
 import { cn } from "@/lib/cn";
 
@@ -45,17 +43,26 @@ type Fields = {
   weightGrams: number | null;
   minOrderQty: number;
   isMagicBox: boolean;
+  /** Percent, e.g. 5 or 12. Null = not set. */
+  gstRate: number | null;
+  /** YYYY-MM-DD or null. */
+  priceEffectiveFrom: string | null;
+  /** Rupees. Takes over as base price on priceEffectiveFrom. */
+  scheduledBasePrice: number | null;
 };
 
 export function ProductBasicsForm({
   product,
   categories,
   afterBasics,
+  section = "both",
 }: {
   product: Fields;
   categories: { id: string; label: string; name: string }[];
   /** Rendered directly below the Basics card (e.g. variants / BOM editor). */
   afterBasics?: React.ReactNode;
+  /** The stepper shows Basics and Pricing on different steps. */
+  section?: "basics" | "pricing" | "both";
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -82,7 +89,9 @@ export function ProductBasicsForm({
           basePrice: form.basePrice,
           baseMrp: form.baseMrp,
           categoryId: form.categoryId,
-          status: form.status,
+          // `status` is deliberately NOT sent: the Review & publish step
+          // owns it, and it is gated there. Re-sending a stale value from
+          // an open Basics tab used to silently un-publish products.
           // The audit-aligned fields
           itemCode: form.itemCode,
           hsnCode: form.hsnCode,
@@ -98,6 +107,9 @@ export function ProductBasicsForm({
           weightGrams: form.weightGrams,
           minOrderQty: form.minOrderQty,
           isMagicBox: form.isMagicBox,
+          gstRate: form.gstRate,
+          priceEffectiveFrom: form.priceEffectiveFrom,
+          scheduledBasePrice: form.scheduledBasePrice,
         }),
       });
       if (!res.ok) {
@@ -114,264 +126,105 @@ export function ProductBasicsForm({
     <div className="grid gap-5">
       {/* Basics — its own form so the variants/BOM editor can sit
           between it and Pricing without nesting forms. */}
+      {section !== "pricing" ? (
       <form onSubmit={submit} className="grid gap-5">
-      {/* Basics */}
-      <Card>
-        <CardHeader title="Basics" description="Identity, classification, and status" />
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <Field label="Name" required>
-            <input
-              type="text"
-              value={form.name}
-              onChange={(e) => set("name", e.target.value)}
-              className={inputClass}
-              required
-            />
-          </Field>
-          <Field label="Slug" hint="URL-safe identifier">
-            <input
-              type="text"
-              value={form.slug}
-              onChange={(e) => set("slug", e.target.value)}
-              className={cn(inputClass, "font-mono")}
-            />
-          </Field>
-          <Field label="Item code (ERP / SKU master)" hint="e.g. KLS Boys Shirt">
-            <input
-              type="text"
-              value={form.itemCode ?? ""}
-              onChange={(e) => set("itemCode", e.target.value || null)}
-              className={cn(inputClass, "font-mono")}
-            />
-          </Field>
-          <Field label="Brand">
-            <input
-              type="text"
-              value={form.brand ?? ""}
-              onChange={(e) => set("brand", e.target.value || null)}
-              className={inputClass}
-            />
-          </Field>
-          <Field label="Category" className="lg:col-span-2">
-            <select
-              value={form.categoryId ?? ""}
-              onChange={(e) => set("categoryId", e.target.value || null)}
-              className={inputClass}
-            >
-              <option value="">—</option>
-              {categories.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.label}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Tagline" className="lg:col-span-2">
-            <input
-              type="text"
-              value={form.tagline}
-              onChange={(e) => set("tagline", e.target.value)}
-              className={inputClass}
-              maxLength={120}
-            />
-          </Field>
-          <Field label="Status">
-            <select
-              value={form.status}
-              onChange={(e) => set("status", e.target.value as Fields["status"])}
-              className={inputClass}
-            >
-              <option value="active">Active</option>
-              <option value="draft">Draft</option>
-              <option value="archived">Archived</option>
-            </select>
-          </Field>
-          <Field label="Min order qty">
-            <input
-              type="number"
-              min={1}
-              value={form.minOrderQty}
-              onChange={(e) => set("minOrderQty", parseInt(e.target.value, 10) || 1)}
-              className={inputClass}
-            />
-          </Field>
-        </div>
-        {/* Inline save anchored to the Basics card so admins can commit a
-            name / status / category tweak without scrolling past BOM,
-            Pricing and Tax. Reuses the same `submit` handler the bottom
-            Save changes button uses — same persisted payload. */}
-        <div className="mt-4 pt-3 border-t border-ink-100 flex items-center justify-end gap-3">
-          <span className="text-[11px] text-ink-500 max-w-[24rem] text-right leading-snug">
-            Saves Basics, Pricing &amp; Tax in one go. BOM and Content have
-            their own Save buttons below.
-          </span>
-          {saved ? (
-            <span className="text-[12px] text-emerald-700">✓ Saved</span>
-          ) : null}
-          <Button busy={pending} icon={<Save className="h-3.5 w-3.5" />} type="submit" size="sm">
-            Save Basics
-          </Button>
-        </div>
-      </Card>
-
+        <Card>
+          <CardHeader title="Basics" />
+          <FormGrid cols={3}>
+            <UiField label="Name" htmlFor="pb-name" required className="sm:col-span-2 lg:col-span-3">
+              <Input id="pb-name" value={form.name} onChange={(e) => set("name", e.target.value)} required />
+            </UiField>
+            <UiField label="Item code" htmlFor="pb-code" hint="ERP / SKU master">
+              <Input id="pb-code" value={form.itemCode ?? ""} onChange={(e) => set("itemCode", e.target.value || null)} className="font-mono" />
+            </UiField>
+            <UiField label="Brand" htmlFor="pb-brand">
+              <Input id="pb-brand" value={form.brand ?? ""} onChange={(e) => set("brand", e.target.value || null)} />
+            </UiField>
+            <UiField label="Minimum order qty" htmlFor="pb-moq">
+              <Input id="pb-moq" type="number" min={1} value={form.minOrderQty} onChange={(e) => set("minOrderQty", parseInt(e.target.value, 10) || 1)} className="text-right tabular-nums" />
+            </UiField>
+            <UiField label="Category" htmlFor="pb-category" className="sm:col-span-2 lg:col-span-2">
+              <Select id="pb-category" value={form.categoryId ?? ""} onChange={(e) => set("categoryId", e.target.value || null)}>
+                <option value="">No category</option>
+                {categories.map((c) => (
+                  <option key={c.id} value={c.id}>{c.label}</option>
+                ))}
+              </Select>
+            </UiField>
+            <UiField label="Slug" htmlFor="pb-slug" hint="Part of the shop URL">
+              <Input id="pb-slug" value={form.slug} onChange={(e) => set("slug", e.target.value)} className="font-mono" />
+            </UiField>
+            <UiField label="Tagline" htmlFor="pb-tagline" className="sm:col-span-2 lg:col-span-3">
+              <Input id="pb-tagline" value={form.tagline} onChange={(e) => set("tagline", e.target.value)} maxLength={120} placeholder="One line under the name on the shop" />
+            </UiField>
+          </FormGrid>
+          <div className="mt-5 flex items-center justify-end gap-3 border-t border-ink-100/70 pt-4">
+            {saved ? <span className="text-[12.5px] font-medium text-emerald-700">Saved</span> : null}
+            <Button busy={pending} icon={<Save className="h-3.5 w-3.5" />} type="submit" size="sm">
+              Save basics
+            </Button>
+          </div>
+        </Card>
       </form>
+      ) : null}
 
       {/* Variants / BOM contents — sibling, directly under the Basics card. */}
       {afterBasics}
 
       {/* Pricing + Tax — a second form. */}
+      {section !== "basics" ? (
       <form onSubmit={submit} className="grid gap-5">
-      {/* Pricing */}
-      <Card>
-        <CardHeader
-          title="Pricing"
-          description="All amounts in ₹ rupees. Inventre cost is internal; display price is what customers see."
-        />
-        <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
-          <Field label="Cost price (₹)" hint="Internal — your cost">
-            <input
-              type="number"
-              min={0}
-              value={form.costPrice ? Math.round(form.costPrice / 100) : ""}
-              onChange={(e) =>
-                set("costPrice", e.target.value ? parseInt(e.target.value, 10) * 100 : null)
-              }
-              className={inputClass}
-            />
-          </Field>
-          <Field label="Base price (₹)" required hint="Selling price (paise stored)">
-            <input
-              type="number"
-              min={0}
-              value={form.basePrice}
-              onChange={(e) => set("basePrice", parseInt(e.target.value, 10) || 0)}
-              className={inputClass}
-              required
-            />
-          </Field>
-          <Field label="Display price (₹)" hint="Shown on shop card">
-            <input
-              type="number"
-              min={0}
-              value={form.displayPrice ? Math.round(form.displayPrice / 100) : ""}
-              onChange={(e) =>
-                set("displayPrice", e.target.value ? parseInt(e.target.value, 10) * 100 : null)
-              }
-              className={inputClass}
-            />
-          </Field>
-          <Field label="Base MRP (₹)" hint="Strike-through price">
-            <input
-              type="number"
-              min={0}
-              value={form.baseMrp ?? ""}
-              onChange={(e) =>
-                set("baseMrp", e.target.value ? parseInt(e.target.value, 10) : null)
-              }
-              className={inputClass}
-            />
-          </Field>
-          <Field label="School MRP (₹)" hint="Org-specific MRP">
-            <input
-              type="number"
-              min={0}
-              value={form.organizationMrp ? Math.round(form.organizationMrp / 100) : ""}
-              onChange={(e) =>
-                set(
-                  "organizationMrp",
-                  e.target.value ? parseInt(e.target.value, 10) * 100 : null
-                )
-              }
-              className={inputClass}
-            />
-          </Field>
-          <Field label="Customer discount %" hint="Auto-applied at cart">
-            <input
-              type="number"
-              step="0.01"
-              min={0}
-              max={100}
-              value={form.customerDiscountPercent ?? ""}
-              onChange={(e) => set("customerDiscountPercent", e.target.value || null)}
-              className={inputClass}
-            />
-          </Field>
-        </div>
-      </Card>
-
-      {/* Tax & Compliance */}
-      <Card>
-        <CardHeader
-          title="Tax & GST"
-          description="HSN code drives the GST treatment. Inclusive vs exclusive determines whether the displayed price already contains tax."
-        />
-        <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
-          <Field label="HSN code" hint="e.g. 61012000 for uniforms">
-            <input
-              type="text"
-              value={form.hsnCode ?? ""}
-              onChange={(e) => set("hsnCode", e.target.value || null)}
-              className={cn(inputClass, "font-mono")}
-            />
-          </Field>
-          <Field label="GST treatment">
-            <select
-              value={form.gstTreatment}
-              onChange={(e) => set("gstTreatment", e.target.value as Fields["gstTreatment"])}
-              className={inputClass}
-            >
-              <option value="nil_rated">Nil-Rated (uniforms)</option>
-              <option value="taxable">Taxable</option>
-              <option value="exempt">Exempt</option>
-              <option value="zero_rated">Zero-Rated (export)</option>
-              <option value="non_gst">Non-GST</option>
-            </select>
-          </Field>
-          <Field label="Price includes GST">
-            <label className="flex items-center gap-2 h-9">
-              <input
-                type="checkbox"
-                checked={form.gstInclusive}
-                onChange={(e) => set("gstInclusive", e.target.checked)}
-                className="h-4 w-4"
-              />
-              <span className="text-[13px] text-ink-700">Inclusive (default)</span>
-            </label>
-          </Field>
-          <Field label="Weight (grams)">
-            <input
-              type="number"
-              min={0}
-              value={form.weightGrams ?? ""}
-              onChange={(e) =>
-                set("weightGrams", e.target.value ? parseInt(e.target.value, 10) : null)
-              }
-              className={inputClass}
-            />
-          </Field>
-          <Field label="Magic Box?">
-            <label className="flex items-center gap-2 h-9">
-              <input
-                type="checkbox"
-                checked={form.isMagicBox}
-                onChange={(e) => set("isMagicBox", e.target.checked)}
-                className="h-4 w-4"
-              />
-              <span className="text-[13px] text-ink-700">Premium curated bundle</span>
-            </label>
-          </Field>
-        </div>
-      </Card>
-
-      {/* Save */}
-      <div className="flex items-center justify-end gap-3">
-        {error ? <span className="text-[13px] text-red-700">{error}</span> : null}
-        {saved ? <span className="text-[13px] text-emerald-700">✓ Saved</span> : null}
-        <Button busy={pending} icon={<Save className="h-3.5 w-3.5" />} type="submit">
-          Save changes
-        </Button>
-      </div>
+        <Card>
+          <CardHeader title="Pricing & tax" />
+          <FormGrid cols={3}>
+            <UiField label="Base price (₹)" htmlFor="pp-base" required hint="Used when a variant or school has no price of its own">
+              <Input id="pp-base" type="number" min={0} value={form.basePrice} onChange={(e) => set("basePrice", parseInt(e.target.value, 10) || 0)} required className="text-right tabular-nums" />
+            </UiField>
+            <UiField label="Base MRP (₹)" htmlFor="pp-mrp" hint="Strike-through price on the shop">
+              <Input id="pp-mrp" type="number" min={0} value={form.baseMrp ?? ""} onChange={(e) => set("baseMrp", e.target.value ? parseInt(e.target.value, 10) : null)} className="text-right tabular-nums" />
+            </UiField>
+            <UiField label="Cost price (₹)" htmlFor="pp-cost" hint="Used only by Bulk markup">
+              <Input id="pp-cost" type="number" min={0} value={form.costPrice ? Math.round(form.costPrice / 100) : ""} onChange={(e) => set("costPrice", e.target.value ? parseInt(e.target.value, 10) * 100 : null)} className="text-right tabular-nums" />
+            </UiField>
+            <UiField label="GST rate (%)" htmlFor="pp-gstrate" hint="Once per product; every size shares it">
+              <Select id="pp-gstrate" value={form.gstRate == null ? "" : String(form.gstRate)} onChange={(e) => set("gstRate", e.target.value === "" ? null : Number(e.target.value))}>
+                <option value="">Not set</option>
+                {[0, 5, 12, 18, 28].map((r) => <option key={r} value={r}>{r}%</option>)}
+              </Select>
+            </UiField>
+            <UiField label="New base price (₹)" htmlFor="pp-sched" hint="Takes over on the date below; the current price sells until then">
+              <Input id="pp-sched" type="number" min={0} value={form.scheduledBasePrice ?? ""} onChange={(e) => set("scheduledBasePrice", e.target.value ? parseInt(e.target.value, 10) : null)} className="text-right tabular-nums" placeholder="Same as base" />
+            </UiField>
+            <UiField label="Effective from" htmlFor="pp-eff" hint={form.scheduledBasePrice != null && !form.priceEffectiveFrom ? "Pick the date the new price starts" : "Applied at 00:05 that day"}>
+              <Input id="pp-eff" type="date" value={form.priceEffectiveFrom ?? ""} onChange={(e) => set("priceEffectiveFrom", e.target.value || null)} invalid={form.scheduledBasePrice != null && !form.priceEffectiveFrom} />
+            </UiField>
+            <UiField label="HSN code" htmlFor="pp-hsn">
+              <Input id="pp-hsn" value={form.hsnCode ?? ""} onChange={(e) => set("hsnCode", e.target.value || null)} placeholder="61012000" className="font-mono" />
+            </UiField>
+            <UiField label="GST treatment" htmlFor="pp-gst">
+              <Select id="pp-gst" value={form.gstTreatment} onChange={(e) => set("gstTreatment", e.target.value as Fields["gstTreatment"])}>
+                <option value="nil_rated">Nil-rated (uniforms)</option>
+                <option value="taxable">Taxable</option>
+                <option value="exempt">Exempt</option>
+                <option value="zero_rated">Zero-rated (export)</option>
+                <option value="non_gst">Non-GST</option>
+              </Select>
+            </UiField>
+            <div className="flex flex-col justify-end gap-2 pb-1">
+              <Checkbox label="Price includes GST" checked={form.gstInclusive} onChange={(e) => set("gstInclusive", e.target.checked)} />
+              <Checkbox label="Magic Box" hint="Premium curated bundle" checked={form.isMagicBox} onChange={(e) => set("isMagicBox", e.target.checked)} />
+            </div>
+          </FormGrid>
+          <FormError className="mt-4">{error}</FormError>
+          <div className="mt-5 flex items-center justify-end gap-3 border-t border-ink-100/70 pt-4">
+            {saved ? <span className="text-[12.5px] font-medium text-emerald-700">Saved</span> : null}
+            <Button busy={pending} icon={<Save className="h-3.5 w-3.5" />} type="submit" size="sm">
+              Save pricing & tax
+            </Button>
+          </div>
+        </Card>
       </form>
+      ) : null}
     </div>
   );
 }
@@ -442,10 +295,7 @@ export function GradesPicker({
 
   return (
     <Card>
-      <CardHeader
-        title="Targeted grades"
-        description="Parents only see this product when their student's grade matches. Empty = available to all grades."
-      />
+      <CardHeader title="Targeted grades" description="Leave every grade unselected to show the product to all grades." />
       {(() => {
         const chip = (g: string) => {
           const on = grades.includes(g);
@@ -455,13 +305,12 @@ export function GradesPicker({
               type="button"
               onClick={() => toggle(g)}
               className={cn(
-                "px-3 py-1.5 rounded-lg text-[12px] font-medium border transition-colors",
+                "h-8 rounded-lg border px-2.5 text-[12px] font-medium transition-colors",
                 on
-                  ? "bg-ink-900 text-white border-ink-900"
-                  : "bg-white text-ink-700 border-ink-200 hover:border-ink-400"
+                  ? "border-ink-900 bg-ink-900 text-white"
+                  : "border-ink-100 bg-white text-ink-700 hover:border-ink-300"
               )}
             >
-              <GraduationCap className="h-3 w-3 inline-block mr-1 -mt-0.5" />
               {g}
             </button>
           );
@@ -472,10 +321,8 @@ export function GradesPicker({
               {standardGradeOptions.map(chip)}
             </div>
             {dseGradeOptions.length > 0 ? (
-              <div className="mt-3 pt-3 border-t border-ink-100/60">
-                <div className="text-[10px] font-semibold tracking-wider uppercase text-ink-500 mb-1.5">
-                  DSE grades
-                </div>
+              <div className="mt-4 border-t border-ink-100/70 pt-3">
+                <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-500">DSE grades</div>
                 <div className="flex flex-wrap gap-1.5">
                   {dseGradeOptions.map(chip)}
                 </div>
@@ -484,14 +331,12 @@ export function GradesPicker({
           </>
         );
       })()}
-      <div className="flex items-center justify-between mt-4 pt-4 border-t border-ink-100/60">
-        <span className="text-[12px] text-ink-500">
-          {grades.length === 0
-            ? "Showing to all grades"
-            : `${grades.length} grade${grades.length > 1 ? "s" : ""} selected`}
+      <div className="mt-4 flex items-center justify-between border-t border-ink-100/70 pt-4">
+        <span className="text-[12.5px] text-ink-600">
+          {grades.length === 0 ? "All grades" : `${grades.length} grade${grades.length > 1 ? "s" : ""} selected`}
         </span>
         <div className="flex items-center gap-3">
-          {saved ? <span className="text-[12px] text-emerald-700">✓ Saved</span> : null}
+          {saved ? <span className="text-[12.5px] font-medium text-emerald-700">Saved</span> : null}
           <Button busy={pending} onClick={save} variant="primary" size="sm">
             Save grades
           </Button>
@@ -513,15 +358,20 @@ type Img = {
   /** Colour tag — product_attribute_values.id (e.g. Colour=Blue). The PDP
    *  gallery surfaces tagged images when that colour is selected. */
   attributeValueId?: string | null;
+  /** Pinned to one variant (a specific size). Null = every size. */
+  variantId?: string | null;
 };
 
 export function ProductImages({
   productId,
   initial,
   colourOptions = [],
+  variantOptions = [],
 }: {
   productId: string;
   initial: Img[];
+  /** The product's variants, for the "only for this size" pin. */
+  variantOptions?: { id: string; label: string }[];
   /** Colour values used by this product's variants; empty = product has no
    *  colour axis and the per-image colour dropdown is hidden. */
   colourOptions?: { id: string; label: string }[];
@@ -637,6 +487,23 @@ export function ProductImages({
     }
   };
 
+  // Third image level: a photo that belongs to ONE size. Rare — a size
+  // that genuinely looks different — so it is a small select, not a
+  // second upload area, and duplicates are never needed.
+  const setVariant = async (img: Img, variantId: string | null) => {
+    const before = images;
+    setImages((cur) => cur.map((i) => (i.id === img.id ? { ...i, variantId } : i)));
+    const r = await fetch(`/api/admin/products/${productId}/images/${img.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ variantId }),
+    });
+    if (!r.ok) {
+      setImages(before);
+      setError("Could not save the size pin");
+    }
+  };
+
   const startEditAlt = (img: Img) => {
     setEditingAltId(img.id);
     setAltDraft(img.alt ?? "");
@@ -660,10 +527,7 @@ export function ProductImages({
 
   return (
     <Card>
-      <CardHeader
-        title="Images"
-        description="Image #1 is shown on shop cards and is the main PDP image. Use ★ to promote any image to #1, ← → to reorder, ✎ to edit alt text, 🗑 to delete."
-      />
+      <CardHeader title="Images" description="The first image is the shop card. Use the arrows to reorder." />
 
       {/* Drop zone */}
       <label
@@ -680,7 +544,7 @@ export function ProductImages({
           for (const f of files) void upload(f);
         }}
         className={cn(
-          "block cursor-pointer rounded-xl border-2 border-dashed p-8 text-center transition-colors",
+          "block cursor-pointer rounded-xl border-2 border-dashed p-5 text-center transition-colors",
           drag
             ? "border-brand-400 bg-brand-50"
             : "border-ink-200 bg-cream-50 hover:bg-cream-100",
@@ -715,9 +579,9 @@ export function ProductImages({
       {/* List — one image per row, fits narrow admin columns.
           Each row: thumbnail (with order #) | label | action buttons. */}
       {images.length > 0 ? (
-        <ul className="mt-5 divide-y divide-ink-100 rounded-xl border border-ink-100 bg-white">
+        <ul className="mt-4 divide-y divide-ink-100/70 rounded-xl border border-ink-100/70 bg-white">
           {images.map((img, i) => (
-            <li key={img.id} className="p-3">
+            <li key={img.id} className="p-2.5">
               <div className="flex items-center gap-3">
                 {/* Thumbnail + order badge */}
                 <div className="relative shrink-0">
@@ -725,7 +589,7 @@ export function ProductImages({
                   <img
                     src={img.url}
                     alt={img.alt ?? ""}
-                    className="h-16 w-16 rounded-lg object-contain bg-cream-50 border border-ink-100"
+                    className="h-14 w-14 rounded-lg border border-ink-100 bg-cream-50 object-contain"
                   />
                   <span
                     className={cn(
@@ -759,7 +623,7 @@ export function ProductImages({
                       onChange={(e) =>
                         void setColour(img, e.target.value || null)
                       }
-                      className="mt-1.5 h-7 max-w-full rounded border border-ink-200 bg-white px-1.5 text-[11px] text-ink-700"
+                      className="mt-1.5 h-7 max-w-full rounded-md border border-ink-100 bg-cream-50 px-1.5 text-[11px] text-ink-700 focus:border-ink-300 focus:outline-none"
                       title="Colour this image shows — the storefront gallery surfaces it when that colour is selected"
                     >
                       <option value="">No colour tag</option>
@@ -767,6 +631,19 @@ export function ProductImages({
                         <option key={c.id} value={c.id}>
                           {c.label}
                         </option>
+                      ))}
+                    </select>
+                  ) : null}
+                  {variantOptions.length > 0 ? (
+                    <select
+                      value={img.variantId ?? ""}
+                      onChange={(e) => void setVariant(img, e.target.value || null)}
+                      className="mt-1 ml-1 h-7 max-w-full rounded-md border border-ink-100 bg-cream-50 px-1.5 text-[11px] text-ink-700 focus:border-ink-300 focus:outline-none"
+                      title="Only for one size — use when a size genuinely looks different"
+                    >
+                      <option value="">Every size</option>
+                      {variantOptions.map((v) => (
+                        <option key={v.id} value={v.id}>Only {v.label}</option>
                       ))}
                     </select>
                   ) : null}
@@ -849,10 +726,7 @@ export function ProductImages({
           ))}
         </ul>
       ) : (
-        <div className="mt-5 grid place-items-center py-6 text-ink-400">
-          <ImageIcon className="h-8 w-8" />
-          <p className="mt-2 text-[12px]">No images yet</p>
-        </div>
+        <p className="mt-3 text-center text-[12.5px] text-ink-500">No images yet.</p>
       )}
     </Card>
   );
@@ -879,46 +753,13 @@ function ImgBtn({
       title={title}
       aria-label={title}
       className={cn(
-        "grid h-7 w-7 place-items-center rounded-full bg-white/90 transition-colors disabled:opacity-30 disabled:pointer-events-none shadow-sm",
+        "grid h-7 w-7 place-items-center rounded-md transition-colors disabled:pointer-events-none disabled:opacity-30",
         destructive
-          ? "text-red-600 hover:bg-red-600 hover:text-white"
-          : "text-ink-700 hover:bg-ink-900 hover:text-white"
+          ? "text-ink-300 hover:bg-red-50 hover:text-red-600"
+          : "text-ink-400 hover:bg-cream-100 hover:text-ink-900"
       )}
     >
       {children}
     </button>
-  );
-}
-
-// ────────────────────────────────────────────────────────────
-// helpers
-// ────────────────────────────────────────────────────────────
-
-const inputClass =
-  "w-full h-9 px-3 text-[13px] rounded-lg bg-white border border-ink-200 placeholder:text-ink-400 " +
-  "focus:outline-none focus:border-ink-400 focus:ring-2 focus:ring-brand-300/30 transition";
-
-function Field({
-  label,
-  hint,
-  required,
-  children,
-  className,
-}: {
-  label: string;
-  hint?: string;
-  required?: boolean;
-  children: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <label className={cn("block", className)}>
-      <span className="text-[12px] font-semibold text-ink-700">
-        {label}
-        {required ? <span className="text-red-600 ml-0.5">*</span> : null}
-      </span>
-      {hint ? <span className="text-[11px] text-ink-500 ml-2">{hint}</span> : null}
-      <div className="mt-1.5">{children}</div>
-    </label>
   );
 }

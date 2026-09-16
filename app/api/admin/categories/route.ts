@@ -4,7 +4,7 @@ import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { categories } from "@/db/schema";
-import { isResponse, requirePermission } from "@/server/admin-guard";
+import { isResponse, requirePermission, requireAnyPermission } from "@/server/admin-guard";
 import { invalidate } from "@/server/cache";
 import { logAdminActivity } from "@/server/activity";
 
@@ -26,7 +26,7 @@ async function pathFor(parentId: string | null | undefined, slug: string) {
 }
 
 export async function POST(req: Request) {
-  const guard = await requirePermission("catalog.write");
+  const guard = await requireAnyPermission("categories.write", "catalog.write");
   if (isResponse(guard)) return guard;
   const parsed = await parseBody(req, Body);
   if (parsed instanceof NextResponse) return parsed;

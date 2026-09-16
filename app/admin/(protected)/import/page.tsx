@@ -100,9 +100,8 @@ export default function ImportPage() {
   return (
     <div>
       <PageHeader
-        eyebrow="Tools"
+        eyebrow="System Configuration"
         title="Import CSV / Excel"
-        description="Drop a file exported from ERPNext. Auto-detects the DocType from filename + headers, previews the rows, and upserts using the same idempotent logic as the migration scripts."
       />
 
       {/* Dropzone */}

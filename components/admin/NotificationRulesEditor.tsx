@@ -105,7 +105,6 @@ export function NotificationRulesEditor({ initial }: { initial: Rule[] }) {
       <Card>
         <CardHeader
           title="Add a rule"
-          description="Use {{orderNumber}}, {{customerName}}, {{phone}} etc. in subject/body."
         />
         <form
           onSubmit={create}

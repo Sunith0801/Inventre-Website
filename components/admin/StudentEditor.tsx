@@ -3,6 +3,12 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Save, Trash2, Plus, AlertCircle, X, Users } from "lucide-react";
 import { Button } from "@/components/admin/ui/primitives-client";
+import {
+  Field as UiField,
+  Input as UiInput,
+  Select as UiSelect,
+  Checkbox as UiCheckbox,
+} from "@/components/admin/ui/form";
 import { Modal } from "@/components/ui/Modal";
 
 // Identity passthrough — was an ERP→CBSE translator that's now obsolete.
@@ -16,7 +22,6 @@ function toTargetedGrade(raw: string): string {
 type Form = {
   enabled: boolean;
   isNewStudent: boolean;
-  isVerified: boolean;
   schoolCode: string;
   enrollmentNumber: string;
   firstName: string;
@@ -28,9 +33,6 @@ type Form = {
   houseColor: string;
   medium: string;
   curriculum: string;
-  shoeSize: string;
-  shirtSize: string;
-  trouserSize: string;
   studentEmailId: string;
   studentMobileNumber: string;
   dateOfBirth: string;
@@ -40,10 +42,9 @@ type Form = {
 };
 
 const empty: Form = {
-  enabled: true, isNewStudent: false, isVerified: false,
+  enabled: true, isNewStudent: false,
   schoolCode: "", enrollmentNumber: "", firstName: "", middleName: "", lastName: "",
   grade: "", section: "", joiningDate: "", houseColor: "", medium: "", curriculum: "",
-  shoeSize: "", shirtSize: "", trouserSize: "",
   studentEmailId: "", studentMobileNumber: "", dateOfBirth: "", bloodGroup: "", gender: "Male", nationality: "Indian",
 };
 
@@ -452,24 +453,30 @@ export function StudentEditor({
         </div>
       )}
 
-      <div className="flex gap-4">
+      <div className="flex flex-wrap gap-x-6 gap-y-3 rounded-xl border border-ink-100/70 bg-cream-50/50 px-4 py-3">
         {/* Same `students.enabled` field as before, relabelled: "Enabled"
             gave no hint that unticking it puts the closed screen in front
             of the parent for THIS child while siblings shop on. */}
-        <label className="flex items-center gap-2" title="Off ⇒ this student shows as “Closed” on the storefront and the parent sees the closure screen. Siblings are unaffected.">
-          <input type="checkbox" checked={form.enabled} onChange={(e) => set("enabled", e.target.checked)} className="h-4 w-4 rounded border-ink-300" />
-          <span className="text-[13px]">
-            Website access{" "}
-            <span className={form.enabled ? "text-emerald-700 font-semibold" : "text-brand-700 font-semibold"}>
-              {form.enabled ? "On" : "Off — parent sees the closed screen"}
-            </span>
-          </span>
-        </label>
-        <label className="flex items-center gap-2"><input type="checkbox" checked={form.isNewStudent} onChange={(e) => set("isNewStudent", e.target.checked)} className="h-4 w-4 rounded border-ink-300" /><span className="text-[13px]">Is new student</span></label>
-        <label className="flex items-center gap-2"><input type="checkbox" checked={form.isVerified} onChange={(e) => set("isVerified", e.target.checked)} className="h-4 w-4 rounded border-ink-300" /><span className="text-[13px]">Is verified</span></label>
+        <UiCheckbox
+          checked={form.enabled}
+          onChange={(e) => set("enabled", e.target.checked)}
+          label={
+            <>
+              Website access{" "}
+              <span className={form.enabled ? "text-emerald-700" : "text-brand-700"}>
+                {form.enabled ? "on" : "off — parent sees the closed screen"}
+              </span>
+            </>
+          }
+        />
+        <UiCheckbox
+          checked={form.isNewStudent}
+          onChange={(e) => set("isNewStudent", e.target.checked)}
+          label="New student"
+        />
       </div>
 
-      <h3 className="text-[14px] font-semibold text-ink-800">Identity</h3>
+      <SectionHeading>Identity</SectionHeading>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Select
           label="School" required
@@ -496,7 +503,6 @@ export function StudentEditor({
         <Field label="Middle Name" value={form.middleName} onChange={(v) => set("middleName", v)} />
         <Field label="Curriculum" value={form.curriculum} onChange={(v) => set("curriculum", v)} placeholder="CBSE / ICSE / IB …" />
         <Field label="Last Name" value={form.lastName} onChange={(v) => set("lastName", v)} />
-        <Field label="Shoe Size" value={form.shoeSize} onChange={(v) => set("shoeSize", v)} />
         <Select
           label="Grade" required
           fieldRef={(el) => { fieldRefs.current.grade = el; }}
@@ -515,7 +521,6 @@ export function StudentEditor({
             ...gradeChoices,
           ]}
         />
-        <Field label="Shirt Size" value={form.shirtSize} onChange={(v) => set("shirtSize", v)} />
         <Select
           label="Section"
           fieldRef={(el) => { fieldRefs.current.section = el; }}
@@ -532,10 +537,9 @@ export function StudentEditor({
             ...sectionChoices,
           ]}
         />
-        <Field label="Trouser Size" value={form.trouserSize} onChange={(v) => set("trouserSize", v)} />
       </div>
 
-      <h3 className="text-[14px] font-semibold text-ink-800 mt-4">Personal</h3>
+      <SectionHeading className="mt-2">Personal</SectionHeading>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Field
           label="Student Email"
@@ -558,9 +562,9 @@ export function StudentEditor({
 
       {mode === "create" ? (
         <>
-          <h3 className="text-[14px] font-semibold text-ink-800 mt-4">
+          <SectionHeading className="mt-2">
             Guardian <span className="text-[12px] font-normal text-ink-500">(optional)</span>
-          </h3>
+          </SectionHeading>
           <p className="text-[12px] text-ink-500 -mt-2">
             If you provide a 10-digit mobile, a parent login account is created
             (or linked to an existing one) and the student is attached to it.
@@ -1187,6 +1191,14 @@ function LoginBadge({ status }: { status: "ready" | "pending" | "invalid" }) {
   );
 }
 
+function SectionHeading({ children, className }: { children: React.ReactNode; className?: string }) {
+  return (
+    <h3 className={"text-[11px] font-semibold tracking-[0.08em] uppercase text-ink-500 " + (className ?? "")}>
+      {children}
+    </h3>
+  );
+}
+
 function Field({
   label, value, onChange, placeholder, mono, required, error, fieldRef,
 }: {
@@ -1199,32 +1211,20 @@ function Field({
   error?: string;
   fieldRef?: (el: HTMLInputElement | null) => void;
 }) {
+  const id = "sf-" + label.toLowerCase().replace(/[^a-z0-9]+/g, "-");
   return (
-    <div>
-      <label className="text-[11px] uppercase tracking-wide text-ink-500 mb-1 block">
-        {label}{required ? <span className="text-red-600 ml-0.5">*</span> : null}
-      </label>
-      <input
+    <UiField label={label} htmlFor={id} required={required} error={error}>
+      <UiInput
+        id={id}
         ref={fieldRef}
-        type="text"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        aria-invalid={!!error}
-        className={
-          (mono ? "font-mono text-[12px] " : "text-[13px] ") +
-          "w-full h-9 px-3 rounded-lg bg-white placeholder:text-ink-400 focus:outline-none focus:ring-2 transition " +
-          (error
-            ? "border border-red-400 focus:border-red-500 focus:ring-red-200"
-            : "border border-ink-200 focus:border-ink-400 focus:ring-brand-300/30")
-        }
+        invalid={!!error}
+        className={mono ? "font-mono" : undefined}
+        autoComplete="off"
       />
-      {error && (
-        <p className="mt-1 text-[11.5px] font-medium text-red-600 flex items-center gap-1">
-          <AlertCircle className="h-3 w-3 flex-shrink-0" />{error}
-        </p>
-      )}
-    </div>
+    </UiField>
   );
 }
 
@@ -1239,31 +1239,13 @@ function Select({
   error?: string;
   fieldRef?: (el: HTMLSelectElement | null) => void;
 }) {
+  const id = "ss-" + label.toLowerCase().replace(/[^a-z0-9]+/g, "-");
   return (
-    <div>
-      <label className="text-[11px] uppercase tracking-wide text-ink-500 mb-1 block">
-        {label}{required ? <span className="text-red-600 ml-0.5">*</span> : null}
-      </label>
-      <select
-        ref={fieldRef}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        aria-invalid={!!error}
-        className={
-          "w-full h-9 px-3 text-[13px] rounded-lg bg-white focus:outline-none focus:ring-2 transition " +
-          (error
-            ? "border border-red-400 focus:border-red-500 focus:ring-red-200"
-            : "border border-ink-200 focus:border-ink-400 focus:ring-brand-300/30")
-        }
-      >
+    <UiField label={label} htmlFor={id} required={required} error={error}>
+      <UiSelect id={id} ref={fieldRef} value={value} onChange={(e) => onChange(e.target.value)} invalid={!!error}>
         {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-      </select>
-      {error && (
-        <p className="mt-1 text-[11.5px] font-medium text-red-600 flex items-center gap-1">
-          <AlertCircle className="h-3 w-3 flex-shrink-0" />{error}
-        </p>
-      )}
-    </div>
+      </UiSelect>
+    </UiField>
   );
 }
 

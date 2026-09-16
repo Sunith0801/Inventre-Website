@@ -15,6 +15,7 @@ import {
 } from "@/db/schema";
 import { cached } from "@/server/cache";
 import { safeImgUrl } from "@/lib/safe-url";
+import type { SizeChartRow } from "@/lib/size-chart";
 
 export type CategoryNode = {
   id: string;
@@ -40,13 +41,19 @@ export type ProductCardDto = {
   isKit?: boolean;
   /** True when the kit has language options (template-variant or sibling-kit style). */
   hasLangOptions?: boolean;
+  /** products.kind — drives the grade listing order (Magic box → Book kit → rest). */
+  kind?: string;
+  /** Rupees a parent saves versus buying every component separately.
+   *  Only on kits and boxes priced below their parts; null otherwise. */
+  savings?: number | null;
 };
 
 export type ProductDetailDto = ProductCardDto & {
   tagline: string | null;
   description: string[] | null;
   specs: { label: string; value: string }[] | null;
-  sizeTable: { size: string; chest: string; length: string; sleeve: string }[] | null;
+  /** Admin-defined columns — see lib/size-chart.ts. */
+  sizeTable: SizeChartRow[] | null;
   sizeChartUrl: string | null;
   /** Free-text note shown under the product image on the PDP. */
   imageNote: string | null;
@@ -93,7 +100,7 @@ export type ProductDetailDto = ProductCardDto & {
    *  belongs to — from an explicit admin tag (product_images.attribute_value_id)
    *  or, failing that, a non-size attribute value found in the alt text.
    *  null = generic image, shown regardless of selection. */
-  images: { id: string; url: string; alt: string | null; colorValue: string | null }[];
+  images: { id: string; url: string; alt: string | null; colorValue: string | null; variantId: string | null }[];
   rating: { score: number; count: number; distribution: number[] } | null;
   /** Recursive BOM subtree rooted at this product. Empty when the product has
    *  no `product_bundles` row. Children render as an inline accordion on the
@@ -124,6 +131,10 @@ export type BundleNode = {
   isOptional: boolean;
   selectorGroupKey: string | null;
   selectorOptionLabel: string | null;
+  /** Section this component sits in ("Notebooks", "Uniform set") — from
+   *  bundle_selectors, written by the section builder. Null on kits
+   *  assembled before sections existed. */
+  sectionName: string | null;
   children: BundleNode[];
 };
 
@@ -155,6 +166,7 @@ export async function loadBundleTree(
     is_optional: boolean;
     selector_group_key: string | null;
     selector_option_label: string | null;
+    section_name: string | null;
     child_slug: string;
     child_name: string;
     bundle_level: string;
@@ -191,6 +203,7 @@ export async function loadBundleTree(
       bc.is_optional                 AS is_optional,
       bc.selector_group_key          AS selector_group_key,
       bc.selector_option_label       AS selector_option_label,
+      bs.name                        AS section_name,
       child.slug                     AS child_slug,
       child.name                     AS child_name,
       child.kind::text               AS bundle_level,
@@ -208,10 +221,12 @@ export async function loadBundleTree(
       JOIN products child ON child.id = bc.product_id
       LEFT JOIN product_school ps
         ON ps.product_id = child.id AND ps.school_id = ${schoolId}
+      LEFT JOIN bundle_selectors bs
+        ON bs.bundle_id = pb.id AND bs.group_key = bc.selector_group_key
      WHERE bc.product_id IS NOT NULL
        AND child.status <> 'archived'
        AND bc.is_visible = true
-     ORDER BY t.depth, bc.selector_group_key NULLS FIRST, child.name
+     ORDER BY t.depth, bs.sort_order NULLS LAST, bc.selector_group_key NULLS FIRST, child.name
   `)) as unknown as Row[];
 
   const childrenOf = new Map<string, BundleNode[]>();
@@ -229,6 +244,7 @@ export async function loadBundleTree(
       isOptional: r.is_optional,
       selectorGroupKey: r.selector_group_key,
       selectorOptionLabel: r.selector_option_label,
+      sectionName: r.section_name,
       children: [],
     };
     const bucket = childrenOf.get(r.parent_product_id) ?? [];
@@ -579,9 +595,11 @@ export async function listSchoolProducts(schoolId: string): Promise<ProductCardD
         .sort((a, b) => a.sortOrder - b.sortOrder);
       const productVariantsList = vars.filter((v) => v.productId === product.id);
       // Use resolved (bins/itemPrices) with legacy fallback.
+      // Availability comes from the resolver only (Ground Stock bins via the
+      // one rule); a variant the resolver dropped (inactive) counts as none.
       const totalStock = productVariantsList.reduce((s, v) => {
         const r = resolved.get(v.id);
-        return s + (r?.available ?? v.stockQty);
+        return s + (r?.available ?? 0);
       }, 0);
       // Use price from first variant's resolved info; falls back to product.basePrice
       const firstVariant = productVariantsList[0];
@@ -598,10 +616,10 @@ export async function listSchoolProducts(schoolId: string): Promise<ProductCardD
         price: rupeesFromPaise(pricePaise),
         mrp: mrpPaise != null ? rupeesFromPaise(mrpPaise) : null,
         sizes: cleanSizeLabels(productVariantsList.map((v) => v.size)),
-        // Per ops directive (2026-05-26): never surface "out of stock" to
-        // customers. We don't sync bins from ERP anymore, so totalStock is
-        // always 0 here — always report inStock=true.
-        inStock: true,
+        // In stock when any size can be bought. Since 2026-09-16 the figure
+        // behind this is the audit's Ground Stock count (see variant-resolver);
+        // a product with no variant rows at all has nothing to gate on.
+        inStock: productVariantsList.length === 0 || totalStock > 0,
         badge: productBadge?.badge ?? null,
         img: safeImgUrl(ps.customImageUrl ?? productImagesList[0]?.url ?? null),
         required: ps.isRequired,
@@ -720,6 +738,23 @@ export async function listProductsForStudent(args: {
   ]);
   const kindMap = new Map(kindRows.map((r) => [r.id, r.kind]));
 
+  // "Bought separately" total per bundle on this page — what the savings
+  // badge compares against. School override price wins per component, as
+  // it does on the bundle page itself.
+  const partsRows = ids.length
+    ? ((await db.execute(sql`
+        SELECT pb.product_id AS product_id,
+               SUM(bc.qty * COALESCE(ps.override_price, c.base_price))::bigint AS parts
+          FROM product_bundles pb
+          JOIN bundle_components bc ON bc.bundle_id = pb.id
+          JOIN products c ON c.id = bc.product_id
+          LEFT JOIN product_school ps ON ps.product_id = c.id AND ps.school_id = ${schoolId}
+         WHERE pb.product_id IN (${sql.join(ids.map((id) => sql`${id}::uuid`), sql`, `)})
+           AND c.status <> 'archived' AND bc.is_visible = true
+         GROUP BY pb.product_id`)) as unknown as { product_id: string; parts: string | number }[])
+    : [];
+  const partsByProduct = new Map((Array.isArray(partsRows) ? partsRows : []).map((r) => [r.product_id, Number(r.parts)]));
+
   const { resolveVariants } = await import("@/server/repos/variant-resolver");
   const resolved = await resolveVariants(
     vars.map((v) => v.id),
@@ -772,14 +807,14 @@ export async function listProductsForStudent(args: {
 
   const { parseBookkitLangs } = await import("@/lib/bookkit-langs");
 
-  return productRows.map(({ product, ps }) => {
+  const cards = productRows.map(({ product, ps }) => {
     const productImagesList = imgs
       .filter((i) => i.productId === product.id)
       .sort((a, b) => a.sortOrder - b.sortOrder);
     const productVariantsList = vars.filter((v) => v.productId === product.id);
     const totalStock = productVariantsList.reduce((s, v) => {
       const r = resolved.get(v.id);
-      return s + (r?.available ?? v.stockQty);
+      return s + (r?.available ?? 0);
     }, 0);
     const firstVariant = productVariantsList[0];
     const firstResolved = firstVariant ? resolved.get(firstVariant.id) : null;
@@ -836,8 +871,8 @@ export async function listProductsForStudent(args: {
       sizes: isMultiAxisKit
         ? []
         : cleanSizeLabels(productVariantsList.map((v) => v.size)),
-      // Per ops directive (2026-05-26): never out-of-stock. See note above.
-      inStock: true,
+      // Ground Stock decides (see the catalog list above).
+      inStock: productVariantsList.length === 0 || totalStock > 0,
       badge: productBadge?.badge ?? null,
       img: safeImgUrl(ps.customImageUrl ?? productImagesList[0]?.url ?? null),
       required: ps.isRequired,
@@ -848,8 +883,20 @@ export async function listProductsForStudent(args: {
       isKit: isKit || variantsLookLikeSkus,
       hasLangOptions:
         isKit || variantsLookLikeSkus ? hasLangOptions : undefined,
+      kind: kindMap.get(product.id) ?? undefined,
+      savings: (() => {
+        const parts = partsByProduct.get(product.id);
+        if (!parts || pricePaise <= 0 || parts <= pricePaise) return null;
+        return rupeesFromPaise(parts - pricePaise);
+      })(),
     } satisfies ProductCardDto;
   });
+
+  // Grade listing order: the Magic box first (it IS the new-student
+  // purchase), then the Book kit, then uniforms and single items — each
+  // group alphabetical.
+  const rank = (c: ProductCardDto) => (c.isMagicBox || c.kind === "magic_box" ? 0 : c.kind === "kit" || c.isKit ? 1 : 2);
+  return cards.sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
 }
 
 /**
@@ -870,7 +917,7 @@ export async function listProductsForStudent(args: {
 async function resolveImageColors(
   images: (typeof productImages.$inferSelect)[],
   attributeGroups: { name: string; values: string[] }[]
-): Promise<{ id: string; url: string; alt: string | null; colorValue: string | null }[]> {
+): Promise<{ id: string; url: string; alt: string | null; colorValue: string | null; variantId: string | null }[]> {
   const taggedIds = images
     .map((i) => i.attributeValueId)
     .filter((v): v is string => Boolean(v));
@@ -896,7 +943,7 @@ async function resolveImageColors(
       colorValue =
         candidateValues.find((v) => alt.includes(v.toLowerCase())) ?? null;
     }
-    return { id: i.id, url: safeImgUrl(i.url) ?? i.url, alt: i.alt, colorValue };
+    return { id: i.id, url: safeImgUrl(i.url) ?? i.url, alt: i.alt, colorValue, variantId: i.variantId ?? null };
   });
 }
 
@@ -963,7 +1010,7 @@ export async function getProductBySlug(
       : [];
     const totalStock = variants.reduce((s, v) => {
       const r = resolved.get(v.id);
-      return s + (r?.available ?? v.stockQty);
+      return s + (r?.available ?? 0);
     }, 0);
     const firstVariant = variants[0];
     const firstResolved = firstVariant ? resolved.get(firstVariant.id) : null;
@@ -1009,8 +1056,8 @@ export async function getProductBySlug(
       // If we empty them here that detection fails and the user sees
       // "This product currently has no available sizes."
       sizes: cleanSizeLabels(variants.map((v) => v.size)),
-      // Per ops directive (2026-05-26): never out-of-stock. See note above.
-      inStock: true,
+      // Ground Stock decides: in stock while any size can be bought.
+      inStock: variants.length === 0 || totalStock > 0,
       badge: badges[0]?.badge ?? null,
       img: safeImgUrl(psRow?.customImageUrl ?? images[0]?.url ?? null),
       required: psRow?.isRequired ?? false,
@@ -1031,7 +1078,8 @@ export async function getProductBySlug(
           id: v.id,
           size: v.size,
           sku: v.sku,
-          stockQty: r?.available ?? v.stockQty,
+          // Resolver figure only — never the legacy column.
+          stockQty: r?.available ?? 0,
           pricePaise,
           mrpPaise: r?.mrpPaise ?? resolvedMrpPaise,
           // Explicit ₹0 item_prices rows are real prices (school-included
@@ -1217,6 +1265,7 @@ export async function loadVariantBundleTree(
         isOptional: false,
         selectorGroupKey: null,
         selectorOptionLabel: null,
+        sectionName: null,
         children,
       } satisfies BundleNode;
     })

@@ -24,30 +24,38 @@ export function Gallery({ product }: { product: Product }) {
   // Colour=Blue) come first; untagged/unmatched images keep their relative
   // order after them. When nothing matches (no tags, no colour axis) this
   // is a stable no-op.
+  const selectedVariantId = pdpSelection?.variantId ?? null;
   const images = useMemo(() => {
-    const list =
+    const all =
       product.images && product.images.length > 0
         ? product.images.map((i) => ({
             url: i.url,
             colorValue: i.colorValue?.toLowerCase() ?? null,
+            variantId: i.variantId ?? null,
           }))
         : product.img
-        ? [{ url: product.img, colorValue: null }]
+        ? [{ url: product.img, colorValue: null, variantId: null }]
         : [];
+    // Three image levels. A photo pinned to one variant shows only when
+    // that variant is selected — and then first; photos pinned to OTHER
+    // variants are hidden. Untagged and colour-tagged photos are for
+    // every size.
+    const pinned = all.filter((i) => i.variantId && i.variantId === selectedVariantId);
+    const list = [...pinned, ...all.filter((i) => !i.variantId)];
     if (selectedValues.length === 0) return list.map((i) => i.url);
     const matched = list.filter(
-      (i) => i.colorValue && selectedValues.includes(i.colorValue)
+      (i) => !pinned.includes(i) && i.colorValue && selectedValues.includes(i.colorValue)
     );
     if (matched.length === 0) return list.map((i) => i.url);
-    const rest = list.filter((i) => !matched.includes(i));
-    return [...matched, ...rest].map((i) => i.url);
-  }, [product.images, product.img, selectedValues]);
+    const rest = list.filter((i) => !matched.includes(i) && !pinned.includes(i));
+    return [...pinned, ...matched, ...rest].map((i) => i.url);
+  }, [product.images, product.img, selectedValues, selectedVariantId]);
 
   const [active, setActive] = useState(0);
 
-  // Reset to first image when the product OR the selected colour changes —
-  // the first slot is the selected colour's photo after the reorder above.
-  const selectionKey = selectedValues.join("|");
+  // Reset to first image when the product, the selected colour or the
+  // resolved variant changes — the first slot is that selection's photo.
+  const selectionKey = selectedValues.join("|") + "#" + (selectedVariantId ?? "");
   useEffect(() => setActive(0), [product.id, selectionKey]);
 
   return (

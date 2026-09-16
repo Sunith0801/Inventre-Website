@@ -15,7 +15,7 @@ import { UniformWizard, type AttributeOption } from "./_wizard";
 export const dynamic = "force-dynamic";
 
 export default async function UniformBuildPage() {
-  const guard = await requireAnyPermission("catalog.read", "catalog.write");
+  const guard = await requireAnyPermission("catalog-build.read", "catalog-build.write", "catalog.read", "catalog.write");
   if (isResponse(guard)) redirect("/admin/dashboard");
 
   const [catRows, attrRows, valueRows] = await Promise.all([
@@ -66,9 +66,8 @@ export default async function UniformBuildPage() {
         <ChevronLeft className="h-3.5 w-3.5" /> Back to type chooser
       </Link>
       <PageHeader
-        eyebrow="Catalog · Create new"
+        eyebrow="Products"
         title="New Uniform"
-        description="Two steps: name the product, then pick the Colour and Size values. The wizard creates one SKU per Colour × Size cell. After save you land on the product page where you add per-variant prices, images, and link schools."
       />
       <UniformWizard
         categories={catRows.map((c) => ({ id: c.id, label: c.path, name: c.name }))}

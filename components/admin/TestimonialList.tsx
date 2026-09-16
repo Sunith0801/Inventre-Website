@@ -2,7 +2,10 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Save, Trash2 } from "lucide-react";
+import { Plus, Save, Trash2, Pencil } from "lucide-react";
+import { Button } from "@/components/admin/ui/primitives-client";
+import { Field, Input, Select, Textarea, Checkbox, FormGrid, Badge } from "@/components/admin/ui/primitives";
+import { ConfirmDialog } from "@/components/admin/ui/dialog";
 
 type Row = {
   id: string;
@@ -17,6 +20,10 @@ type Row = {
   schoolName: string | null;
 };
 
+/**
+ * Homepage testimonials — principal quotes. Same inline-edit pattern as
+ * the FAQ list: rows read as they do on the site, one opens for editing.
+ */
 export function TestimonialList({
   initial,
   schools,
@@ -28,6 +35,7 @@ export function TestimonialList({
   const [rows, setRows] = useState(initial);
   const [pending, start] = useTransition();
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [toDelete, setToDelete] = useState<Row | null>(null);
 
   const upsert = (id: string, patch: Partial<Row>) => {
     setRows(rows.map((r) => (r.id === id ? { ...r, ...patch } : r)));
@@ -35,9 +43,7 @@ export function TestimonialList({
 
   const save = (r: Row) =>
     start(async () => {
-      const url = r.id.startsWith("new-")
-        ? "/api/admin/testimonials"
-        : `/api/admin/testimonials/${r.id}`;
+      const url = r.id.startsWith("new-") ? "/api/admin/testimonials" : `/api/admin/testimonials/${r.id}`;
       const method = r.id.startsWith("new-") ? "POST" : "PATCH";
       const res = await fetch(url, {
         method,
@@ -63,197 +69,122 @@ export function TestimonialList({
     start(async () => {
       if (id.startsWith("new-")) {
         setRows(rows.filter((r) => r.id !== id));
+        setToDelete(null);
         return;
       }
-      if (!confirm("Delete this testimonial?")) return;
-      const res = await fetch(`/api/admin/testimonials/${id}`, {
-        method: "DELETE",
-      });
+      const res = await fetch(`/api/admin/testimonials/${id}`, { method: "DELETE" });
       if (res.ok) {
         setRows(rows.filter((r) => r.id !== id));
         router.refresh();
       }
+      setToDelete(null);
     });
+
+  const cancel = (r: Row) => {
+    if (r.id.startsWith("new-")) setRows(rows.filter((x) => x.id !== r.id));
+    setEditingId(null);
+  };
 
   const addNew = () => {
     const id = `new-${Date.now()}`;
     setRows([
       ...rows,
-      {
-        id,
-        principalName: "",
-        role: "Principal",
-        shortLabel: "",
-        quote: "",
-        photoUrl: "",
-        isFeatured: true,
-        sortOrder: rows.length,
-        schoolId: null,
-        schoolName: null,
-      },
+      { id, principalName: "", role: "Principal", shortLabel: "", quote: "", photoUrl: "", isFeatured: true, sortOrder: rows.length, schoolId: null, schoolName: null },
     ]);
     setEditingId(id);
   };
 
   return (
     <div className="space-y-3">
-      {rows.map((r) => {
-        const editing = editingId === r.id || r.id.startsWith("new-");
-        return (
-          <div
-            key={r.id}
-            className="rounded-2xl border border-ink-100 bg-white p-5"
-          >
-            {editing ? (
-              <div className="space-y-3">
-                <div className="grid sm:grid-cols-2 gap-3">
-                  <Input
-                    label="Principal name"
-                    value={r.principalName}
-                    onChange={(v) => upsert(r.id, { principalName: v })}
-                  />
-                  <Input
-                    label="Role"
-                    value={r.role}
-                    onChange={(v) => upsert(r.id, { role: v })}
-                  />
-                  <Input
-                    label="Short label (e.g. INDUS INTL)"
-                    value={r.shortLabel ?? ""}
-                    onChange={(v) => upsert(r.id, { shortLabel: v })}
-                  />
-                  <label className="flex flex-col">
-                    <span className="text-[12px] font-semibold text-ink-700">
-                      School
-                    </span>
-                    <select
-                      value={r.schoolId ?? ""}
-                      onChange={(e) =>
-                        upsert(r.id, { schoolId: e.target.value || null })
-                      }
-                      className="mt-1 rounded-xl border border-ink-200 bg-white px-3 py-2.5 text-[14px] outline-none focus:border-ink-900"
-                    >
-                      <option value="">— none —</option>
-                      {schools.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <Input
-                    label="Photo URL"
-                    value={r.photoUrl ?? ""}
-                    onChange={(v) => upsert(r.id, { photoUrl: v })}
-                    className="sm:col-span-2"
-                  />
-                </div>
-                <label className="flex flex-col">
-                  <span className="text-[12px] font-semibold text-ink-700">
-                    Quote
-                  </span>
-                  <textarea
-                    value={r.quote}
-                    onChange={(e) => upsert(r.id, { quote: e.target.value })}
-                    rows={3}
-                    className="mt-1 rounded-xl border border-ink-200 bg-white px-3 py-2.5 text-[14px] outline-none focus:border-ink-900 resize-none"
-                  />
-                </label>
-                <div className="flex items-center justify-between pt-2 border-t border-ink-100">
-                  <label className="flex items-center gap-2 text-[13px] text-ink-700">
-                    <input
-                      type="checkbox"
-                      checked={r.isFeatured}
-                      onChange={(e) =>
-                        upsert(r.id, { isFeatured: e.target.checked })
-                      }
-                      className="h-4 w-4 accent-brand"
-                    />
-                    Show on homepage
-                  </label>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => remove(r.id)}
-                      disabled={pending}
-                      className="inline-flex items-center gap-1.5 text-[13px] font-medium text-red-600 hover:text-red-700"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" /> Delete
-                    </button>
-                    <button
-                      onClick={() => save(r)}
-                      disabled={pending}
-                      className="inline-flex items-center gap-2 rounded-full bg-brand text-white px-4 h-9 text-[12px] font-bold hover:bg-brand-600"
-                    >
-                      <Save className="h-3 w-3" /> Save
-                    </button>
+      <div className="overflow-hidden rounded-2xl border border-ink-100/70 bg-white shadow-[0_1px_2px_rgba(10,10,10,0.04)]">
+        {rows.length === 0 ? (
+          <p className="px-5 py-8 text-center text-[13px] text-ink-500">No testimonials yet — add the first one below.</p>
+        ) : null}
+        {rows.map((r, i) => {
+          const editing = editingId === r.id || r.id.startsWith("new-");
+          return (
+            <div key={r.id} className={`${i > 0 ? "border-t border-ink-100/70" : ""} ${editing ? "bg-cream-50/50" : ""}`}>
+              {editing ? (
+                <div className="space-y-4 p-5">
+                  <FormGrid cols={3}>
+                    <Field label="Name" htmlFor={`t-name-${r.id}`} required>
+                      <Input id={`t-name-${r.id}`} value={r.principalName} onChange={(e) => upsert(r.id, { principalName: e.target.value })} placeholder="Mrs. Aparna Menon" autoFocus />
+                    </Field>
+                    <Field label="Role" htmlFor={`t-role-${r.id}`}>
+                      <Input id={`t-role-${r.id}`} value={r.role} onChange={(e) => upsert(r.id, { role: e.target.value })} placeholder="Principal" />
+                    </Field>
+                    <Field label="School" htmlFor={`t-school-${r.id}`}>
+                      <Select id={`t-school-${r.id}`} value={r.schoolId ?? ""} onChange={(e) => upsert(r.id, { schoolId: e.target.value || null })}>
+                        <option value="">Not linked</option>
+                        {schools.map((s) => (
+                          <option key={s.id} value={s.id}>{s.name}</option>
+                        ))}
+                      </Select>
+                    </Field>
+                    <Field label="Short label" htmlFor={`t-label-${r.id}`} hint="Shown under the name, e.g. INDUS INTL">
+                      <Input id={`t-label-${r.id}`} value={r.shortLabel ?? ""} onChange={(e) => upsert(r.id, { shortLabel: e.target.value })} />
+                    </Field>
+                    <Field label="Photo URL" htmlFor={`t-photo-${r.id}`} className="sm:col-span-2">
+                      <Input id={`t-photo-${r.id}`} value={r.photoUrl ?? ""} onChange={(e) => upsert(r.id, { photoUrl: e.target.value })} placeholder="https://…" className="font-mono" />
+                    </Field>
+                    <Field label="Quote" htmlFor={`t-quote-${r.id}`} required className="sm:col-span-2 lg:col-span-3">
+                      <Textarea id={`t-quote-${r.id}`} rows={3} value={r.quote} onChange={(e) => upsert(r.id, { quote: e.target.value })} />
+                    </Field>
+                  </FormGrid>
+                  <div className="flex flex-wrap items-center justify-between gap-3 border-t border-ink-100/70 pt-4">
+                    <Checkbox label="Show on the home page" checked={r.isFeatured} onChange={(e) => upsert(r.id, { isFeatured: e.target.checked })} />
+                    <div className="flex items-center gap-2">
+                      {!r.id.startsWith("new-") ? (
+                        <Button variant="danger" size="sm" disabled={pending} onClick={() => setToDelete(r)} icon={<Trash2 className="h-3.5 w-3.5" />}>
+                          Delete
+                        </Button>
+                      ) : null}
+                      <Button variant="secondary" size="sm" disabled={pending} onClick={() => cancel(r)}>Cancel</Button>
+                      <Button size="sm" busy={pending} onClick={() => save(r)} icon={<Save className="h-3.5 w-3.5" />}>Save</Button>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ) : (
-              <div className="flex gap-4">
-                <div className="h-14 w-14 rounded-full bg-cream-100 overflow-hidden shrink-0">
-                  {r.photoUrl && (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={r.photoUrl}
-                      alt=""
-                      className="h-full w-full object-cover"
-                    />
-                  )}
+              ) : (
+                <div className="flex items-start gap-4 px-5 py-4">
+                  <div className="h-11 w-11 shrink-0 overflow-hidden rounded-full bg-cream-100">
+                    {r.photoUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={r.photoUrl} alt="" className="h-full w-full object-cover" />
+                    ) : null}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="font-semibold text-ink-900">
+                      {r.principalName || <span className="text-ink-400">Unnamed</span>}
+                      <span className="ml-2 text-[12px] font-normal text-ink-500">
+                        {r.role}
+                        {r.schoolName ? ` · ${r.schoolName}` : ""}
+                      </span>
+                    </p>
+                    <p className="mt-0.5 line-clamp-2 text-[13px] text-ink-600">“{r.quote}”</p>
+                  </div>
+                  {!r.isFeatured ? <Badge tone="default" size="sm">Hidden</Badge> : null}
+                  <Button variant="ghost" size="sm" onClick={() => setEditingId(r.id)} icon={<Pencil className="h-3.5 w-3.5" />}>
+                    Edit
+                  </Button>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-ink-900">
-                    {r.principalName}
-                  </p>
-                  <p className="text-[12px] text-ink-500">
-                    {r.role}
-                    {r.schoolName && ` · ${r.schoolName}`}
-                  </p>
-                  <p className="mt-2 text-[13px] text-ink-700 line-clamp-2">
-                    &quot;{r.quote}&quot;
-                  </p>
-                </div>
-                <button
-                  onClick={() => setEditingId(r.id)}
-                  className="text-[13px] font-semibold text-brand self-start"
-                >
-                  Edit
-                </button>
-              </div>
-            )}
-          </div>
-        );
-      })}
-      <button
-        onClick={addNew}
-        className="w-full inline-flex items-center justify-center gap-2 rounded-2xl border border-dashed border-ink-200 bg-white py-5 text-[13px] font-semibold text-ink-700 hover:border-brand hover:text-brand transition-colors"
-      >
-        <Plus className="h-4 w-4" /> Add testimonial
-      </button>
-    </div>
-  );
-}
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <Button variant="secondary" onClick={addNew} icon={<Plus className="h-3.5 w-3.5" />}>
+        Add testimonial
+      </Button>
 
-function Input({
-  label,
-  value,
-  onChange,
-  className = "",
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  className?: string;
-}) {
-  return (
-    <label className={"flex flex-col " + className}>
-      <span className="text-[12px] font-semibold text-ink-700">{label}</span>
-      <input
-        type="text"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="mt-1 rounded-xl border border-ink-200 bg-white px-3 py-2.5 text-[14px] outline-none focus:border-ink-900"
+      <ConfirmDialog
+        open={toDelete !== null}
+        onClose={() => (pending ? undefined : setToDelete(null))}
+        onConfirm={() => toDelete && remove(toDelete.id)}
+        title="Delete this testimonial?"
+        description={toDelete ? `${toDelete.principalName || "This quote"} is removed from the home page.` : undefined}
+        confirmLabel="Delete"
+        busy={pending}
       />
-    </label>
+    </div>
   );
 }

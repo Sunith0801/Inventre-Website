@@ -3,9 +3,10 @@ import { z } from "zod";
 import { inArray } from "drizzle-orm";
 import { db } from "@/db/client";
 import { products } from "@/db/schema";
-import { isResponse, requirePermission } from "@/server/admin-guard";
+import { isResponse, requirePermission, requireAnyPermission } from "@/server/admin-guard";
 import { invalidateCatalog } from "@/server/cache";
 import { logAdminActivity } from "@/server/activity";
+import { getProductReadiness } from "@/server/admin/product-readiness";
 
 /**
  * Bulk operations across products. Today only status change is supported —
@@ -19,7 +20,7 @@ const Body = z.object({
 });
 
 export async function PATCH(req: Request) {
-  const guard = await requirePermission("catalog.write");
+  const guard = await requireAnyPermission("products.write", "catalog.write");
   if (isResponse(guard)) return guard;
 
   let body: z.infer<typeof Body>;
@@ -32,11 +33,28 @@ export async function PATCH(req: Request) {
     );
   }
 
-  const updated = await db
-    .update(products)
-    .set({ status: body.status })
-    .where(inArray(products.id, body.ids))
-    .returning({ id: products.id });
+  // Publishing goes through the same readiness list as the Review step.
+  // Products that fail are skipped and named, the rest go live — a bulk
+  // publish of a school's catalogue should not be all-or-nothing on one
+  // missing price.
+  let ids = body.ids;
+  const skipped: { id: string; reasons: string[] }[] = [];
+  if (body.status === "active") {
+    const results = await Promise.all(ids.map(async (id) => ({ id, r: await getProductReadiness(id) })));
+    ids = [];
+    for (const { id, r } of results) {
+      if (r && !r.publishable) skipped.push({ id, reasons: r.failing.map((c) => c.label) });
+      else ids.push(id);
+    }
+  }
+
+  const updated = ids.length
+    ? await db
+        .update(products)
+        .set({ status: body.status })
+        .where(inArray(products.id, ids))
+        .returning({ id: products.id })
+    : [];
 
   await invalidateCatalog();
 
@@ -44,9 +62,9 @@ export async function PATCH(req: Request) {
     action: "product.bulk_update",
     entityType: "product",
     entityId: null,
-    summary: `Set status to "${body.status}" on ${updated.length} product(s)`,
+    summary: `Set status to "${body.status}" on ${updated.length} product(s)${skipped.length ? `, ${skipped.length} not ready` : ""}`,
     req,
   });
 
-  return NextResponse.json({ ok: true, updated: updated.length });
+  return NextResponse.json({ ok: true, updated: updated.length, skipped });
 }

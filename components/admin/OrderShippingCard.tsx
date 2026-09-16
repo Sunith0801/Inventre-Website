@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Pencil, Save, X } from "lucide-react";
-import { Card, CardHeader } from "@/components/admin/ui/primitives";
+import { Card, CardHeader, Field, Input, Select, FormGrid, FormError } from "@/components/admin/ui/primitives";
 import { Button } from "@/components/admin/ui/primitives-client";
 import { INDIAN_STATES } from "@/lib/tax";
 
@@ -135,180 +135,78 @@ export function OrderShippingCard({
   return (
     <Card>
       <CardHeader
-        title="Shipping address"
+        title="Delivery address"
+        description={editing ? "Saving re-computes place of supply and pushes the change to the audit ERP." : undefined}
         actions={
           editing ? (
-            <button
-              type="button"
-              onClick={cancel}
-              className="inline-flex items-center gap-1 text-[12px] font-medium text-ink-500 hover:text-ink-800"
-            >
-              <X className="h-3.5 w-3.5" /> Cancel
-            </button>
+            <Button variant="ghost" size="sm" onClick={cancel} icon={<X className="h-3.5 w-3.5" />}>Cancel</Button>
           ) : (
-            <button
-              type="button"
-              onClick={() => setEditing(true)}
-              className="inline-flex items-center gap-1 text-[12px] font-medium text-brand-700 hover:text-brand-800"
-            >
-              <Pencil className="h-3.5 w-3.5" /> Edit
-            </button>
+            <Button variant="ghost" size="sm" onClick={() => setEditing(true)} icon={<Pencil className="h-3.5 w-3.5" />}>Edit</Button>
           )
         }
       />
 
       {editing ? (
-        <form onSubmit={submit} className="grid gap-3">
-          <Field label="Receiver name">
-            <input
-              className={inputClass}
-              value={form.receiverName}
-              onChange={(e) => set("receiverName", e.target.value)}
-            />
-          </Field>
-          <Field label="Delivery mobile">
-            <input
-              className={inputClass}
-              inputMode="numeric"
-              placeholder="10-digit number"
-              value={form.receiverPhone}
-              onChange={(e) =>
-                set("receiverPhone", e.target.value.replace(/\D/g, "").slice(0, 10))
-              }
-            />
-          </Field>
-          <Field label="Address line 1">
-            <input
-              className={inputClass}
-              value={form.line1}
-              onChange={(e) => set("line1", e.target.value)}
-            />
-          </Field>
-          <Field label="Address line 2 (optional)">
-            <input
-              className={inputClass}
-              value={form.line2}
-              onChange={(e) => set("line2", e.target.value)}
-            />
-          </Field>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="City">
-              <input
-                className={inputClass}
-                value={form.city}
-                onChange={(e) => set("city", e.target.value)}
-              />
+        <form onSubmit={submit} className="space-y-4">
+          <FormGrid cols={2}>
+            <Field label="Receiver name" htmlFor="sa-name" required>
+              <Input id="sa-name" value={form.receiverName} onChange={(e) => set("receiverName", e.target.value)} />
             </Field>
-            <Field label="Pincode">
-              <input
-                className={inputClass}
-                inputMode="numeric"
-                value={form.pincode}
-                onChange={(e) =>
-                  set("pincode", e.target.value.replace(/\D/g, "").slice(0, 6))
-                }
-              />
+            <Field label="Delivery mobile" htmlFor="sa-phone" required>
+              <Input id="sa-phone" inputMode="numeric" placeholder="10 digits" value={form.receiverPhone} onChange={(e) => set("receiverPhone", e.target.value.replace(/\D/g, "").slice(0, 10))} className="font-mono" />
+            </Field>
+            <Field label="Address line 1" htmlFor="sa-l1" required className="md:col-span-2">
+              <Input id="sa-l1" value={form.line1} onChange={(e) => set("line1", e.target.value)} />
+            </Field>
+            <Field label="Address line 2" htmlFor="sa-l2" className="md:col-span-2">
+              <Input id="sa-l2" value={form.line2} onChange={(e) => set("line2", e.target.value)} />
+            </Field>
+            <Field label="City" htmlFor="sa-city" required>
+              <Input id="sa-city" value={form.city} onChange={(e) => set("city", e.target.value)} />
+            </Field>
+            <Field label="Pincode" htmlFor="sa-pin" required>
+              <Input id="sa-pin" inputMode="numeric" value={form.pincode} onChange={(e) => set("pincode", e.target.value.replace(/\D/g, "").slice(0, 6))} className="font-mono" />
+            </Field>
+            <Field label="State" htmlFor="sa-state" required className="md:col-span-2">
+              <Select id="sa-state" value={form.state} onChange={(e) => set("state", e.target.value)}>
+                {/* Keep any pre-existing free-text state that isn't in the
+                    canonical list so we never blank it out on save. */}
+                {form.state && !INDIAN_STATES.includes(form.state) ? <option value={form.state}>{form.state}</option> : null}
+                <option value="">Select state</option>
+                {INDIAN_STATES.map((st) => (
+                  <option key={st} value={st}>{st}</option>
+                ))}
+              </Select>
+            </Field>
+          </FormGrid>
+
+          <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-4">
+            <Field label="Account mobile (OTP login)" htmlFor="sa-account" hint="Shared across all of this customer's orders — change it only if the customer changed their number.">
+              <Input id="sa-account" inputMode="numeric" placeholder="10 digits" value={form.accountPhone} onChange={(e) => set("accountPhone", e.target.value.replace(/\D/g, "").slice(0, 10))} className="font-mono" />
             </Field>
           </div>
-          <Field label="State">
-            <select
-              className={inputClass}
-              value={form.state}
-              onChange={(e) => set("state", e.target.value)}
-            >
-              {/* Keep any pre-existing free-text state that isn't in the
-                  canonical list so we never blank it out on save. */}
-              {form.state && !INDIAN_STATES.includes(form.state) ? (
-                <option value={form.state}>{form.state}</option>
-              ) : null}
-              <option value="">Select state…</option>
-              {INDIAN_STATES.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
-          </Field>
 
-          <div className="mt-1 rounded-lg border border-amber-200 bg-amber-50/70 p-3">
-            <Field label="Account mobile (login)">
-              <input
-                className={inputClass}
-                inputMode="numeric"
-                placeholder="10-digit number"
-                value={form.accountPhone}
-                onChange={(e) =>
-                  set("accountPhone", e.target.value.replace(/\D/g, "").slice(0, 10))
-                }
-              />
-            </Field>
-            <p className="mt-1.5 text-[11px] leading-snug text-amber-800">
-              This is the customer&apos;s OTP login number, shared across all
-              their orders. Changing it updates the account everywhere — only
-              edit if the customer changed their number.
-            </p>
-          </div>
-
-          <div className="flex items-center justify-end gap-3 pt-1">
-            {error ? (
-              <span className="text-[12px] text-red-700">{error}</span>
-            ) : null}
-            <Button
-              busy={pending}
-              icon={<Save className="h-3.5 w-3.5" />}
-              type="submit"
-            >
-              Save & push to audit
-            </Button>
+          <FormError>{error}</FormError>
+          <div className="flex items-center justify-end gap-2 border-t border-ink-100/70 pt-4">
+            <Button type="button" variant="secondary" onClick={cancel} disabled={pending}>Cancel</Button>
+            <Button busy={pending} icon={<Save className="h-3.5 w-3.5" />} type="submit">Save address</Button>
           </div>
         </form>
       ) : (
-        <div className="flex items-start gap-3">
-          <div className="h-9 w-9 rounded-full bg-brand-100 text-brand-700 flex items-center justify-center font-bold text-[14px] shrink-0">
-            {(address.receiverName ?? "?").slice(0, 1).toUpperCase()}
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="font-semibold text-ink-900 leading-tight">
-              {address.receiverName}
-            </p>
-            {address.receiverPhone ? (
-              <p className="mt-0.5">
-                <span className="inline-flex items-center gap-1 rounded-md bg-ink-50 px-2 py-0.5 text-[12px] font-mono text-ink-800">
-                  +91 {address.receiverPhone}
-                </span>
-              </p>
-            ) : null}
-            <p className="mt-2 text-[13px] text-ink-700 leading-snug">
-              {address.line1}
-              {address.line2 ? `, ${address.line2}` : ""}
-              <br />
-              <span className="text-ink-600">
-                {address.city}, {address.state}{" "}
-                <span className="font-mono">{address.pincode}</span>
-              </span>
-            </p>
+        <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_200px]">
+          <p className="text-[13.5px] leading-relaxed text-ink-800">
+            {address.line1}
+            {address.line2 ? `, ${address.line2}` : ""}
+            <br />
+            {address.city}, {address.state} <span className="font-mono">{address.pincode}</span>
+          </p>
+          <div className="text-[13px]">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-500">Receiver</div>
+            <div className="mt-1 font-semibold text-ink-900">{address.receiverName}</div>
+            {address.receiverPhone ? <div className="font-mono text-ink-600">+91 {address.receiverPhone}</div> : null}
           </div>
         </div>
       )}
     </Card>
-  );
-}
-
-const inputClass =
-  "w-full h-9 px-3 text-[13px] rounded-lg bg-white border border-ink-200 placeholder:text-ink-400 " +
-  "focus:outline-none focus:border-ink-400 focus:ring-2 focus:ring-brand-300/30 transition";
-
-function Field({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <label className="block">
-      <span className="text-[12px] font-semibold text-ink-700">{label}</span>
-      <div className="mt-1.5">{children}</div>
-    </label>
   );
 }

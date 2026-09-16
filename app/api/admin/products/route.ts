@@ -10,13 +10,13 @@ import {
   productGrades,
   productBundles,
 } from "@/db/schema";
-import { isResponse, requirePermission } from "@/server/admin-guard";
+import { isResponse, requirePermission, requireAnyPermission } from "@/server/admin-guard";
 import { invalidateCatalog } from "@/server/cache";
 import { buildQrPayload, renderQrSvg } from "@/lib/qr";
 import { logAdminActivity } from "@/server/activity";
 
 export async function GET(req: Request) {
-  const guard = await requirePermission("catalog.read");
+  const guard = await requireAnyPermission("products.read", "catalog.read");
   if (isResponse(guard)) return guard;
   const url = new URL(req.url);
   const q = url.searchParams.get("q") ?? "";
@@ -177,10 +177,14 @@ const Body = z.object({
   organizationMrp: z.number().int().optional(),
   isMagicBox: z.boolean().optional(),
   weightPerUnit: z.number().optional(),
+  // Product creation redesign: uniform type + pricing-step fields.
+  bundleGender: z.enum(["Boys", "Girls"]).nullable().optional(),
+  gstRate: z.number().min(0).max(100).nullable().optional(),
+  priceEffectiveFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
 });
 
 export async function POST(req: Request) {
-  const guard = await requirePermission("catalog.write");
+  const guard = await requireAnyPermission("products.write", "catalog.write");
   if (isResponse(guard)) return guard;
   const parsed = await parseBody(req, Body);
   if (parsed instanceof NextResponse) return parsed;
@@ -215,6 +219,9 @@ export async function POST(req: Request) {
       organizationMrp: body.organizationMrp ?? null,
       isMagicBox: body.isMagicBox ?? body.kind === "magic_box",
       kind: body.kind ?? "book",
+      bundleGender: body.bundleGender ?? null,
+      gstRate: body.gstRate != null ? String(body.gstRate) : null,
+      priceEffectiveFrom: body.priceEffectiveFrom ?? null,
       weightPerUnit: body.weightPerUnit != null ? body.weightPerUnit.toString() : null,
     })
     .returning();

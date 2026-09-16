@@ -9,9 +9,9 @@ import {
   ChevronsLeft,
   ChevronsRight,
   Search,
-  Download,
   Lock,
   Unlock,
+  BadgeCheck,
 } from "lucide-react";
 import {
   Card,
@@ -19,8 +19,10 @@ import {
   Td,
   Tr,
   Badge,
+  Button,
   EmptyState,
   Toolbar,
+  FilterSelect,
 } from "@/components/admin/ui/primitives";
 import { cn } from "@/lib/cn";
 import { STUDENTS_PAGE_SIZE as PAGE_SIZE } from "./_constants";
@@ -416,29 +418,34 @@ export function StudentsBrowser({
     }
   };
 
-  const selectClass =
-    "h-9 px-2.5 rounded-lg border border-ink-200 text-[13px] bg-white disabled:opacity-70 disabled:cursor-not-allowed";
-  const navBtn =
-    "inline-flex items-center justify-center h-8 w-8 border border-ink-200 rounded-lg hover:bg-cream-50 transition-colors";
-  const navBtnDisabled =
-    "inline-flex items-center justify-center h-8 w-8 border border-ink-100 rounded-lg text-ink-300 cursor-not-allowed";
+  const pageNav = (enabled: boolean) =>
+    cn(
+      "inline-flex h-8 items-center gap-1 rounded-lg border px-2.5 text-[12.5px] font-semibold transition-colors",
+      enabled
+        ? "border-ink-200 bg-white text-ink-800 hover:bg-cream-100 hover:border-ink-300"
+        : "border-ink-100 bg-cream-50 text-ink-300 cursor-not-allowed"
+    );
+
+  const gradeChoices =
+    filters.schoolCode && gradesBySchool[filters.schoolCode]
+      ? gradesBySchool[filters.schoolCode].map((name) => ({ name }))
+      : gradeList;
 
   return (
     <div>
-      <Toolbar>
-        <div className="relative flex-1 min-w-[200px]">
+      {/* ── Filters ─────────────────────────────────────────────────── */}
+      <Toolbar className="flex-col items-stretch gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+        <div className="relative min-w-[200px] flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-ink-400 pointer-events-none" />
           <input
             type="search"
             defaultValue={filters.q}
             onChange={(e) => setQDebounced(e.target.value)}
-            placeholder="Search by name, enrollment, email, mobile…"
+            placeholder="Search name, enrollment, mobile…"
             className="w-full h-9 pl-9 pr-3 text-[13px] rounded-lg bg-cream-50 border border-ink-100 placeholder:text-ink-400 focus:outline-none focus:bg-white focus:border-ink-300 focus:ring-2 focus:ring-brand-300/40 transition-[background,border,box-shadow]"
           />
         </div>
-        <select
-          value={filters.schoolCode}
-          onChange={(e) => {
+        <FilterSelect label="School" noAll={!!lockedSchoolCode} className="w-[300px]" value={filters.schoolCode} onChange={(e) => {
             const next = e.target.value;
             // Reset grade if it isn't available at the new school.
             const availableGrades = next ? (gradesBySchool[next] ?? []) : null;
@@ -446,148 +453,78 @@ export function StudentsBrowser({
             setFilter({ schoolCode: next, ...(dropGrade ? { grade: "" } : {}) });
           }}
           disabled={!!lockedSchoolCode}
-          className={selectClass}
         >
-          {!lockedSchoolCode && <option value="">All schools</option>}
           {schoolList.filter((s) => s.code).map((s) => (
             <option key={s.code!} value={s.code!}>
               {s.code} — {s.name ?? ""}
             </option>
           ))}
-        </select>
-        <select
-          value={filters.grade}
-          onChange={(e) => setFilter({ grade: e.target.value })}
-          className={selectClass}
-        >
-          <option value="">All grades</option>
-          {(filters.schoolCode && gradesBySchool[filters.schoolCode]
-            ? gradesBySchool[filters.schoolCode].map((name) => ({ name }))
-            : gradeList
-          ).map((g) => (
+        </FilterSelect>
+        <FilterSelect label="Grade" value={filters.grade} onChange={(e) => setFilter({ grade: e.target.value })} className="min-w-[130px]">
+          {gradeChoices.map((g) => (
             <option key={g.name ?? ""} value={g.name ?? ""}>
               {g.name ?? ""}
             </option>
           ))}
-        </select>
-        <select
-          value={filters.enabled}
-          onChange={(e) => setFilter({ enabled: e.target.value })}
-          className={selectClass}
-        >
-          <option value="">Enabled: any</option>
-          <option value="1">Enabled only</option>
-          <option value="0">Disabled only</option>
-        </select>
-        <select
-          value={filters.verified}
-          onChange={(e) => setFilter({ verified: e.target.value })}
-          className={selectClass}
-        >
-          <option value="">Verified: any</option>
-          <option value="1">Verified only</option>
-          <option value="0">Unverified only</option>
-        </select>
-        <select
-          value={filters.newStudent}
-          onChange={(e) => setFilter({ newStudent: e.target.value })}
-          className={selectClass}
-        >
-          <option value="">New student: any</option>
-          <option value="1">New students only</option>
-          <option value="0">Returning only</option>
-        </select>
-        <select
-          value={filters.recent}
-          onChange={(e) => setFilter({ recent: e.target.value })}
-          className={selectClass}
-          title="Filter by last update — synced_at bumps on every MCB grant and edit"
-        >
-          <option value="">All time</option>
-          <option value="1d">Last 24 hours</option>
-          <option value="7d">Last 7 days</option>
-          <option value="30d">Last 30 days</option>
-          <option value="90d">Last 90 days</option>
-        </select>
-        {/* Export honours the current filter set (page is irrelevant — the
-            route emits every matching row, not just this slice). */}
-        <a
-          href={`/api/admin/students/export?${buildQs({ ...filters, page: 1 })}`}
-          className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border border-ink-200 bg-white text-[13px] font-semibold text-ink-800 hover:bg-cream-50 transition-colors"
-          title={`Download the ${total.toLocaleString()} filtered student${total === 1 ? "" : "s"} as Excel`}
-        >
-          <Download className="h-3.5 w-3.5" />
-          Export Excel
-        </a>
+        </FilterSelect>
+        <FilterSelect label="Enabled" value={filters.enabled} onChange={(e) => setFilter({ enabled: e.target.value })} className="min-w-[130px]">
+          <option value="1">Yes</option>
+          <option value="0">No</option>
+        </FilterSelect>
+        <FilterSelect label="Verified" value={filters.verified} onChange={(e) => setFilter({ verified: e.target.value })} className="min-w-[130px]">
+          <option value="1">Yes</option>
+          <option value="0">No</option>
+        </FilterSelect>
+        <FilterSelect label="New student" value={filters.newStudent} onChange={(e) => setFilter({ newStudent: e.target.value })} className="min-w-[130px]">
+          <option value="1">Yes</option>
+          <option value="0">No</option>
+        </FilterSelect>
       </Toolbar>
 
       {total > 0 && (filters.newStudent === "1" || filters.newStudent === "0") && (
-        <div className="mb-2 rounded-lg border border-brand-200 bg-brand-50/70 px-3 py-2 flex flex-wrap items-center gap-3 text-[12.5px]">
-          <span className="text-brand-900 font-semibold">
-            Bulk action — {total.toLocaleString()} filtered{" "}
-            {filters.newStudent === "1" ? "(New students)" : "(Returning)"}
+        <div className="mb-3 flex flex-wrap items-center gap-3 rounded-xl border border-brand-200 bg-brand-50/70 px-4 py-2.5 text-[12.5px]">
+          <span className="font-semibold text-brand-900">
+            {total.toLocaleString()} {filters.newStudent === "1" ? "new" : "returning"} student{total === 1 ? "" : "s"} in this filter
           </span>
-          {filters.newStudent === "0" && (
-            <button
-              type="button"
-              disabled={bulkBusy}
-              onClick={() => runBulkSetNew(true)}
-              className={
-                "inline-flex items-center gap-1 rounded-md px-2.5 py-1 font-semibold " +
-                (bulkBusy
-                  ? "bg-ink-200 text-ink-500 cursor-wait"
-                  : "bg-brand-600 text-white hover:bg-brand-700")
-              }
-            >
-              Mark all as New
-            </button>
-          )}
-          {filters.newStudent === "1" && (
-            <button
-              type="button"
-              disabled={bulkBusy}
-              onClick={() => runBulkSetNew(false)}
-              className={
-                "inline-flex items-center gap-1 rounded-md px-2.5 py-1 font-semibold " +
-                (bulkBusy
-                  ? "bg-ink-100 text-ink-400 cursor-wait"
-                  : "border border-ink-300 bg-white text-ink-800 hover:bg-cream-50")
-              }
-            >
-              Unmark all
-            </button>
-          )}
-          {bulkMsg && (
-            <span className="text-ink-700">{bulkMsg}</span>
-          )}
+          <Button
+            type="button"
+            size="sm"
+            variant={filters.newStudent === "0" ? "primary" : "secondary"}
+            busy={bulkBusy}
+            onClick={() => runBulkSetNew(filters.newStudent === "0")}
+          >
+            {filters.newStudent === "0" ? "Mark all as New" : "Unmark all"}
+          </Button>
+          {bulkMsg && <span className="text-ink-700">{bulkMsg}</span>}
         </div>
       )}
 
-      {/* Website access — one switch. Everything surgical is behind
-          Advanced so the common case is unmistakable. */}
+      {/* ── Website access — one switch. Everything surgical is behind
+          Advanced so the common case is unmistakable. ───────────────── */}
       <div
-        className={
-          "mb-3 rounded-xl border px-4 py-3.5 " +
-          (accessClosed
-            ? "border-brand-300 bg-brand-50/70"
-            : "border-ink-100 bg-white")
-        }
+        className={cn(
+          "mb-4 rounded-2xl border px-4 py-3",
+          accessClosed ? "border-brand-300 bg-brand-50/70" : "border-ink-100/70 bg-white"
+        )}
       >
         <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
-          {accessClosed ? (
-            <Lock className="h-5 w-5 text-brand-700 shrink-0" />
-          ) : (
-            <Unlock className="h-5 w-5 text-emerald-600 shrink-0" />
-          )}
+          <span
+            className={cn(
+              "grid h-9 w-9 place-items-center rounded-xl",
+              accessClosed ? "bg-brand-100 text-brand-700" : "bg-emerald-50 text-emerald-600"
+            )}
+          >
+            {accessClosed ? <Lock className="h-4 w-4" /> : <Unlock className="h-4 w-4" />}
+          </span>
           <div className="min-w-0">
             <div className="text-[13px] font-semibold text-ink-900">
               Website is{" "}
               {accessClosed === null ? (
                 <span className="text-ink-400">…</span>
               ) : accessClosed ? (
-                <span className="text-brand-700">CLOSED</span>
+                <span className="text-brand-700">closed</span>
               ) : (
-                <span className="text-emerald-700">OPEN</span>
+                <span className="text-emerald-700">open</span>
               )}
             </div>
             <div className="text-[12px] text-ink-500">
@@ -600,9 +537,14 @@ export function StudentsBrowser({
           </div>
 
           <div className="ml-auto flex items-center gap-3">
-            {accessMsg && (
-              <span className="text-[12px] text-ink-700">{accessMsg}</span>
-            )}
+            {accessMsg && <span className="text-[12px] text-ink-700">{accessMsg}</span>}
+            <button
+              type="button"
+              onClick={() => setShowAdvanced((v) => !v)}
+              className="text-[12px] font-semibold text-ink-500 hover:text-ink-800 transition-colors"
+            >
+              {showAdvanced ? "Hide advanced" : "Advanced"}
+            </button>
             {/* The switch itself. Reads as a physical toggle so there is
                 nothing to interpret — left is open, right is closed. */}
             <button
@@ -612,237 +554,175 @@ export function StudentsBrowser({
               aria-label="Close the website"
               disabled={accessBusy || accessClosed === null}
               onClick={() => toggleSite(!accessClosed)}
-              className={
-                "relative h-8 w-[68px] rounded-full transition-colors shrink-0 " +
-                (accessBusy || accessClosed === null
+              className={cn(
+                "relative h-7 w-[56px] rounded-full transition-colors shrink-0",
+                accessBusy || accessClosed === null
                   ? "bg-ink-200 cursor-not-allowed"
                   : accessClosed
                     ? "bg-brand-600 hover:bg-brand-700"
-                    : "bg-emerald-500 hover:bg-emerald-600")
-              }
+                    : "bg-emerald-500 hover:bg-emerald-600"
+              )}
             >
               <span
-                className={
-                  "absolute top-1 h-6 w-6 rounded-full bg-white shadow transition-all " +
-                  (accessClosed ? "left-[38px]" : "left-1")
-                }
+                className={cn(
+                  "absolute top-1 h-5 w-5 rounded-full bg-white shadow transition-all",
+                  accessClosed ? "left-[30px]" : "left-1"
+                )}
               />
-              <span
-                className={
-                  "absolute top-0 h-8 text-[10px] font-bold uppercase tracking-wide text-white leading-8 " +
-                  (accessClosed ? "left-2.5" : "right-2")
-                }
-              >
-                {accessBusy ? "…" : accessClosed ? "Off" : "On"}
-              </span>
             </button>
           </div>
         </div>
 
-        {/* Surgical, filter-scoped access — the old two buttons. Folded
-            away because 99% of the time the master switch is what's
-            wanted, and an unnoticed filter made them dangerous. */}
-        <div className="mt-2.5 border-t border-ink-100 pt-2.5">
-          <button
-            type="button"
-            onClick={() => setShowAdvanced((v) => !v)}
-            className="text-[12px] font-semibold text-ink-500 hover:text-ink-800 transition-colors"
-          >
-            {showAdvanced ? "Hide" : "Advanced"} — access for the{" "}
-            {total.toLocaleString()} filtered student{total === 1 ? "" : "s"}
-          </button>
-          {showAdvanced && (
-            <div className="mt-2.5 flex flex-wrap items-center gap-2">
-              <span className="text-[12px] text-ink-500">
-                Applies to your current filters only (school, grade, search) —
-                use this to shut one school without touching the rest.
-              </span>
-              <div className="ml-auto flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  disabled={bulkBusy || total === 0}
-                  onClick={() => runBulkSetEnabled(false)}
-                  className={
-                    "inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border text-[13px] font-semibold transition-colors " +
-                    (bulkBusy || total === 0
-                      ? "border-ink-100 text-ink-400 cursor-not-allowed"
-                      : "border-ink-200 bg-white text-ink-800 hover:bg-cream-50")
-                  }
-                >
-                  <Lock className="h-3.5 w-3.5" />
-                  Disable these ({total.toLocaleString()})
-                </button>
-                <button
-                  type="button"
-                  disabled={bulkBusy || total === 0}
-                  onClick={() => runBulkSetEnabled(true)}
-                  className={
-                    "inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border text-[13px] font-semibold transition-colors " +
-                    (bulkBusy || total === 0
-                      ? "border-ink-100 text-ink-400 cursor-not-allowed"
-                      : "border-ink-200 bg-white text-ink-800 hover:bg-cream-50")
-                  }
-                >
-                  <Unlock className="h-3.5 w-3.5" />
-                  Enable these
-                </button>
-              </div>
-              {bulkMsg && (
-                <div className="w-full text-[12px] text-ink-700">{bulkMsg}</div>
-              )}
+        {showAdvanced && (
+          <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-ink-100/70 pt-3">
+            <span className="text-[12px] text-ink-500">
+              Access for the <b className="text-ink-800">{total.toLocaleString()}</b> student{total === 1 ? "" : "s"} in the current filter only —
+              use this to shut one school without touching the rest.
+            </span>
+            <div className="ml-auto flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                disabled={bulkBusy || total === 0}
+                onClick={() => runBulkSetEnabled(false)}
+                icon={<Lock className="h-3.5 w-3.5" />}
+              >
+                Disable these
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                disabled={bulkBusy || total === 0}
+                onClick={() => runBulkSetEnabled(true)}
+                icon={<Unlock className="h-3.5 w-3.5" />}
+              >
+                Enable these
+              </Button>
             </div>
-          )}
-        </div>
+            {bulkMsg && <div className="w-full text-[12px] text-ink-700">{bulkMsg}</div>}
+          </div>
+        )}
       </div>
 
-      <div className="mb-1 h-4 text-[11px] text-ink-400">
-        {busy ? "Searching…" : `${total.toLocaleString()} match${total === 1 ? "" : "es"} · page ${filters.page} / ${lastPage}`}
-      </div>
-
-      <Card padded={false} className={cn(busy && "opacity-70 transition-opacity")}>
+      {/* ── Table ───────────────────────────────────────────────────── */}
+      <Card padded={false} className={cn("overflow-hidden", busy && "opacity-70 transition-opacity")}>
         {rows.length === 0 ? (
           <EmptyState
             icon={GraduationCap}
-            title={filters.q ? `No students match "${filters.q}"` : "No students"}
-            description="Try clearing filters or run sync."
+            title={filters.q ? `No students match “${filters.q}”` : "No students"}
+            description="Try widening the search or clearing a filter."
           />
         ) : (
           <>
-            <table className="w-full text-[13.5px] border-collapse">
-              <thead className="bg-gradient-to-r from-brand-50 via-cream-50 to-brand-50 border-b border-ink-200">
-                <tr>
-                  <th className="px-3 py-3 text-left text-[12px] font-bold uppercase tracking-wider text-ink-800">Enrollment</th>
-                  <th className="px-3 py-3 text-left text-[12px] font-bold uppercase tracking-wider text-ink-800">Status</th>
-                  <th className="px-3 py-3 text-left text-[12px] font-bold uppercase tracking-wider text-ink-800">Name</th>
-                  <th className="px-3 py-3 text-left text-[12px] font-bold uppercase tracking-wider text-ink-800">Parent</th>
-                  <th className="px-3 py-3 text-left text-[12px] font-bold uppercase tracking-wider text-ink-800">Grade · Section</th>
-                  <th className="px-3 py-3 text-left text-[12px] font-bold uppercase tracking-wider text-ink-800">School</th>
-                  <th className="px-3 py-3 text-left text-[12px] font-bold uppercase tracking-wider text-ink-800">Joining Date</th>
-                  <th className="px-3 py-3 text-left text-[12px] font-bold uppercase tracking-wider text-ink-800">New</th>
-                  <th className="px-3 py-3 text-left text-[12px] font-bold uppercase tracking-wider text-ink-800">Verified</th>
-                  <th className="px-3 py-3 text-left text-[12px] font-bold uppercase tracking-wider text-ink-800">Last login (IST)</th>
-                  <th className="px-3 py-3 text-left text-[12px] font-bold uppercase tracking-wider text-ink-800">Last active</th>
-                  <th className="px-3 py-3 text-left text-[12px] font-bold uppercase tracking-wider text-ink-800">Access</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((s) => (
-                  <Tr key={s.id}>
-                    <Td>
-                      <Link href={`/admin/students/${s.id}`} className="font-mono text-[12px] font-semibold text-ink-800 hover:text-brand-700">
-                        {s.enrollmentNumber ?? "—"}
-                      </Link>
-                      {s.referenceCode && s.referenceCode !== s.enrollmentNumber ? (
-                        <div className="font-mono text-[10px] text-ink-500">ref: {s.referenceCode}</div>
-                      ) : null}
-                    </Td>
-                    <Td>
-                      <Badge tone={s.enabled ? "success" : "default"} dot size="sm">
-                        {s.enabled ? "Enabled" : "Disabled"}
-                      </Badge>
-                    </Td>
-                    <Td>
-                      <Link href={`/admin/students/${s.id}`} className="font-semibold text-ink-900 hover:text-brand-700">
-                        {[s.firstName, s.lastName].filter(Boolean).join(" ") || s.erpName}
-                      </Link>
-                    </Td>
-                    <Td muted>
-                      {s.parentPhone ? (
-                        <span className="font-mono text-[11px]">{s.parentPhone}</span>
-                      ) : (
-                        <span className="text-ink-400 text-[12px]">—</span>
-                      )}
-                    </Td>
-                    <Td muted>
-                      {s.displayGrade ?? s.grade ?? "—"}
-                      {s.section ? ` · ${s.section}` : ""}
-                    </Td>
-                    <Td muted>
-                      <span className="font-mono text-[11px]">{s.schoolCode ?? "—"}</span>
-                    </Td>
-                    <Td muted>{s.joiningDate ?? "—"}</Td>
-                    <Td>
-                      {s.isNewStudent ? (
-                        <Badge tone="warning" size="sm">New</Badge>
-                      ) : (
-                        <span className="text-ink-400 text-[12px]">—</span>
-                      )}
-                    </Td>
-                    <Td>
-                      {s.isVerified ? (
-                        <div className="flex flex-col gap-0.5">
-                          <Badge tone="info" size="sm">✓</Badge>
-                          {s.verifiedAt ? (
-                            <span className="text-[10px] text-ink-500 whitespace-nowrap">{fmtIST(s.verifiedAt)}</span>
-                          ) : null}
-                        </div>
-                      ) : (
-                        <span className="text-ink-400 text-[12px]">—</span>
-                      )}
-                    </Td>
-                    <Td muted>
-                      <span className="text-[11px] whitespace-nowrap">{fmtIST(s.parentLastLoginAt)}</span>
-                    </Td>
-                    <Td muted>
-                      {s.lastActiveAt ? (
-                        <span className="text-[11px] whitespace-nowrap">{fmtIST(s.lastActiveAt)}</span>
-                      ) : (
-                        <span className="text-ink-400 text-[12px]">—</span>
-                      )}
-                    </Td>
-                    <Td>
-                      {s.mcbAccessGranted ? (
-                        <Badge tone="success" size="sm">Granted</Badge>
-                      ) : (
-                        <span className="text-ink-400 text-[12px]">—</span>
-                      )}
-                    </Td>
-                  </Tr>
-                ))}
-              </tbody>
-            </table>
-            <div className="flex items-center justify-between p-3 border-t border-ink-100/70 text-[12px]">
-              <span className="text-ink-500">
-                Showing {offset + 1}-{showingTo} of {total.toLocaleString()}
-              </span>
-              <div className="flex items-center gap-1.5">
-                {filters.page > 1 ? (
-                  <button onClick={() => goPage(1)} className={navBtn} aria-label="First page" title="First page">
-                    <ChevronsLeft className="h-4 w-4" />
-                  </button>
-                ) : (
-                  <span className={navBtnDisabled}><ChevronsLeft className="h-4 w-4" /></span>
-                )}
-                {filters.page > 1 ? (
-                  <button onClick={() => goPage(filters.page - 1)} className={navBtn} aria-label="Previous page" title="Previous page">
-                    <ChevronLeft className="h-4 w-4" />
-                  </button>
-                ) : (
-                  <span className={navBtnDisabled}><ChevronLeft className="h-4 w-4" /></span>
-                )}
-                <span className="px-3 text-ink-700 font-medium tabular-nums">
-                  Page {filters.page} of {lastPage}
-                </span>
-                {filters.page < lastPage ? (
-                  <button onClick={() => goPage(filters.page + 1)} className={navBtn} aria-label="Next page" title="Next page">
-                    <ChevronRight className="h-4 w-4" />
-                  </button>
-                ) : (
-                  <span className={navBtnDisabled}><ChevronRight className="h-4 w-4" /></span>
-                )}
-                {filters.page < lastPage ? (
-                  <button onClick={() => goPage(lastPage)} className={navBtn} aria-label="Last page" title="Last page">
-                    <ChevronsRight className="h-4 w-4" />
-                  </button>
-                ) : (
-                  <span className={navBtnDisabled}><ChevronsRight className="h-4 w-4" /></span>
-                )}
-              </div>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr>
+                    <Th>Student</Th>
+                    <Th>Class</Th>
+                    <Th>School</Th>
+                    <Th>Parent</Th>
+                    <Th>Status</Th>
+                    <Th>Verified</Th>
+                    <Th>Last active</Th>
+                    <Th>MCB</Th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((s) => {
+                    const name = [s.firstName, s.lastName].filter(Boolean).join(" ") || s.erpName || "—";
+                    return (
+                      <Tr key={s.id} className={cn(!s.enabled && "opacity-70")}>
+                        <Td>
+                          <Link href={`/admin/students/${s.id}`} className="group/name block">
+                            <span className="block font-semibold text-ink-900 group-hover/name:text-brand-700">{name}</span>
+                            <span className="mt-0.5 block font-mono text-[11.5px] text-ink-500">
+                              {s.enrollmentNumber ?? "—"}
+                              {s.referenceCode && s.referenceCode !== s.enrollmentNumber ? (
+                                <span className="text-ink-400"> · ref {s.referenceCode}</span>
+                              ) : null}
+                            </span>
+                          </Link>
+                        </Td>
+                        <Td>
+                          <span className="whitespace-nowrap">{s.displayGrade ?? s.grade ?? "—"}</span>
+                          {s.section ? <span className="text-ink-400"> · {s.section}</span> : null}
+                        </Td>
+                        <Td muted>
+                          <span className="font-mono text-[12px]">{s.schoolCode ?? "—"}</span>
+                        </Td>
+                        <Td muted>
+                          {s.parentPhone ? <span className="font-mono text-[12px]">{s.parentPhone}</span> : <span className="text-ink-300">—</span>}
+                        </Td>
+                        <Td>
+                          <span className="inline-flex flex-wrap items-center gap-1">
+                            <Badge tone={s.enabled ? "success" : "default"} dot size="sm">
+                              {s.enabled ? "Enabled" : "Disabled"}
+                            </Badge>
+                            {s.isNewStudent ? <Badge tone="warning" size="sm">New</Badge> : null}
+                          </span>
+                        </Td>
+                        <Td>
+                          {s.isVerified ? (
+                            <span
+                              className="inline-flex items-center gap-1 text-[12px] font-medium text-sky-700"
+                              title={s.verifiedAt ? `Verified ${fmtIST(s.verifiedAt)}` : "Verified by the parent"}
+                            >
+                              <BadgeCheck className="h-4 w-4" />
+                              {s.verifiedAt ? fmtIST(s.verifiedAt).split(",")[0] : "Yes"}
+                            </span>
+                          ) : (
+                            <span className="text-ink-300">—</span>
+                          )}
+                        </Td>
+                        <Td muted>
+                          <span className="whitespace-nowrap text-[12px]">
+                            {s.lastActiveAt ? fmtIST(s.lastActiveAt) : s.parentLastLoginAt ? fmtIST(s.parentLastLoginAt) : "—"}
+                          </span>
+                        </Td>
+                        <Td>
+                          {s.mcbAccessGranted ? <Badge tone="success" size="sm">Granted</Badge> : <span className="text-ink-300">—</span>}
+                        </Td>
+                      </Tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
+            <nav aria-label="Pagination" className="flex flex-wrap items-center justify-between gap-3 border-t border-ink-100 px-4 py-2.5">
+              <p className="text-[12.5px] text-ink-500 tabular-nums">
+                {busy ? (
+                  "Searching…"
+                ) : (
+                  <>
+                    Showing <span className="font-semibold text-ink-800">{(offset + 1).toLocaleString()}–{showingTo.toLocaleString()}</span> of{" "}
+                    {total.toLocaleString()} student{total === 1 ? "" : "s"}
+                  </>
+                )}
+              </p>
+              <div className="flex items-center gap-1.5">
+                <button type="button" onClick={() => goPage(1)} disabled={filters.page <= 1} className={pageNav(filters.page > 1)} aria-label="First page">
+                  <ChevronsLeft className="h-3.5 w-3.5" />
+                </button>
+                <button type="button" onClick={() => goPage(filters.page - 1)} disabled={filters.page <= 1} className={pageNav(filters.page > 1)} aria-label="Previous page">
+                  <ChevronLeft className="h-3.5 w-3.5" /> Prev
+                </button>
+                <span className="px-2 text-[12.5px] text-ink-500 tabular-nums">
+                  Page <span className="font-semibold text-ink-800">{filters.page.toLocaleString()}</span> of {lastPage.toLocaleString()}
+                </span>
+                <button type="button" onClick={() => goPage(filters.page + 1)} disabled={filters.page >= lastPage} className={pageNav(filters.page < lastPage)} aria-label="Next page">
+                  Next <ChevronRight className="h-3.5 w-3.5" />
+                </button>
+                <button type="button" onClick={() => goPage(lastPage)} disabled={filters.page >= lastPage} className={pageNav(filters.page < lastPage)} aria-label="Last page">
+                  <ChevronsRight className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            </nav>
           </>
         )}
       </Card>
     </div>
   );
 }
-

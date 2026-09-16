@@ -1,7 +1,9 @@
 "use client";
 
 import { forwardRef, useImperativeHandle, useRef, useState, useTransition } from "react";
-import { Button } from "@/components/admin/ui/primitives";
+import { useRouter } from "next/navigation";
+import { Button, Field, Input, Select, Checkbox, FormGrid, FormError } from "@/components/admin/ui/primitives";
+import { Dialog } from "@/components/admin/ui/dialog";
 import { createRule, updateRule } from "./actions";
 
 /** The two categories the admin panel writes. Stored as exactly these
@@ -9,9 +11,6 @@ import { createRule, updateRule } from "./actions";
  *  existing Item Group records ("Uniform", "Books"). */
 const CATEGORIES = ["Uniform", "Books"] as const;
 type Category = (typeof CATEGORIES)[number];
-
-const FIELD = "h-9 w-full px-2.5 rounded-lg border border-ink-200 text-[13px] bg-white";
-const LABEL = "block text-[11px] font-medium text-ink-500 mb-1";
 
 export type RuleFormInitial = {
   /** ERPNext rule name. Present in edit mode; absent in create mode. */
@@ -62,35 +61,54 @@ export const RuleFormDialog = forwardRef<
     grades: string[];
   }
 >(function RuleFormDialog({ schools, grades }, ref) {
-  const dialogRef = useRef<HTMLDialogElement>(null);
+  const router = useRouter();
   const formRef = useRef<HTMLFormElement>(null);
+  const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const [initial, setInitial] = useState<RuleFormInitial>(EMPTY_INITIAL);
   const [selectedCategories, setSelectedCategories] = useState<Category[]>([]);
   const isEdit = !!initial.name;
+  const formId = "delivery-fee-rule-form";
 
   useImperativeHandle(ref, () => ({
     open(next) {
       setError(null);
       setInitial(next);
       setSelectedCategories(normalizeToCategories(next.applicable_item_groups));
-      // Defer until state-driven defaultValues are applied to the form.
-      queueMicrotask(() => dialogRef.current?.showModal());
+      setOpen(true);
     },
   }));
 
+  const close = () => {
+    if (pending) return;
+    setOpen(false);
+  };
+
   const toggleCategory = (c: Category) =>
-    setSelectedCategories((cur) =>
-      cur.includes(c) ? cur.filter((x) => x !== c) : [...cur, c]
-    );
+    setSelectedCategories((cur) => (cur.includes(c) ? cur.filter((x) => x !== c) : [...cur, c]));
 
   return (
-    <dialog
-      ref={dialogRef}
-      className="rounded-2xl shadow-xl border border-ink-100 p-0 backdrop:bg-black/40 w-[560px] max-w-[95vw]"
+    <Dialog
+      open={open}
+      onClose={close}
+      title={isEdit ? `Edit rule ${initial.name}` : "New delivery fee rule"}
+      description="Saved to ERPNext straight away; the storefront picks it up on the next cart calculation."
+      busy={pending}
+      width="lg"
+      footer={
+        <>
+          <Button type="button" variant="secondary" onClick={close} disabled={pending}>
+            Cancel
+          </Button>
+          <Button type="submit" form={formId} variant="primary" busy={pending}>
+            {isEdit ? "Save changes" : "Create rule"}
+          </Button>
+        </>
+      }
     >
       <form
+        id={formId}
         ref={formRef}
         // Re-mount the form whenever the initial changes so input
         // defaultValues re-apply (uncontrolled inputs ignore prop changes).
@@ -102,152 +120,62 @@ export const RuleFormDialog = forwardRef<
           startTransition(async () => {
             const r = isEdit ? await updateRule(fd) : await createRule(fd);
             if (r.ok) {
-              dialogRef.current?.close();
-              formRef.current?.reset();
-              if (typeof window !== "undefined") window.location.reload();
+              setOpen(false);
+              router.refresh();
             } else {
               setError(r.error);
             }
           });
         }}
+        className="space-y-4"
       >
-        <div className="px-5 py-4 border-b border-ink-100">
-          <div className="text-[11px] uppercase tracking-wide text-ink-500">ERPNext</div>
-          <h2 className="text-base font-semibold text-ink-900">
-            {isEdit ? "Edit Delivery Fee Rule" : "New Delivery Fee Rule"}
-          </h2>
-          <p className="text-[12px] text-ink-500 mt-1">
-            {isEdit
-              ? "Updates the rule in ERPNext; grade scope is stored locally."
-              : "Creates the rule in ERPNext; optional grade scope is stored locally."}
-          </p>
-        </div>
-        <div className="px-5 py-4 grid grid-cols-2 gap-3">
-          <div className="col-span-2">
-            <label className={LABEL}>School</label>
-            <select
-              name="school"
-              className={FIELD}
-              defaultValue={initial.school}
-              required
-            >
-              <option value="" disabled>
-                — select a school —
-              </option>
+        <FormGrid cols={2}>
+          <Field label="School" htmlFor="dfr-school" required>
+            <Select id="dfr-school" name="school" defaultValue={initial.school} required>
+              <option value="" disabled>Choose a school</option>
               {schools.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
+                <option key={s} value={s}>{s}</option>
               ))}
-            </select>
-          </div>
-          <div className="col-span-2">
-            <label className={LABEL}>
-              Grade <span className="text-ink-400">— optional, leave blank for all grades</span>
-            </label>
-            <select name="grade" className={FIELD} defaultValue={initial.grade}>
+            </Select>
+          </Field>
+          <Field label="Grade" htmlFor="dfr-grade">
+            <Select id="dfr-grade" name="grade" defaultValue={initial.grade}>
               <option value="">All grades</option>
               {grades.map((g) => (
-                <option key={g} value={g}>
-                  {g}
-                </option>
+                <option key={g} value={g}>{g}</option>
               ))}
-            </select>
-          </div>
-          <div>
-            <label className={LABEL}>Min amount (₹)</label>
-            <input
-              name="min_amount"
-              type="number"
-              min="0"
-              step="0.01"
-              className={FIELD}
-              defaultValue={initial.min_amount}
-            />
-          </div>
-          <div>
-            <label className={LABEL}>
-              Max amount (₹) <span className="text-ink-400">— 0 = no cap</span>
-            </label>
-            <input
-              name="max_amount"
-              type="number"
-              min="0"
-              step="0.01"
-              className={FIELD}
-              defaultValue={initial.max_amount}
-            />
-          </div>
-          <div className="col-span-2">
-            <label className={LABEL}>Delivery fee (₹)</label>
-            <input
-              name="delivery_fee"
-              type="number"
-              min="0"
-              step="0.01"
-              className={FIELD}
-              defaultValue={initial.delivery_fee}
-            />
-          </div>
-          <div className="col-span-2">
-            <label className="inline-flex items-center gap-2 text-[13px] text-ink-700">
-              <input
-                name="is_active"
-                type="checkbox"
-                defaultChecked={initial.is_active}
-              />
-              Active
-            </label>
-          </div>
-          <div className="col-span-2">
-            <label className={LABEL}>
-              Applicable categories{" "}
-              <span className="text-ink-400">
-                ({selectedCategories.length === 0
-                  ? "all items"
-                  : selectedCategories.length + " selected"})
-              </span>
-            </label>
-            <div className="border border-ink-200 rounded-lg p-3 bg-white flex gap-6">
-              {CATEGORIES.map((c) => (
-                <label
-                  key={c}
-                  className="inline-flex items-center gap-2 text-[13px] text-ink-700"
-                >
-                  <input
-                    type="checkbox"
-                    checked={selectedCategories.includes(c)}
-                    onChange={() => toggleCategory(c)}
-                  />
-                  {c === "Uniform" ? "Uniforms" : "Books"}
-                </label>
-              ))}
+            </Select>
+          </Field>
+          <Field label="Delivery fee (₹)" htmlFor="dfr-fee" required>
+            <Input id="dfr-fee" name="delivery_fee" type="number" min="0" step="0.01" defaultValue={initial.delivery_fee} className="text-right tabular-nums" />
+          </Field>
+          <Field label="Status" htmlFor="dfr-active">
+            <div className="flex h-9 items-center">
+              <Checkbox id="dfr-active" name="is_active" defaultChecked={initial.is_active} label="Active" />
             </div>
-            <p className="mt-1.5 text-[11px] text-ink-500 leading-snug">
-              Bookkit / Bookset products fall under <b>Books</b>. Every other
-              product is treated as <b>Uniforms</b>. Leave both unchecked to
-              apply the rule to all items.
-            </p>
+          </Field>
+          <Field label="Minimum cart (₹)" htmlFor="dfr-min" hint="Rule applies from this cart value">
+            <Input id="dfr-min" name="min_amount" type="number" min="0" step="0.01" defaultValue={initial.min_amount} className="text-right tabular-nums" />
+          </Field>
+          <Field label="Maximum cart (₹)" htmlFor="dfr-max" hint="0 = no upper limit">
+            <Input id="dfr-max" name="max_amount" type="number" min="0" step="0.01" defaultValue={initial.max_amount} className="text-right tabular-nums" />
+          </Field>
+        </FormGrid>
+        <div>
+          <div className="mb-1.5 text-[12px] font-semibold text-ink-700">
+            Applies to{" "}
+            <span className="font-normal text-ink-500">
+              {selectedCategories.length === 0 ? "· all products" : `· ${selectedCategories.length} categor${selectedCategories.length === 1 ? "y" : "ies"}`}
+            </span>
+          </div>
+          <div className="flex gap-6 rounded-lg border border-ink-100 bg-cream-50 px-3 py-2.5">
+            {CATEGORIES.map((c) => (
+              <Checkbox key={c} label={c === "Uniform" ? "Uniforms" : "Books"} checked={selectedCategories.includes(c)} onChange={() => toggleCategory(c)} />
+            ))}
           </div>
         </div>
-        {error && (
-          <div className="mx-5 mb-3 px-3 py-2 rounded-lg bg-rose-50 text-rose-700 text-[12px]">
-            {error}
-          </div>
-        )}
-        <div className="px-5 py-3 border-t border-ink-100 flex items-center justify-end gap-2 bg-cream-50/50">
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={() => dialogRef.current?.close()}
-          >
-            Cancel
-          </Button>
-          <Button type="submit" variant="primary" disabled={pending}>
-            {pending ? (isEdit ? "Saving…" : "Creating…") : isEdit ? "Save changes" : "Create rule"}
-          </Button>
-        </div>
+        <FormError>{error}</FormError>
       </form>
-    </dialog>
+    </Dialog>
   );
 });

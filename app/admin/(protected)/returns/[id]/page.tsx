@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 import { useState, useEffect } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { Check, X, PackageCheck, Wallet, Repeat } from "lucide-react";
@@ -105,9 +107,9 @@ export default function ReturnDetailPage() {
         <div className="text-[14px] text-red-700">
           {loadError ?? "Return not found"}
         </div>
-        <a href="/admin/returns" className="text-[13px] text-brand-700 hover:underline">
+        <Link href="/admin/returns" className="text-[13px] text-brand-700 hover:underline">
           ← Back to Returns
-        </a>
+        </Link>
       </div>
     );
   }
@@ -115,10 +117,7 @@ export default function ReturnDetailPage() {
   return (
     <div className="max-w-3xl space-y-5">
       <PageHeader
-        breadcrumb={[
-          { label: "Returns", href: "/admin/returns" },
-          { label: ret.returnNumber },
-        ]}
+        breadcrumb={[{ label: "Returns", href: "/admin/returns" }, { label: ret.returnNumber }]}
         title={ret.returnNumber}
         eyebrow="Return"
         description={
@@ -132,7 +131,7 @@ export default function ReturnDetailPage() {
       />
 
       <Card>
-        <CardHeader title="Notes" description="Visible to the customer-care team." />
+        <CardHeader title="Notes" />
         <textarea
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
@@ -142,7 +141,7 @@ export default function ReturnDetailPage() {
       </Card>
 
       <Card>
-        <CardHeader title="Actions" description="Move the RMA forward." />
+        <CardHeader title="Actions" />
 
         <div className="flex flex-wrap items-center gap-2">
           {ret.status === "requested" && (

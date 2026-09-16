@@ -6,6 +6,7 @@ import { useFocusRefetch } from "@/lib/use-focus-refetch";
 import { derivePlacement, describePaymentStatus } from "@/lib/order-display";
 import { Nav } from "@/components/Nav";
 import { Footer } from "@/components/Footer";
+import { formatWindowDate, windowLastDay } from "@/lib/exchange-shared";
 
 type OrderItem = {
   id: string;
@@ -19,6 +20,9 @@ type OrderItem = {
   studentName: string | null;
   enrollment: string | null;
   paymentStatusRaw: string | null;
+  /** Exchange / Missing request window — null while items are still on the
+   *  way or the order isn't delivered. */
+  returnsWindow: { expiresAt: string | null; expired: boolean } | null;
 };
 
 type StudentGroup = {
@@ -236,6 +240,17 @@ export default function OrdersPage() {
                                 year: "numeric",
                               })}
                             </p>
+                            {o.returnsWindow?.expiresAt && (
+                              <p
+                                className={`mt-0.5 text-[11.5px] leading-snug ${
+                                  o.returnsWindow.expired ? "text-ink-400" : "text-emerald-700"
+                                }`}
+                              >
+                                {o.returnsWindow.expired
+                                  ? `Exchange / missing closed on ${formatWindowDate(windowLastDay(o.returnsWindow.expiresAt))}`
+                                  : `Exchange / missing until ${formatWindowDate(windowLastDay(o.returnsWindow.expiresAt))}`}
+                              </p>
+                            )}
                             {(() => {
                               // For an abandoned checkout, surface the actual
                               // CCAvenue status word + a short meaning so the

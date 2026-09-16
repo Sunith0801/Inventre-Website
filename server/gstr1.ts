@@ -1,5 +1,5 @@
 import "server-only";
-import { eq, and, gte, lte, sql } from "drizzle-orm";
+import { eq, and, gte, lte, sql, inArray } from "drizzle-orm";
 import { db } from "@/db/client";
 import {
   invoices,
@@ -174,7 +174,7 @@ export async function buildGstr1(
   const allItems = await db
     .select()
     .from(invoiceItems)
-    .where(sql`${invoiceItems.invoiceId} = ANY(${invoiceIds}::uuid[])`);
+    .where(inArray(invoiceItems.invoiceId, invoiceIds));
   const itemsByInvoice = new Map<string, (typeof invoiceItems.$inferSelect)[]>();
   for (const it of allItems) {
     const arr = itemsByInvoice.get(it.invoiceId) ?? [];

@@ -60,7 +60,7 @@ export default async function CCAvenuePaymentDetailPage({
 }: {
   params: Promise<{ orderId: string }>;
 }) {
-  const guard = await requireAnyPermission("payments-ccavenue.read", "payments-ccavenue.write");
+  const guard = await requireAnyPermission("payments.read", "payments.write");
   if (isResponse(guard)) redirect("/admin/dashboard");
 
   const { orderId } = await params;
@@ -117,11 +117,7 @@ export default async function CCAvenuePaymentDetailPage({
   return (
     <div>
       <PageHeader
-        breadcrumb={[
-          { label: "Accounting", href: "/admin/payments/ccavenue" },
-          { label: "CCAvenue Payment Logs", href: "/admin/payments/ccavenue" },
-          { label: order.orderNumber },
-        ]}
+        breadcrumb={[{ label: "Payments", href: "/admin/payments" }, { label: "Gateway transactions", href: "/admin/payments" }, { label: order.orderNumber }]}
         eyebrow="CCAvenue transaction"
         title={order.orderNumber}
         description={
@@ -148,7 +144,7 @@ export default async function CCAvenuePaymentDetailPage({
         actions={
           <>
             <Link
-              href="/admin/payments/ccavenue"
+              href="/admin/payments"
               className="inline-flex items-center gap-1.5 px-3 h-9 rounded-lg border border-ink-200 bg-white text-[13px] font-medium text-ink-700 hover:bg-cream-50"
             >
               <ArrowLeft className="h-3.5 w-3.5" /> Back to logs

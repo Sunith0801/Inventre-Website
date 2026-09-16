@@ -19,9 +19,11 @@ import {
   getLockedComponentSignatures,
   lockStateForUnit,
   classifyReturnItems,
+  computeReturnsWindow,
   getBookkitParcelDelivered,
   getPendingComponentVariantIds,
 } from "@/server/return-line-eligibility";
+import { RequestWindowClosedNotice } from "@/components/shop/orders/RequestWindowClosedNotice";
 import {
   fallbackBundleComponents,
   emptyContainerProductIds,
@@ -114,8 +116,7 @@ export default async function NewMissingClaimPage({
   // Item-wise eligibility (2026-07-08): which order_items are delivered (and
   // therefore reportable). Cross-flow per-item lock (item already in a
   // non-rejected exchange OR missing request, freed only on rejection) is
-  // applied as a post-pass over the built units below. There is no time
-  // window — a delivered item stays eligible forever.
+  // applied as a post-pass over the built units below.
   const itemElig = await classifyReturnItems(
     orderId,
     order.orderNumber,
@@ -123,6 +124,19 @@ export default async function NewMissingClaimPage({
     resolved.deliveredAt,
   );
   if (![...itemElig.values()].some((e) => e.delivered)) notFound();
+  // 7-day window from the day the LAST item arrived (2026-09-16): past the
+  // cut-off the form is replaced by a popup, same as the button gate hides
+  // the entry point.
+  const returnsWindow = computeReturnsWindow(itemElig);
+  if (returnsWindow.expired && returnsWindow.expiresAt) {
+    return (
+      <RequestWindowClosedNotice
+        flow="missing"
+        expiresAt={returnsWindow.expiresAt.toISOString()}
+        orderHref={`/shop/orders/${id}`}
+      />
+    );
+  }
   // Component-level lock (2026-07-09) — see exchange/new/page.tsx. Resolves the
   // lock PER COMPONENT so a Magic Box reopens for its still-eligible items; the
   // authoritative per-unit fields are set in the post-pass below.

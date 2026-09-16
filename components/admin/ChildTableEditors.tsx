@@ -20,13 +20,13 @@ import { Button } from "@/components/admin/ui/primitives-client";
 function Cell({ value, onChange, placeholder, mono }: { value: string; onChange: (v: string) => void; placeholder?: string; mono?: boolean }) {
   return (
     <input type="text" value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder}
-      className={(mono ? "font-mono text-[12px] " : "text-[13px] ") + "w-full h-8 px-2 rounded bg-white border border-transparent placeholder:text-ink-400 hover:border-ink-200 focus:outline-none focus:border-ink-400 focus:ring-2 focus:ring-brand-300/30"} />
+      className={(mono ? "font-mono " : "") + "w-full h-9 px-3 text-[13px] rounded-lg bg-white border border-ink-100 placeholder:text-ink-400 hover:border-ink-200 focus:outline-none focus:border-ink-300 focus:ring-2 focus:ring-brand-300/40 transition-[border,box-shadow]"} />
   );
 }
 
 function CellSelect({ value, onChange, options }: { value: string; onChange: (v: string) => void; options: string[] }) {
   return (
-    <select value={value} onChange={(e) => onChange(e.target.value)} className="w-full h-8 px-2 text-[13px] rounded bg-white border border-transparent hover:border-ink-200">
+    <select value={value} onChange={(e) => onChange(e.target.value)} className="w-full h-9 px-2.5 text-[13px] rounded-lg bg-white border border-ink-100 hover:border-ink-200 focus:outline-none focus:border-ink-300 focus:ring-2 focus:ring-brand-300/40">
       {options.map((o) => <option key={o} value={o}>{o}</option>)}
     </select>
   );
@@ -93,18 +93,19 @@ export function AddressEditor({
 
   return (
     <div>
-      <table className="w-full text-[13px]">
-        <thead className="bg-cream-50/60 text-ink-600">
+      <div className="overflow-x-auto rounded-xl border border-ink-100/70">
+      <table className="w-full">
+        <thead>
           <tr>
-            <th className="px-2 py-2 text-left w-10">No.</th>
-            <th className="px-2 py-2 text-left">Type</th>
-            <th className="px-2 py-2 text-left">Title</th>
-            <th className="px-2 py-2 text-left">Line 1 *</th>
-            <th className="px-2 py-2 text-left">Line 2</th>
-            <th className="px-2 py-2 text-left">City</th>
-            <th className="px-2 py-2 text-left">State</th>
-            <th className="px-2 py-2 text-left">Pincode</th>
-            <th className="px-2 py-2 w-10"></th>
+            <th className="w-10">#</th>
+            <th>Type</th>
+            <th>Title</th>
+            <th>Address</th>
+            <th>Line 2</th>
+            <th>City</th>
+            <th>State</th>
+            <th>Pincode</th>
+            <th className="w-16" />
           </tr>
         </thead>
         <tbody>
@@ -133,11 +134,12 @@ export function AddressEditor({
             <td className="px-1 py-1"><Cell value={draft.state} onChange={(v) => setDraft((d) => ({ ...d, state: v }))} placeholder="state" /></td>
             <td className="px-1 py-1"><Cell value={draft.pincode} onChange={(v) => setDraft((d) => ({ ...d, pincode: v }))} mono placeholder="pincode" /></td>
             <td className="px-2 py-1 text-right">
-              <Button busy={busy} variant="primary" onClick={add} type="button" icon={<Plus className="h-3 w-3" />}>Add</Button>
+              <Button busy={busy} variant="primary" size="sm" onClick={add} type="button" icon={<Plus className="h-3 w-3" />}>Add</Button>
             </td>
           </tr>
         </tbody>
       </table>
+      </div>
       {err ? <div className="mt-2 text-[12px] text-red-700">{err}</div> : null}
     </div>
   );

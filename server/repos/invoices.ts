@@ -9,6 +9,7 @@ import {
   productVariants,
   products,
   parents,
+  paymentEntries,
 } from "@/db/schema";
 import {
   computeInvoiceTotals,
@@ -45,9 +46,27 @@ export async function generateInvoiceForOrder(args: {
     )
     .limit(1);
   if (existing.length > 0) {
+    const inv = existing[0];
+    // The invoice was raised before the payment landed (admin "Generate
+    // invoice" on an unpaid order, then CCAvenue settles and calls us again).
+    // Clear the balance now — unless someone already reconciled it by hand
+    // with a manual payment entry, which carries the right figure.
+    if (order.paymentStatus === "paid" && inv.outstandingAmount > 0 && inv.status !== "cancelled") {
+      const [manual] = await db
+        .select({ id: paymentEntries.id })
+        .from(paymentEntries)
+        .where(and(eq(paymentEntries.invoiceId, inv.id), eq(paymentEntries.direction, "received")))
+        .limit(1);
+      if (!manual) {
+        await db
+          .update(invoices)
+          .set({ outstandingAmount: 0, status: "paid", updatedAt: new Date() })
+          .where(eq(invoices.id, inv.id));
+      }
+    }
     return {
-      id: existing[0].id,
-      invoiceNumber: existing[0].invoiceNumber,
+      id: inv.id,
+      invoiceNumber: inv.invoiceNumber,
       alreadyExisted: true,
     };
   }
@@ -63,20 +82,46 @@ export async function generateInvoiceForOrder(args: {
     .innerJoin(products, eq(products.id, productVariants.productId))
     .where(eq(orderItems.orderId, args.orderId));
 
+  // Lines imported from ERPNext can have no local variant (an item_code with
+  // no SKU here). The inner join above silently DROPS them, so an invoice
+  // built now would under-bill the order. Refuse up front — before an
+  // invoice number is allocated — rather than after the header is written.
+  const [{ unmapped }] = await db
+    .select({ unmapped: sql<number>`COUNT(*)::int` })
+    .from(orderItems)
+    .where(and(eq(orderItems.orderId, args.orderId), isNull(orderItems.variantId)));
+  if (Number(unmapped) > 0) {
+    throw new Error(
+      `Cannot generate invoice: ${unmapped} order item(s) have no local SKU (ERP-imported). Resolve the catalog mapping first.`
+    );
+  }
+  if (items.length === 0) {
+    throw new Error("Cannot generate invoice: the order has no line items.");
+  }
+
   const shipping = order.shippingAddress as {
     pincode: string;
     [k: string]: unknown;
   };
   const pincode = shipping?.pincode ?? "999999";
 
-  const taxLines: TaxLine[] = items.map((r) => ({
-    netAmountPaise: r.orderItem.total,
-    hsnCode:
-      r.orderItem.hsnCodeSnapshot ?? r.product.hsnCode ?? null,
-    gstTreatment: (r.orderItem.gstTreatmentSnapshot ??
-      r.product.gstTreatment ??
-      "taxable") as GstTreatment,
-  }));
+  // The product's own GST rate (set once on its Pricing step) beats the
+  // 18% default, and "price includes GST" decides whether tax is
+  // extracted from the paid amount or added on top. Before this, every
+  // invoice added 18% on top of what the parent had already paid.
+  const taxLines: TaxLine[] = items.map((r) => {
+    const rate = r.product.gstRate != null ? Number(r.product.gstRate) : undefined;
+    return {
+      netAmountPaise: r.orderItem.total,
+      hsnCode:
+        r.orderItem.hsnCodeSnapshot ?? r.product.hsnCode ?? null,
+      gstTreatment: (r.orderItem.gstTreatmentSnapshot ??
+        r.product.gstTreatment ??
+        "taxable") as GstTreatment,
+      gstInclusive: r.product.gstInclusive ?? true,
+      ...(rate != null ? { cgstRate: rate / 2, sgstRate: rate / 2, igstRate: rate } : {}),
+    };
+  });
 
   const totals = computeInvoiceTotals(taxLines, pincode);
 
@@ -84,82 +129,84 @@ export async function generateInvoiceForOrder(args: {
     postingDate
   );
 
-  const [inv] = await db
-    .insert(invoices)
-    .values({
-      invoiceNumber,
-      financialYear,
-      orderId: args.orderId,
-      parentId: order.parentId,
-      postingDate: postingDate.toISOString().slice(0, 10),
-      dueDate: postingDate.toISOString().slice(0, 10),
-      netTotal: totals.netTotal,
-      cgstTotal: totals.cgstTotal,
-      sgstTotal: totals.sgstTotal,
-      igstTotal: totals.igstTotal,
-      taxTotal: totals.taxTotal,
-      roundingAdjustment: totals.roundingAdjustment,
-      grandTotal: totals.grandTotal,
-      outstandingAmount: totals.grandTotal,
-      status: "submitted",
-      isReturn: false,
-      billingAddress: (order.billingAddress as object) ?? (order.shippingAddress as object),
-      shippingAddress: order.shippingAddress as object,
-      placeOfSupply: placeOfSupply(pincode),
-      taxBreakdown: {
-        cgst: totals.cgstTotal,
-        sgst: totals.sgstTotal,
-        igst: totals.igstTotal,
-      },
-    })
-    .returning();
+  // An invoice raised for an order that is already paid (the normal case:
+  // CCAvenue finalize generates it right after marking the order paid) opens
+  // with nothing owed. Only an unpaid order — an offline sale settled later
+  // through a manual payment entry — opens with the full balance.
+  const settled = order.paymentStatus === "paid";
 
-  // Order items imported from ERPNext can have a NULL variant_id when
-  // the ERP item_code didn't match a local product variant; invoice_items
-  // requires a non-null variant. We can't invoice those lines through
-  // this flow — fail loudly rather than silently dropping them.
-  const unmappedInvoiceLines = items.filter((r) => r.orderItem.variantId === null);
-  if (unmappedInvoiceLines.length > 0) {
-    throw new Error(
-      `Cannot generate invoice: ${unmappedInvoiceLines.length} order item(s) have no local SKU (ERP-imported). Resolve the catalog mapping first.`
+  // Header, lines and the order's billed % commit together, so a failure
+  // part-way can never leave an invoice header without its lines.
+  const created = await db.transaction(async (tx) => {
+    const [inv] = await tx
+      .insert(invoices)
+      .values({
+        invoiceNumber,
+        financialYear,
+        orderId: args.orderId,
+        parentId: order.parentId,
+        postingDate: postingDate.toISOString().slice(0, 10),
+        dueDate: postingDate.toISOString().slice(0, 10),
+        netTotal: totals.netTotal,
+        cgstTotal: totals.cgstTotal,
+        sgstTotal: totals.sgstTotal,
+        igstTotal: totals.igstTotal,
+        taxTotal: totals.taxTotal,
+        roundingAdjustment: totals.roundingAdjustment,
+        grandTotal: totals.grandTotal,
+        outstandingAmount: settled ? 0 : totals.grandTotal,
+        status: settled ? "paid" : "submitted",
+        isReturn: false,
+        billingAddress: (order.billingAddress as object) ?? (order.shippingAddress as object),
+        shippingAddress: order.shippingAddress as object,
+        placeOfSupply: placeOfSupply(pincode),
+        taxBreakdown: {
+          cgst: totals.cgstTotal,
+          sgst: totals.sgstTotal,
+          igst: totals.igstTotal,
+        },
+      })
+      .returning();
+
+    await tx.insert(invoiceItems).values(
+      items.map((r, idx) => {
+        const c = totals.lines[idx];
+        return {
+          invoiceId: inv.id,
+          orderItemId: r.orderItem.id,
+          variantId: r.orderItem.variantId as string,
+          hsnCode: r.orderItem.hsnCodeSnapshot ?? r.product.hsnCode ?? null,
+          itemNameSnapshot: r.orderItem.nameSnapshot,
+          qty: r.orderItem.qty,
+          unitPrice: r.orderItem.unitPrice,
+          netAmount: r.orderItem.total,
+          taxableAmount: r.orderItem.total,
+          cgstRate: c.cgstRate.toString(),
+          sgstRate: c.sgstRate.toString(),
+          igstRate: c.igstRate.toString(),
+          cgstAmount: c.cgstAmount,
+          sgstAmount: c.sgstAmount,
+          igstAmount: c.igstAmount,
+          totalAmount: c.lineTotal,
+          gstTreatment: (r.orderItem.gstTreatmentSnapshot ??
+            r.product.gstTreatment ??
+            "taxable") as GstTreatment,
+        };
+      })
     );
-  }
-  await db.insert(invoiceItems).values(
-    items.map((r, idx) => {
-      const c = totals.lines[idx];
-      return {
-        invoiceId: inv.id,
-        orderItemId: r.orderItem.id,
-        variantId: r.orderItem.variantId as string,
-        hsnCode: r.orderItem.hsnCodeSnapshot ?? r.product.hsnCode ?? null,
-        itemNameSnapshot: r.orderItem.nameSnapshot,
-        qty: r.orderItem.qty,
-        unitPrice: r.orderItem.unitPrice,
-        netAmount: r.orderItem.total,
-        taxableAmount: r.orderItem.total,
-        cgstRate: c.cgstRate.toString(),
-        sgstRate: c.sgstRate.toString(),
-        igstRate: c.igstRate.toString(),
-        cgstAmount: c.cgstAmount,
-        sgstAmount: c.sgstAmount,
-        igstAmount: c.igstAmount,
-        totalAmount: c.lineTotal,
-        gstTreatment: (r.orderItem.gstTreatmentSnapshot ??
-          r.product.gstTreatment ??
-          "taxable") as GstTreatment,
-      };
-    })
-  );
 
-  // Audit §3.4 — recompute order.billedPercent
-  const billedPercent =
-    order.total === 0 ? 0 : Math.min(100, Math.round((totals.grandTotal / order.total) * 100));
-  await db
-    .update(orders)
-    .set({ billedPercent })
-    .where(eq(orders.id, args.orderId));
+    // Audit §3.4 — recompute order.billedPercent
+    const billedPercent =
+      order.total === 0 ? 0 : Math.min(100, Math.round((totals.grandTotal / order.total) * 100));
+    await tx
+      .update(orders)
+      .set({ billedPercent })
+      .where(eq(orders.id, args.orderId));
 
-  return { id: inv.id, invoiceNumber, alreadyExisted: false };
+    return inv;
+  });
+
+  return { id: created.id, invoiceNumber, alreadyExisted: false };
 }
 
 /** Generate a credit note (negative invoice) for a return. */

@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 type Params = Promise<{ schoolId: string; grade: string }>;
 
 export default async function AddItemsPage({ params }: { params: Params }) {
-  const guard = await requireAnyPermission("catalog.read", "catalog.write");
+  const guard = await requireAnyPermission("catalog-setup.read", "catalog-setup.write", "catalog.read", "catalog.write");
   if (isResponse(guard)) redirect("/admin/dashboard");
 
   const { schoolId, grade: rawGrade } = await params;
@@ -126,7 +126,7 @@ export default async function AddItemsPage({ params }: { params: Params }) {
   return (
     <div>
       <PageHeader
-        eyebrow="Catalog · Setup"
+        eyebrow="Catalog"
         title={`Add items to ${school.name}`}
         description={
           <>
@@ -135,12 +135,7 @@ export default async function AddItemsPage({ params }: { params: Params }) {
             untagged products to add them; toggle the filter to edit already-tagged rows.
           </>
         }
-        breadcrumb={[
-          { label: "Admin", href: "/admin/dashboard" },
-          { label: "Catalog", href: "/admin/catalog" },
-          { label: "Setup", href: "/admin/catalog/setup" },
-          { label: `${school.name} · ${grade}` },
-        ]}
+        breadcrumb={[{ label: "School Setup", href: "/admin/catalog/setup" }, { label: `${school.name} · ${grade}` }]}
         actions={
           <div className="flex items-center gap-2">
             <Link

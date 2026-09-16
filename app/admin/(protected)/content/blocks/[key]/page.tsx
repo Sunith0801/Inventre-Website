@@ -31,11 +31,7 @@ export default async function ContentBlockEdit({
   return (
     <div className="max-w-3xl">
       <PageHeader
-        breadcrumb={[
-          { label: "Content", href: "/admin/content" },
-          { label: "Homepage blocks", href: "/admin/content/blocks" },
-          { label: LABELS[decoded] ?? decoded },
-        ]}
+        breadcrumb={[{ label: "Pages & Content Blocks", href: "/admin/content" }, { label: "Homepage blocks", href: "/admin/content/blocks" }, { label: LABELS[decoded] ?? decoded }]}
         title={LABELS[decoded] ?? decoded}
         description={
           <span className="font-mono text-[12px] text-ink-500">{decoded}</span>

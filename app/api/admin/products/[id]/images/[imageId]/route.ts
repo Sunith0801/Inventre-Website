@@ -4,7 +4,7 @@ import { z } from "zod";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { productImages } from "@/db/schema";
-import { isResponse, requirePermission } from "@/server/admin-guard";
+import { isResponse, requirePermission, requireAnyPermission } from "@/server/admin-guard";
 import { invalidateCatalog } from "@/server/cache";
 import { logAdminActivity } from "@/server/activity";
 
@@ -15,13 +15,16 @@ const PatchBody = z.object({
   // Colour tag — product_attribute_values.id this image belongs to
   // (e.g. Colour=Blue). null clears the tag.
   attributeValueId: z.string().uuid().nullable().optional(),
+  /** Pin the photo to ONE variant (a specific size) — used only when a
+   *  size genuinely looks different. Null = shown for every size. */
+  variantId: z.string().uuid().nullable().optional(),
 });
 
 export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string; imageId: string }> }
 ) {
-  const guard = await requirePermission("catalog.write");
+  const guard = await requireAnyPermission("products.write", "catalog.write");
   if (isResponse(guard)) return guard;
   const { id: productId, imageId } = await params;
   const parsed = await parseBody(req, PatchBody);
@@ -56,6 +59,7 @@ export async function PATCH(
     if (body.sortOrder !== undefined) update.sortOrder = body.sortOrder;
     if (body.attributeValueId !== undefined)
       update.attributeValueId = body.attributeValueId;
+    if (body.variantId !== undefined) update.variantId = body.variantId;
     if (Object.keys(update).length > 0) {
       await tx
         .update(productImages)
@@ -85,7 +89,7 @@ export async function DELETE(
   req: Request,
   { params }: { params: Promise<{ id: string; imageId: string }> }
 ) {
-  const guard = await requirePermission("catalog.write");
+  const guard = await requireAnyPermission("products.write", "catalog.write");
   if (isResponse(guard)) return guard;
   const { id: productId, imageId } = await params;
   await db

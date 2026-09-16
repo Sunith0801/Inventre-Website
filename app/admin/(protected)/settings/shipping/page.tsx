@@ -21,13 +21,8 @@ export default async function ShippingSettingsPage() {
   return (
     <div className="max-w-3xl">
       <PageHeader
-        breadcrumb={[
-          { label: "Settings", href: "/admin/settings" },
-          { label: "Shipping" },
-        ]}
         title="Shipping"
-        eyebrow="Settings"
-        description="Carrier and fee configuration. Edit values via the system_settings table or env until a UI form ships."
+        eyebrow="System Configuration"
       />
 
       <Card className="mb-4">
@@ -39,7 +34,6 @@ export default async function ShippingSettingsPage() {
       <Card>
         <CardHeader
           title="Carriers"
-          description="Couriers offered when creating a shipment."
         />
         <div className="flex flex-wrap gap-2">
           {couriers.split(",").map((c) => (

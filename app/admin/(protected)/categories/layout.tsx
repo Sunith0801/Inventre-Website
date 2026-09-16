@@ -2,11 +2,12 @@ import { SectionGate } from "@/components/admin/SectionGate";
 
 /**
  * Authorization gate for /admin/categories.
- * Categories are catalogue structure.
  *
- * Requires read or write on `catalog`. Covers every page
- * beneath this segment, including detail routes reached by direct URL.
+ * Categories were folded under the single `catalog` permission. They are their
+ * own key now (`categories.*`). `catalog` is still accepted during the rollout —
+ * see db/migrations/0076_catalog_module_permissions.sql for why, and for the
+ * contract step that removes it.
  */
 export default function Layout({ children }: { children: React.ReactNode }) {
-  return <SectionGate slugs={["catalog"]}>{children}</SectionGate>;
+  return <SectionGate slugs={["categories", "catalog"]}>{children}</SectionGate>;
 }

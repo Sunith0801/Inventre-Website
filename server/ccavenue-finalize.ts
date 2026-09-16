@@ -573,24 +573,36 @@ export async function finalizeOrderPayment(args: {
   // 2026-07-18: healing SAL-ORD-2026-32011 via the settlement-reconcile CLI
   // left erp_outbound_queue with ZERO rows for it). enqueueOrderEvent swallows
   // its own errors and returns null, so awaiting can't downgrade the order.
-  if (primary?.orderGroupId) {
-    const siblings = await db
-      .select({ id: orders.id })
-      .from(orders)
-      .where(eq(orders.orderGroupId, primary.orderGroupId));
-    for (const sib of siblings) {
-      await enqueueOrderEvent(sib.id, "order.created");
-    }
-  } else {
-    await enqueueOrderEvent(orderId, "order.created");
+  const settledOrderIds = primary?.orderGroupId
+    ? (
+        await db
+          .select({ id: orders.id })
+          .from(orders)
+          .where(eq(orders.orderGroupId, primary.orderGroupId))
+      ).map((r) => r.id)
+    : [orderId];
+  for (const id of settledOrderIds) {
+    await enqueueOrderEvent(id, "order.created");
   }
-  // Auto-generate the GST invoice now that payment is confirmed. Wrapped
-  // in fire-and-forget so a transient invoice-gen failure (e.g. tax
-  // calculation hiccup) doesn't roll back the customer-visible
-  // "marked-paid" response. The admin /invoices page surfaces failures.
-  void generateInvoiceForOrder({ orderId }).catch((e) =>
-    console.error(`[ccavenue-finalize] auto-invoice failed for ${orderId}:`, e)
-  );
+  // Generate the GST invoice for EVERY order this payment settled. Two bugs
+  // lived here, both leaving paid orders with no invoice (so missing from
+  // GSTR-1 / HSN / GSTR-3B):
+  //   1. Only the primary order was invoiced; the siblings of a multi-school
+  //      basket were marked paid above but never billed.
+  //   2. The call was `void` fire-and-forget — the exact floating-promise
+  //      pattern the comment above explains the runtime drops (and the ops
+  //      CLIs process.exit past). On dev, 1,469 single CCAvenue orders since
+  //      invoicing went live have no invoice.
+  // Awaited, but each failure is caught and logged per order, so a tax or
+  // mapping error never downgrades the "marked-paid" result or blocks the
+  // remaining siblings. generateInvoiceForOrder is idempotent per order.
+  for (const id of settledOrderIds) {
+    try {
+      await generateInvoiceForOrder({ orderId: id });
+    } catch (e) {
+      console.error(`[ccavenue-finalize] auto-invoice failed for ${id}:`, e);
+    }
+  }
 
   return {
     kind: "marked-paid",

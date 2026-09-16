@@ -1,4 +1,5 @@
-import { desc, and, eq, ilike, gte, or } from "drizzle-orm";
+import Link from "next/link";
+import { desc, and, eq, ilike, gte, or, sql, type SQL } from "drizzle-orm";
 import { Inbox } from "lucide-react";
 import { db } from "@/db/client";
 import { contactSubmissions } from "@/db/schema";
@@ -10,13 +11,20 @@ import {
   Tr,
   EmptyState,
   Badge,
+  FilterSelect,
+  Toolbar,
+  SearchInput,
+  Stat,
 } from "@/components/admin/ui/primitives";
+import { Pagination, PerPagePicker } from "@/components/admin/ui/pagination";
+import { AutoSubmitForm } from "@/components/admin/AutoSubmitForm";
+import { DEFAULT_PER_PAGE, PER_PAGE_OPTIONS, pageMeta, readPaging, withPaging } from "@/lib/admin-paging";
 import { redirect } from "next/navigation";
 import { requireAnyPermission, isResponse } from "@/server/admin-guard";
 
 export const dynamic = "force-dynamic";
 
-const PAGE_SIZE = 50;
+const BASE = "/admin/contact-forms";
 
 type Kind = "parent" | "school" | "business";
 
@@ -30,38 +38,32 @@ type ContactPayload = {
   message?: string | null;
 } | null;
 
-function kindBadge(kind: string) {
-  if (kind === "parent") return <Badge tone="info" size="sm">parent</Badge>;
-  if (kind === "school") return <Badge tone="success" size="sm">school</Badge>;
-  if (kind === "business") return <Badge tone="warning" size="sm">business</Badge>;
-  return <Badge tone="default" size="sm">{kind}</Badge>;
-}
+const KIND_TONE: Record<string, "info" | "success" | "warning" | "default"> = { parent: "info", school: "success", business: "warning" };
+const STATUS_LABEL: Record<string, string> = { new: "New", in_progress: "In progress", done: "Done" };
+const STATUS_TONE: Record<string, "warning" | "info" | "success" | "default"> = { new: "warning", in_progress: "info", done: "success" };
 
-function statusBadge(status: string) {
-  if (status === "new") return <Badge tone="warning" size="sm">new</Badge>;
-  if (status === "in_progress")
-    return <Badge tone="info" size="sm">in progress</Badge>;
-  if (status === "done") return <Badge tone="success" size="sm">done</Badge>;
-  return <Badge tone="default" size="sm">{status}</Badge>;
-}
+const IST = new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric" });
+const IST_TIME = new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit" });
 
+/**
+ * Inquiries — every submission of the storefront's contact form (parents,
+ * schools and businesses). Read-only: the form has no reply flow; the
+ * team follows up by phone or email from here.
+ */
 export default async function ContactFormsPage({
   searchParams,
 }: {
-  searchParams: Promise<{
-    q?: string;
-    kind?: Kind | "";
-    status?: string;
-    since?: string;
-    page?: string;
-  }>;
+  searchParams: Promise<{ q?: string; kind?: string; status?: string; since?: string; page?: string; perPage?: string }>;
 }) {
   const guard = await requireAnyPermission("contact-forms.read", "contact-forms.write");
   if (isResponse(guard)) redirect("/admin/dashboard");
 
-  const { q, kind, status, since, page: pageRaw } = await searchParams;
-  const page = Math.max(1, parseInt(pageRaw ?? "1", 10) || 1);
-  const offset = (page - 1) * PAGE_SIZE;
+  const sp = await searchParams;
+  const term = (sp.q ?? "").trim();
+  const kind = (["parent", "school", "business"] as const).includes(sp.kind as Kind) ? (sp.kind as Kind) : "";
+  const status = sp.status && sp.status in STATUS_LABEL ? sp.status : "";
+  const since = sp.since === "today" || sp.since === "7d" || sp.since === "30d" ? sp.since : "";
+  const paging = readPaging(sp);
 
   const sinceDate =
     since === "today"
@@ -72,248 +74,157 @@ export default async function ContactFormsPage({
           ? new Date(Date.now() - 30 * 86400_000)
           : null;
 
-  const term = (q ?? "").trim();
   const like = `%${term}%`;
-  const conds = [
-    term
-      ? or(
-          ilike(contactSubmissions.name, like),
-          ilike(contactSubmissions.email, like),
-          ilike(contactSubmissions.phone, like),
-        )
-      : undefined,
-    kind ? eq(contactSubmissions.kind, kind) : undefined,
-    status ? eq(contactSubmissions.status, status) : undefined,
-    sinceDate ? gte(contactSubmissions.createdAt, sinceDate) : undefined,
-  ].filter(Boolean) as Parameters<typeof and>[0][];
+  const conds: SQL[] = [];
+  if (term) conds.push(or(ilike(contactSubmissions.name, like), ilike(contactSubmissions.email, like), ilike(contactSubmissions.phone, like))!);
+  if (kind) conds.push(eq(contactSubmissions.kind, kind));
+  if (status) conds.push(eq(contactSubmissions.status, status));
+  if (sinceDate) conds.push(gte(contactSubmissions.createdAt, sinceDate));
+  const where = conds.length ? and(...conds) : undefined;
 
-  // db.$count returns Promise<number> directly. The select({ total: $count })
-  // .from(table) pattern used elsewhere in admin happens to work only because
-  // the target table is never empty in practice — when there are zero rows
-  // the destructure `[{ total }] = []` throws (which is how this page
-  // initially crashed before any submissions had been collected).
-  const [rows, total] = await Promise.all([
+  // db.$count returns Promise<number> directly, so an empty table is a 0,
+  // not a throw from destructuring an empty result.
+  const [rows, total, byStatus] = await Promise.all([
+    db.select().from(contactSubmissions).where(where).orderBy(desc(contactSubmissions.createdAt)).limit(paging.perPage).offset(paging.offset),
+    db.$count(contactSubmissions, where),
     db
-      .select()
+      .select({ status: contactSubmissions.status, n: sql<number>`count(*)::int` })
       .from(contactSubmissions)
-      .where(conds.length ? and(...conds) : undefined)
-      .orderBy(desc(contactSubmissions.createdAt))
-      .limit(PAGE_SIZE)
-      .offset(offset),
-    db.$count(
-      contactSubmissions,
-      conds.length ? and(...conds) : undefined,
-    ),
+      .groupBy(contactSubmissions.status),
   ]);
+  const counts = Object.fromEntries(byStatus.map((r) => [r.status, Number(r.n)])) as Record<string, number>;
+  const allCount = byStatus.reduce((s, r) => s + Number(r.n), 0);
 
-  const totalPages = Math.max(1, Math.ceil(Number(total) / PAGE_SIZE));
+  const hrefWith = (over: Record<string, string> = {}) => {
+    const u = new URLSearchParams();
+    const base: Record<string, string> = { q: term, kind, status, since, ...over };
+    for (const [k, v] of Object.entries(base)) if (v) u.set(k, v);
+    const qs = u.toString();
+    return qs ? `${BASE}?${qs}` : BASE;
+  };
+  const { pages, from, to } = pageMeta(total, paging);
+  if (paging.page > pages) redirect(withPaging(hrefWith(), pages, paging.perPage));
 
-  function qs(overrides: Record<string, string | undefined>) {
-    const p = new URLSearchParams();
-    const merged = {
-      q: term || undefined,
-      kind,
-      status,
-      since,
-      page: String(page),
-      ...overrides,
-    };
-    for (const [k, v] of Object.entries(merged)) {
-      if (v) p.set(k, v);
-    }
-    return `?${p}`;
-  }
+  const hasFilter = !!(term || kind || status || since);
+  const ring = (key: string) => (key === status ? "ring-2 ring-brand/40" : "");
 
   return (
     <div>
       <PageHeader
-        eyebrow="Engagement"
-        title="Contact forms"
-        description={`${Number(total).toLocaleString()} submissions · from /contact (Parent · School · Business tabs)`}
+        eyebrow="Engagement & Content"
+        title="Inquiries"
+        description="Messages sent through the website's contact form."
       />
 
-      <form method="GET" className="mb-4 flex flex-wrap gap-3">
-        <input
-          name="q"
-          defaultValue={term}
-          placeholder="Search name, email, phone…"
-          className="h-9 rounded-lg border border-ink-200 bg-white px-3 text-[13px] text-ink-900 placeholder:text-ink-400 focus:border-ink-900 focus:outline-none focus:ring-2 focus:ring-brand/20 min-w-[240px]"
-        />
-        <select
-          name="kind"
-          defaultValue={kind ?? ""}
-          className="h-9 rounded-lg border border-ink-200 bg-white px-3 text-[13px] text-ink-900 focus:border-ink-900 focus:outline-none"
-        >
-          <option value="">All types</option>
-          <option value="parent">Parent</option>
-          <option value="school">School</option>
-          <option value="business">Business</option>
-        </select>
-        <select
-          name="status"
-          defaultValue={status ?? ""}
-          className="h-9 rounded-lg border border-ink-200 bg-white px-3 text-[13px] text-ink-900 focus:border-ink-900 focus:outline-none"
-        >
-          <option value="">All statuses</option>
-          <option value="new">New</option>
-          <option value="in_progress">In progress</option>
-          <option value="done">Done</option>
-        </select>
-        <select
-          name="since"
-          defaultValue={since ?? ""}
-          className="h-9 rounded-lg border border-ink-200 bg-white px-3 text-[13px] text-ink-900 focus:border-ink-900 focus:outline-none"
-        >
-          <option value="">All time</option>
-          <option value="today">Today</option>
-          <option value="7d">Last 7 days</option>
-          <option value="30d">Last 30 days</option>
-        </select>
-        <input type="hidden" name="page" value="1" />
-        <button
-          type="submit"
-          className="h-9 rounded-lg bg-ink-900 px-4 text-[13px] font-semibold text-white hover:bg-ink-700"
-        >
-          Filter
-        </button>
-        <a
-          href="/admin/contact-forms"
-          className="h-9 inline-flex items-center rounded-lg border border-ink-200 px-4 text-[13px] font-semibold text-ink-600 hover:bg-ink-50"
-        >
-          Clear
-        </a>
-      </form>
+      {/* Status counts are filters; the ring marks the one in force. */}
+      <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Link href={hrefWith({ status: "" })} className={`block rounded-2xl ${!status ? "ring-2 ring-brand/40" : ""}`}>
+          <Stat label="All inquiries" value={allCount.toLocaleString("en-IN")} />
+        </Link>
+        {(["new", "in_progress", "done"] as const).map((s) => (
+          <Link key={s} href={hrefWith({ status: s })} className={`block rounded-2xl ${ring(s)}`}>
+            <Stat label={STATUS_LABEL[s]} value={(counts[s] ?? 0).toLocaleString("en-IN")} />
+          </Link>
+        ))}
+      </div>
 
-      <Card padded={false}>
+      <AutoSubmitForm action={BASE}>
+        <Toolbar>
+          <SearchInput defaultValue={term} placeholder="Search name, email or phone…" />
+          <FilterSelect label="From" name="kind" defaultValue={kind}>
+            <option value="parent">Parent</option>
+            <option value="school">School</option>
+            <option value="business">Business</option>
+          </FilterSelect>
+          <FilterSelect label="Status" name="status" defaultValue={status}>
+            <option value="new">New</option>
+            <option value="in_progress">In progress</option>
+            <option value="done">Done</option>
+          </FilterSelect>
+          <FilterSelect label="Received" allLabel="Any time" name="since" defaultValue={since}>
+            <option value="today">Today</option>
+            <option value="7d">Last 7 days</option>
+            <option value="30d">Last 30 days</option>
+          </FilterSelect>
+          {paging.perPage !== DEFAULT_PER_PAGE ? <input type="hidden" name="perPage" value={paging.perPage} /> : null}
+          {hasFilter ? (
+            <Link href={BASE} className="text-[12.5px] text-ink-500 hover:text-ink-900">Clear</Link>
+          ) : null}
+        </Toolbar>
+      </AutoSubmitForm>
+
+      <Card padded={false} className="overflow-hidden">
         {rows.length === 0 ? (
           <EmptyState
             icon={Inbox}
-            title="No contact-form submissions"
-            description="Submissions from /contact will appear here."
+            title={hasFilter ? "No inquiries match" : "No inquiries yet"}
+            description={hasFilter ? "Try a different search or clear the filters." : "Submissions from the website's contact page appear here."}
           />
         ) : (
-          <table className="w-full">
-            <thead>
-              <tr>
-                <Th>Received</Th>
-                <Th>Type</Th>
-                <Th>Name</Th>
-                <Th>Contact</Th>
-                <Th>Organization</Th>
-                <Th>Message</Th>
-                <Th>Status</Th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => {
-                const p = (r.payload ?? null) as ContactPayload;
-                // School / business get an "Organization" cell that
-                // composites several fields so the admin doesn't have to
-                // click through for the common context (board / type /
-                // GST). Parent rows just show "—" here.
-                const orgBits: string[] = [];
-                if (p?.organization) orgBits.push(p.organization);
-                if (p?.board) orgBits.push(p.board);
-                if (p?.businessType) orgBits.push(p.businessType);
-                if (p?.interest) orgBits.push(`int: ${p.interest}`);
-                if (p?.gst) orgBits.push(`GST: ${p.gst}`);
-                return (
-                  <Tr key={r.id}>
-                    <Td muted>
-                      <span className="text-[12px] tabular-nums whitespace-nowrap">
-                        {new Date(r.createdAt).toLocaleString("en-IN", {
-                          dateStyle: "medium",
-                          timeStyle: "short",
-                        })}
-                      </span>
-                    </Td>
-                    <Td>{kindBadge(r.kind)}</Td>
-                    <Td>
-                      <span className="font-semibold text-[13px] text-ink-900">
-                        {r.name}
-                      </span>
-                    </Td>
-                    <Td>
-                      <div className="flex flex-col">
-                        <a
-                          href={`mailto:${r.email}`}
-                          className="text-[12px] text-ink-900 hover:text-brand truncate max-w-[220px]"
-                        >
-                          {r.email}
-                        </a>
-                        <a
-                          href={`tel:+91${r.phone}`}
-                          className="font-mono text-[11px] text-ink-500 hover:text-ink-900"
-                        >
-                          +91 {r.phone}
-                        </a>
-                      </div>
-                    </Td>
-                    <Td>
-                      {orgBits.length > 0 ? (
-                        <div className="flex flex-col gap-0.5 max-w-[200px]">
-                          {orgBits.map((bit, i) => (
-                            <span
-                              key={i}
-                              className="text-[12px] text-ink-700 truncate"
-                            >
-                              {bit}
-                            </span>
-                          ))}
-                          {p?.address ? (
-                            <span className="text-[11px] text-ink-500 truncate">
-                              {p.address}
-                            </span>
-                          ) : null}
-                        </div>
-                      ) : (
-                        <span className="text-ink-300">—</span>
-                      )}
-                    </Td>
-                    <Td>
-                      {p?.message ? (
-                        <p
-                          className="text-[12px] text-ink-700 whitespace-pre-wrap max-w-[320px] line-clamp-4"
-                          title={p.message}
-                        >
-                          {p.message}
-                        </p>
-                      ) : (
-                        <span className="text-ink-300">—</span>
-                      )}
-                    </Td>
-                    <Td>{statusBadge(r.status)}</Td>
-                  </Tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr>
+                  <Th>Received</Th>
+                  <Th>From</Th>
+                  <Th>Contact</Th>
+                  <Th>Organisation</Th>
+                  <Th>Message</Th>
+                  <Th>Status</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r) => {
+                  const p = (r.payload ?? null) as ContactPayload;
+                  // School / business rows composite the useful context
+                  // (board, type, interest, GST) so the admin need not click
+                  // through. Parent rows just show "—".
+                  const orgBits = [p?.organization, p?.board, p?.businessType, p?.interest ? `Interest: ${p.interest}` : null, p?.gst ? `GST ${p.gst}` : null].filter(Boolean) as string[];
+                  const when = new Date(r.createdAt);
+                  return (
+                    <Tr key={r.id}>
+                      <Td muted className="whitespace-nowrap">
+                        {IST.format(when)}
+                        <span className="block text-[11.5px]">{IST_TIME.format(when)}</span>
+                      </Td>
+                      <Td><Badge tone={KIND_TONE[r.kind] ?? "default"} size="sm" className="capitalize">{r.kind}</Badge></Td>
+                      <Td>
+                        <span className="block font-semibold text-ink-900">{r.name}</span>
+                        <a href={`mailto:${r.email}`} className="block max-w-[220px] truncate text-[12px] font-normal text-ink-600 hover:text-brand-700">{r.email}</a>
+                        <a href={`tel:+91${r.phone}`} className="block font-mono text-[12px] font-normal text-ink-500 hover:text-ink-900">{r.phone}</a>
+                      </Td>
+                      <Td muted>
+                        {orgBits.length > 0 ? (
+                          <div className="max-w-[220px]">
+                            <span className="block truncate text-ink-800">{orgBits[0]}</span>
+                            {orgBits.length > 1 ? <span className="block truncate text-[12px]">{orgBits.slice(1).join(" · ")}</span> : null}
+                            {p?.address ? <span className="block truncate text-[12px]">{p.address}</span> : null}
+                          </div>
+                        ) : (
+                          <span className="text-ink-300">—</span>
+                        )}
+                      </Td>
+                      <Td muted>
+                        {p?.message ? (
+                          <p className="line-clamp-3 max-w-[360px] whitespace-pre-wrap text-ink-700" title={p.message}>{p.message}</p>
+                        ) : (
+                          <span className="text-ink-300">—</span>
+                        )}
+                      </Td>
+                      <Td><Badge tone={STATUS_TONE[r.status] ?? "default"} dot size="sm">{STATUS_LABEL[r.status] ?? r.status}</Badge></Td>
+                    </Tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
+        {total > 0 ? (
+          <Pagination page={paging.page} pages={pages} from={from} to={to} total={total} noun="inquiry" hrefFor={(p) => withPaging(hrefWith(), p, paging.perPage)}>
+            <PerPagePicker value={paging.perPage} options={PER_PAGE_OPTIONS} hrefFor={(pp) => withPaging(hrefWith(), 1, pp)} />
+          </Pagination>
+        ) : null}
       </Card>
-
-      {totalPages > 1 && (
-        <div className="mt-4 flex items-center gap-2 text-[13px]">
-          {page > 1 && (
-            <a
-              href={qs({ page: String(page - 1) })}
-              className="rounded-lg border border-ink-200 px-3 py-1.5 hover:bg-ink-50"
-            >
-              ← Prev
-            </a>
-          )}
-          <span className="text-ink-500">
-            Page {page} of {totalPages}
-          </span>
-          {page < totalPages && (
-            <a
-              href={qs({ page: String(page + 1) })}
-              className="rounded-lg border border-ink-200 px-3 py-1.5 hover:bg-ink-50"
-            >
-              Next →
-            </a>
-          )}
-        </div>
-      )}
     </div>
   );
 }

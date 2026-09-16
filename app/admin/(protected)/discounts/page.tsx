@@ -16,13 +16,27 @@ import {
   Stat,
   Toolbar,
   SearchInput,
+  FilterSelect,
+  Menu,
 } from "@/components/admin/ui/primitives";
 import { BulkGenerateDialog } from "./BulkGenerateDialog";
 import { BulkExtendDialog } from "./BulkExtendDialog";
 import { redirect } from "next/navigation";
 import { requireAnyPermission, isResponse } from "@/server/admin-guard";
+import { Pagination, PerPagePicker } from "@/components/admin/ui/pagination";
+import {
+  DEFAULT_PER_PAGE,
+  PER_PAGE_OPTIONS,
+  pageMeta,
+  readPaging,
+  withPaging,
+} from "@/lib/admin-paging";
+
+import { AutoSubmitForm } from "@/components/admin/AutoSubmitForm";
 
 export const dynamic = "force-dynamic";
+
+const fmtDay = (d: Date) => d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
 
 type StatusFilter = "" | "active" | "inactive" | "expired" | "scheduled" | "used";
 type TypeFilter = "" | "Fixed" | "Percentage";
@@ -35,12 +49,16 @@ export default async function DiscountsPage({
     status?: StatusFilter;
     type?: TypeFilter;
     school?: string;
+    page?: string;
+    perPage?: string;
   }>;
 }) {
   const guard = await requireAnyPermission("discounts.read", "discounts.write");
   if (isResponse(guard)) redirect("/admin/dashboard");
 
-  const { q, status, type, school } = await searchParams;
+  const sp = await searchParams;
+  const { q, status, type, school } = sp;
+  const paging = readPaging(sp);
   const term = (q ?? "").trim();
   const now = new Date();
 
@@ -86,6 +104,9 @@ export default async function DiscountsPage({
     where.push(eq(websiteCartCoupons.schoolErpName, school));
   }
 
+  // One page of coupons plus the filtered count. This used to render every
+  // matching coupon in one response (~9 s to open).
+  const whereExpr = where.length ? and(...where) : undefined;
   const rows = await db
     .select({
       c: websiteCartCoupons,
@@ -104,8 +125,12 @@ export default async function DiscountsPage({
     .from(websiteCartCoupons)
     .leftJoin(schools, eq(schools.id, websiteCartCoupons.schoolId))
     .leftJoin(students, eq(students.id, websiteCartCoupons.studentId))
-    .where(where.length ? and(...where) : undefined)
-    .orderBy(desc(websiteCartCoupons.updatedAt));
+    .where(whereExpr)
+    // id breaks updatedAt ties so a coupon cannot appear on two pages.
+    .orderBy(desc(websiteCartCoupons.updatedAt), desc(websiteCartCoupons.id))
+    .limit(paging.perPage)
+    .offset(paging.offset);
+  const matching = await db.$count(websiteCartCoupons, whereExpr);
 
   // ─── Global KPIs (always show the unfiltered totals) ──────────────
   const [totals] = await db.execute<{
@@ -172,47 +197,36 @@ export default async function DiscountsPage({
 
   const hasAnyFilter = !!(term || status || type || school);
 
+  const { pages, from, to } = pageMeta(matching, paging);
+  if (paging.page > pages) redirect(withPaging(hrefWith({}), pages, paging.perPage));
+
   const kpiRing = (key: StatusFilter | "all") =>
     (key === "all" && !hasAnyFilter) || (key !== "all" && status === key)
       ? "ring-2 ring-brand/40"
       : "";
 
+  const exportQs = new URLSearchParams({ q: term, status: status ?? "", type: type ?? "", school: school ?? "" }).toString();
+
   return (
     <div>
       <PageHeader
         eyebrow="Pricing & Tax"
-        title="Website Cart Coupons"
-        description="Mirrors ERPNext › Procurement › Website Cart Coupon. Edits round-trip to erp.inventre.in."
+        title="Discounts & Promotions"
+        description="Website cart coupons, mirrored to ERPNext on save."
         actions={
           <div className="flex items-center gap-2">
-            <Link
-              href={`/api/admin/export/coupons?${new URLSearchParams({
-                q: term,
-                status: status ?? "",
-                type: type ?? "",
-                school: school ?? "",
-              }).toString()}`}
-              prefetch={false}
-              title="Download filtered coupons as CSV (full details)"
-            >
-              <Button variant="secondary" icon={<Download className="h-3.5 w-3.5" />}>
-                Export CSV
-              </Button>
-            </Link>
-            <Link
-              href={`/api/admin/export/coupons?codesOnly=1&${new URLSearchParams({
-                q: term,
-                status: status ?? "",
-                type: type ?? "",
-                school: school ?? "",
-              }).toString()}`}
-              prefetch={false}
-              title="Download just the coupon codes (one per line)"
-            >
-              <Button variant="secondary" icon={<Download className="h-3.5 w-3.5" />}>
-                Codes only
-              </Button>
-            </Link>
+            <Menu
+              label="Export"
+              trigger={
+                <span className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-ink-200 bg-white px-3.5 text-[13px] font-semibold text-ink-800 transition-colors hover:border-ink-300 hover:bg-cream-100">
+                  <Download className="h-3.5 w-3.5" /> Export
+                </span>
+              }
+              items={[
+                { label: "Coupons as CSV (full details)", href: `/api/admin/export/coupons?${exportQs}` },
+                { label: "Codes only (one per line)", href: `/api/admin/export/coupons?codesOnly=1&${exportQs}` },
+              ]}
+            />
             <BulkExtendDialog
               schools={schoolOpts.map((s) => ({
                 erpName: s.erp_name,
@@ -229,93 +243,61 @@ export default async function DiscountsPage({
         }
       />
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
-        <Link
-          href={hrefWith({ status: "", type: "", school: "", q: "" })}
-          className={`block rounded-2xl ${kpiRing("all")}`}
-        >
-          <Stat label="Total coupons" value={Number(totals.total).toLocaleString("en-IN")} iconTone="default" />
+      {/* The four numbers are also filters: Active and Used narrow the list. */}
+      <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Link href="/admin/discounts" className={`block rounded-2xl ${kpiRing("all")}`}>
+          <Stat label="Total coupons" value={Number(totals.total).toLocaleString("en-IN")} />
         </Link>
-        <Link
-          href={hrefWith({ status: "active" })}
-          className={`block rounded-2xl ${kpiRing("active")}`}
-        >
-          <Stat label="Active" value={Number(totals.active).toLocaleString("en-IN")} iconTone="success" />
+        <Link href={hrefWith({ status: "active" })} className={`block rounded-2xl ${kpiRing("active")}`}>
+          <Stat label="Active now" value={Number(totals.active).toLocaleString("en-IN")} />
         </Link>
-        <Link
-          href={hrefWith({ status: "used" })}
-          className={`block rounded-2xl ${kpiRing("used")}`}
-        >
-          <Stat label="Total redemptions" value={Number(totals.used).toLocaleString("en-IN")} iconTone="info" />
+        <Link href={hrefWith({ status: "used" })} className={`block rounded-2xl ${kpiRing("used")}`}>
+          <Stat label="Redemptions" value={Number(totals.used).toLocaleString("en-IN")} />
         </Link>
-        <Link
-          href={hrefWith({ status: "used" })}
-          className={`block rounded-2xl ${kpiRing("used")}`}
-        >
-          <Stat label="Total saved" value={<Money paise={Number(totals.saved)} />} iconTone="brand" />
+        <Link href={hrefWith({ status: "used" })} className={`block rounded-2xl ${kpiRing("used")}`}>
+          <Stat label="Discount given" value={<Money paise={Number(totals.saved)} />} />
         </Link>
       </div>
 
-      <form method="GET" className="mb-4">
+      <AutoSubmitForm action="/admin/discounts" className="mb-4">
         <Toolbar>
           <SearchInput
             name="q"
             defaultValue={term}
             placeholder="Search coupon code or ERP name…"
           />
-          <select
-            name="status"
-            defaultValue={status ?? ""}
-            className="h-9 px-2.5 rounded-lg border border-ink-200 text-[13px] bg-white"
-          >
-            <option value="">All statuses</option>
+          <FilterSelect label="Status" name="status" defaultValue={status ?? ""}>
             <option value="active">Active</option>
             <option value="inactive">Inactive</option>
             <option value="expired">Expired</option>
             <option value="scheduled">Scheduled</option>
             <option value="used">Used (≥1 redemption)</option>
-          </select>
-          <select
-            name="type"
-            defaultValue={type ?? ""}
-            className="h-9 px-2.5 rounded-lg border border-ink-200 text-[13px] bg-white"
-          >
-            <option value="">All types</option>
+          </FilterSelect>
+          <FilterSelect label="Type" name="type" defaultValue={type ?? ""}>
             <option value="Fixed">Fixed</option>
             <option value="Percentage">Percentage</option>
-          </select>
-          <select
-            name="school"
-            defaultValue={school ?? ""}
-            className="h-9 px-2.5 rounded-lg border border-ink-200 text-[13px] bg-white min-w-[180px]"
-          >
-            <option value="">All schools</option>
+          </FilterSelect>
+          <FilterSelect label="School" className="min-w-[200px]" name="school" defaultValue={school ?? ""}>
             {schoolOpts.map((s) => (
               <option key={s.erp_name} value={s.erp_name}>
                 {s.name}
               </option>
             ))}
-          </select>
-          <Button type="submit" variant="secondary">
-            Apply
-          </Button>
+          </FilterSelect>
+          {/* Applying a filter restarts at page 1 but keeps the chosen page size. */}
+          {paging.perPage !== DEFAULT_PER_PAGE ? (
+            <input type="hidden" name="perPage" value={paging.perPage} />
+          ) : null}
           {hasAnyFilter ? (
-            <Link
-              href="/admin/discounts"
-              className="text-[12.5px] text-ink-500 hover:text-ink-900 underline underline-offset-2"
-            >
+            <Link href="/admin/discounts" className="text-[12.5px] text-ink-500 hover:text-ink-900">
               Clear
             </Link>
           ) : null}
-          <span className="ml-auto text-[12px] text-ink-500 tabular-nums">
-            {rows.length.toLocaleString("en-IN")} of{" "}
-            {Number(totals.total).toLocaleString("en-IN")}
-          </span>
         </Toolbar>
-      </form>
+      </AutoSubmitForm>
 
       <Card padded={false}>
-        {rows.length === 0 ? (
+        {matching === 0 ? (
           <EmptyState
             icon={Tag}
             title={hasAnyFilter ? "No coupons match these filters" : "No coupons yet"}
@@ -341,118 +323,78 @@ export default async function DiscountsPage({
             <table className="w-full">
               <thead>
                 <tr>
-                  <Th>Coupon code</Th>
-                  <Th>School</Th>
-                  <Th>Grade</Th>
-                  <Th>Student</Th>
-                  <Th>Type</Th>
-                  <Th right>Value</Th>
-                  <Th right>Cap</Th>
-                  <Th>Window</Th>
-                  <Th>Uses</Th>
+                  <Th>Coupon</Th>
+                  <Th>Applies to</Th>
+                  <Th right>Discount</Th>
+                  <Th>Valid</Th>
+                  <Th right>Uses</Th>
                   <Th right>Saved</Th>
                   <Th>Status</Th>
                 </tr>
               </thead>
               <tbody>
                 {rows.map((r) => {
-                  const expired =
-                    r.c.endDatetime && r.c.endDatetime < now ? true : false;
-                  const notStarted =
-                    r.c.startDatetime && r.c.startDatetime > now ? true : false;
+                  const expired = r.c.endDatetime && r.c.endDatetime < now ? true : false;
+                  const notStarted = r.c.startDatetime && r.c.startDatetime > now ? true : false;
                   const statusTone: "default" | "success" | "warning" | "danger" =
-                    !r.c.isActive
-                      ? "default"
-                      : expired
-                        ? "danger"
-                        : notStarted
-                          ? "warning"
-                          : "success";
-                  const statusLabel = !r.c.isActive
-                    ? "Inactive"
-                    : expired
-                      ? "Expired"
-                      : notStarted
-                        ? "Scheduled"
-                        : "Active";
-                  const studentName = [r.studentFirstName, r.studentLastName]
-                    .filter(Boolean)
-                    .join(" ")
-                    .trim();
+                    !r.c.isActive ? "default" : expired ? "danger" : notStarted ? "warning" : "success";
+                  const statusLabel = !r.c.isActive ? "Inactive" : expired ? "Expired" : notStarted ? "Scheduled" : "Active";
+                  const studentName = [r.studentFirstName, r.studentLastName].filter(Boolean).join(" ").trim();
+                  const scope = [r.schoolName, r.c.grade, studentName].filter(Boolean);
                   return (
                     <Tr key={r.c.id}>
                       <Td>
                         <Link
                           href={`/admin/discounts/${r.c.id}`}
-                          className="font-mono text-[12.5px] font-semibold text-ink-900 hover:text-brand"
+                          className="font-mono font-semibold text-ink-900 hover:text-brand-700"
                         >
                           {r.c.couponCode}
                         </Link>
-                        {r.c.erpName && r.c.erpName !== r.c.couponCode ? (
-                          <div className="text-[10px] text-ink-400 font-mono mt-0.5">
-                            {r.c.erpName}
-                          </div>
-                        ) : null}
                       </Td>
                       <Td muted>
-                        {r.schoolName ?? (
-                          <span className="text-ink-400">— any —</span>
+                        {scope.length === 0 ? (
+                          <span className="text-ink-400">Everyone</span>
+                        ) : (
+                          <>
+                            <span className="text-ink-800">{r.schoolName ?? "Any school"}</span>
+                            {r.c.grade || studentName ? (
+                              <span className="block text-[12px]">
+                                {[r.c.grade, studentName].filter(Boolean).join(" · ")}
+                              </span>
+                            ) : null}
+                          </>
                         )}
-                      </Td>
-                      <Td muted>
-                        {r.c.grade ?? (
-                          <span className="text-ink-400">— any —</span>
-                        )}
-                      </Td>
-                      <Td muted>
-                        {studentName || (
-                          <span className="text-ink-400">— any —</span>
-                        )}
-                      </Td>
-                      <Td>
-                        <Badge
-                          tone={r.c.discountType === "Percentage" ? "info" : "brand"}
-                          size="sm"
-                        >
-                          {r.c.discountType}
-                        </Badge>
                       </Td>
                       <Td right>
-                        <span className="font-semibold tabular-nums">
+                        <span className="font-semibold">
                           {r.c.discountType === "Percentage"
                             ? `${Number(r.c.discount)}%`
                             : `₹${Number(r.c.discount).toLocaleString("en-IN")}`}
                         </span>
-                      </Td>
-                      <Td right muted>
-                        {r.c.discountType === "Percentage" &&
-                        r.c.maximumDiscountAmount > 0
-                          ? `₹${r.c.maximumDiscountAmount.toLocaleString("en-IN")}`
-                          : "—"}
-                      </Td>
-                      <Td muted className="text-[11px] whitespace-nowrap">
-                        {r.c.startDatetime || r.c.endDatetime ? (
-                          <>
-                            {r.c.startDatetime
-                              ? new Date(r.c.startDatetime).toLocaleDateString("en-IN")
-                              : "—"}
-                            <span className="mx-1 text-ink-300">→</span>
-                            {r.c.endDatetime
-                              ? new Date(r.c.endDatetime).toLocaleDateString("en-IN")
-                              : "—"}
-                          </>
-                        ) : (
-                          <span className="text-ink-400">always</span>
-                        )}
-                      </Td>
-                      <Td>
-                        <span className="tabular-nums">{r.usageCount}</span>
-                        {r.c.oneTimeUse ? (
-                          <span className="ml-1 text-[10px] text-ink-400">/ 1</span>
+                        {/* The maximum-discount cap only applies to percentage coupons. */}
+                        {r.c.discountType === "Percentage" && r.c.maximumDiscountAmount > 0 ? (
+                          <span className="block text-[11.5px] font-normal text-ink-500">
+                            up to ₹{r.c.maximumDiscountAmount.toLocaleString("en-IN")}
+                          </span>
                         ) : null}
                       </Td>
+                      <Td muted className="whitespace-nowrap">
+                        {r.c.startDatetime || r.c.endDatetime ? (
+                          <>
+                            {r.c.startDatetime ? fmtDay(r.c.startDatetime) : "—"}
+                            <span className="mx-1 text-ink-300">→</span>
+                            {r.c.endDatetime ? fmtDay(r.c.endDatetime) : "—"}
+                          </>
+                        ) : (
+                          <span className="text-ink-400">No end date</span>
+                        )}
+                      </Td>
                       <Td right>
-                        <Money paise={Number(r.totalSaved)} />
+                        {r.usageCount || <span className="text-ink-300">0</span>}
+                        {r.c.oneTimeUse ? <span className="text-[11px] text-ink-400"> / 1</span> : null}
+                      </Td>
+                      <Td right>
+                        <Money paise={Number(r.totalSaved)} className={Number(r.totalSaved) ? "font-semibold" : "text-ink-300"} />
                       </Td>
                       <Td>
                         <Badge tone={statusTone} dot size="sm">
@@ -466,6 +408,23 @@ export default async function DiscountsPage({
             </table>
           </div>
         )}
+        {matching > 0 ? (
+          <Pagination
+            page={paging.page}
+            pages={pages}
+            from={from}
+            to={to}
+            total={matching}
+            noun="coupon"
+            hrefFor={(p) => withPaging(hrefWith({}), p, paging.perPage)}
+          >
+            <PerPagePicker
+              value={paging.perPage}
+              options={PER_PAGE_OPTIONS}
+              hrefFor={(pp) => withPaging(hrefWith({}), 1, pp)}
+            />
+          </Pagination>
+        ) : null}
       </Card>
     </div>
   );

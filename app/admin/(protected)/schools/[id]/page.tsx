@@ -6,29 +6,27 @@ import {
   productGrades,
 } from "@/db/schema";
 import { eq, sql, asc } from "drizzle-orm";
+import { MapPin, Globe } from "lucide-react";
 import {
-  PageHeader, Card, CardHeader, Badge, Th, Td, Tr, EmptyState,
+  PageHeader, Card, CardHeader, Badge, Th, Td, Tr, EmptyState, Stat, Button,
 } from "@/components/admin/ui/primitives";
+import { Tabs, resolveTab } from "@/components/admin/ui/tabs";
 import { SchoolEditor, CoordinatorEditor } from "@/components/admin/SchoolEditor";
 import { SchoolGradeMappingEditor, UniformMappingEditor } from "@/components/admin/ChildTableEditors";
 import { RecordHistory } from "@/components/admin/RecordHistory";
 
 export const dynamic = "force-dynamic";
 
-type Tab = "details" | "coordinators" | "grades" | "skuMapping" | "students" | "dashboard";
-
-function tabHref(id: string, tab: Tab) {
-  return `/admin/schools/${id}?tab=${tab}`;
-}
+const STATUS_LABEL: Record<string, string> = { active: "Active", onboarding: "Onboarding", paused: "Inactive" };
 
 export default async function SchoolDetailPage({
   params, searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ tab?: Tab }>;
+  searchParams: Promise<{ tab?: string }>;
 }) {
   const { id } = await params;
-  const { tab = "details" } = await searchParams;
+  const sp = await searchParams;
 
   const [school] = await db.select().from(schools).where(eq(schools.id, id)).limit(1);
   if (!school) notFound();
@@ -60,43 +58,65 @@ export default async function SchoolDetailPage({
       return a.localeCompare(b);
     });
 
+  const TABS = [
+    { key: "details", label: "Details" },
+    { key: "coordinators", label: "Coordinators", count: coordinators.length },
+    { key: "grades", label: "Grades", count: gradeRows.length },
+    { key: "skuMapping", label: "Uniform SKUs", count: uniformMaps.length },
+    { key: "students", label: "Students", count: totalStudents },
+  ];
+  const tab = resolveTab(sp.tab, TABS);
+  const title = school.schoolName ?? school.erpName ?? "School";
+  const studentsHref = `/admin/students?schoolCode=${encodeURIComponent(school.schoolCode ?? "")}`;
+  const place = [school.city, school.state].filter(Boolean).join(", ");
+
   return (
-    <div className="max-w-6xl">
+    <div>
       <PageHeader
-        breadcrumb={[
-          { label: "Schools", href: "/admin/schools" },
-          { label: school.schoolName ?? school.erpName ?? "School" },
-        ]}
-        eyebrow="School"
-        title={school.schoolName ?? school.erpName ?? "School"}
+        eyebrow="Catalog"
+        breadcrumb={[{ label: "Schools", href: "/admin/schools" }, { label: title }]}
+        title={title}
         description={
-          <span className="flex items-center gap-2 flex-wrap">
-            <Badge tone={school.status === "active" ? "success" : "default"} dot size="sm">{school.status ?? "—"}</Badge>
-            <span className="font-mono text-[11px] text-ink-500">{school.schoolCode ?? "—"}</span>
-            <span className="text-ink-500">· {school.branchName ?? "—"}</span>
+          <span className="mt-1 flex flex-wrap items-center gap-3 text-[13px]">
+            <Badge tone={school.status === "active" ? "success" : school.status === "onboarding" ? "warning" : "default"} dot size="sm">
+              {STATUS_LABEL[school.status ?? ""] ?? school.status ?? "—"}
+            </Badge>
+            <span className="font-mono text-[12px] text-ink-600">{school.schoolCode ?? "—"}</span>
+            {school.branchName ? <span className="text-ink-600">{school.branchName}</span> : null}
+            {place ? (
+              <span className="inline-flex items-center gap-1 text-ink-600">
+                <MapPin className="h-3.5 w-3.5" /> {place}
+              </span>
+            ) : null}
+            {school.websiteUrl ? (
+              <a href={school.websiteUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-ink-600 hover:text-brand-700">
+                <Globe className="h-3.5 w-3.5" /> Website
+              </a>
+            ) : null}
           </span>
         }
       />
 
-      <div className="flex items-center gap-1 mb-5 border-b border-ink-100/70 overflow-x-auto">
-        {([
-          { id: "details" as const, label: "Details" },
-          { id: "dashboard" as const, label: "Dashboard" },
-          { id: "coordinators" as const, label: `Coordinators (${coordinators.length})` },
-          { id: "grades" as const, label: `Grades (${gradeRows.length})` },
-          { id: "skuMapping" as const, label: `SKU Mapping (${uniformMaps.length})` },
-          { id: "students" as const, label: `Students (${totalStudents})` },
-        ]).map((t) => (
-          <Link key={t.id} href={tabHref(id, t.id)}
-            className={`px-3 py-2 text-[13px] -mb-px border-b-2 whitespace-nowrap ${tab === t.id ? "border-brand-600 text-ink-900 font-semibold" : "border-transparent text-ink-500 hover:text-ink-800"}`}>
-            {t.label}
-          </Link>
-        ))}
+      <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
+        <Link href={studentsHref} className="block rounded-2xl transition-shadow hover:shadow-md">
+          <Stat label="Students" value={totalStudents.toLocaleString("en-IN")} hint="Open in Students →" />
+        </Link>
+        <Link href={`/admin/schools/${id}?tab=coordinators`} className="block rounded-2xl transition-shadow hover:shadow-md">
+          <Stat label="Coordinators" value={coordinators.length} />
+        </Link>
+        <Link href={`/admin/schools/${id}?tab=grades`} className="block rounded-2xl transition-shadow hover:shadow-md">
+          <Stat label="Grades mapped" value={gradeRows.length} />
+        </Link>
+        <Link href={`/admin/schools/${id}?tab=skuMapping`} className="block rounded-2xl transition-shadow hover:shadow-md">
+          <Stat label="Uniform SKUs" value={uniformMaps.length} />
+        </Link>
       </div>
+
+      <Tabs tabs={TABS} active={tab} hrefFor={(k) => `/admin/schools/${id}?tab=${k}`} className="mb-5" />
 
       {tab === "details" && (
         <Card>
-          <CardHeader title="School details" description="All fields are editable. Coordinators live on their own tab." />
+          <CardHeader title="School details" description="Master record synced with ERPNext." />
           <SchoolEditor
             mode="edit"
             schoolId={id}
@@ -119,64 +139,65 @@ export default async function SchoolDetailPage({
         </Card>
       )}
 
-      {tab === "dashboard" && (
-        <Card>
-          <CardHeader title="All-time summary" />
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-[13px]">
-            <Stat label="Total Students" value={totalStudents} />
-            <Stat label="Coordinators" value={coordinators.length} />
-            <Stat label="Grades configured" value={gradeRows.length} />
-            <Stat label="Uniform mappings" value={uniformMaps.length} />
-          </div>
-        </Card>
-      )}
-
       {tab === "coordinators" && (
-        <Card>
-          <CardHeader title="School coordinators" description="Add the people you contact at this school. Type into the bottom row and click Add. Click the trash icon to remove a row." />
+        <Card padded={false} className="overflow-hidden">
+          <div className="px-5 pt-5 lg:px-6">
+            <CardHeader title="Coordinators" description="The school's points of contact for orders and deliveries." className="mb-3" />
+          </div>
           <CoordinatorEditor schoolId={id} initial={coordinators.map((c) => ({ id: c.id, rowIdx: c.rowIdx, pocName: c.pocName, email: c.email, contactNumber: c.contactNumber, alternateNumber: c.alternateNumber, role: c.role }))} />
         </Card>
       )}
 
       {tab === "grades" && (
         <Card>
-          <CardHeader title="Grade × section mappings" description="Configure which grades this school runs and the section labels they use. Type into the bottom row and click Add to insert; trash icon to remove." />
+          <CardHeader title="Grade mappings" description="How the school names each grade, and which sections it runs. Parents see the school's name." />
           <SchoolGradeMappingEditor schoolId={id} standardGrades={standardGrades} initial={gradeRows.map((g) => ({ id: g.id, rowIdx: g.rowIdx, grade: g.grade, schoolGivenGradeName: g.schoolGivenGradeName, sections: g.sections }))} />
         </Card>
       )}
 
       {tab === "skuMapping" && (
         <Card>
-          <CardHeader title="Uniform SKU mappings" description="Maps each grade × section × house combination at this school. Used by item-attribute resolution and pricing." />
+          <CardHeader title="Uniform SKU mappings" description="Grade and section groups that share a uniform SKU." />
           <UniformMappingEditor schoolId={id} initial={uniformMaps.map((u) => ({ id: u.id, rowIdx: u.rowIdx, grade: u.grade, organisationGivenGrade: u.organisationGivenGrade, sections: u.sections, organisationGivenSection: u.organisationGivenSection, houseName: u.houseName }))} />
         </Card>
       )}
 
       {tab === "students" && (
-        <Card padded={false}>
+        <Card padded={false} className="overflow-hidden">
+          <div className="px-5 pt-5 lg:px-6">
+            <CardHeader
+              title="Students"
+              description={totalStudents > studentRows.length ? `First ${studentRows.length} of ${totalStudents.toLocaleString("en-IN")}` : `${totalStudents} student${totalStudents === 1 ? "" : "s"}`}
+              className="mb-3"
+              actions={
+                totalStudents > 0 ? (
+                  <Link href={studentsHref}><Button variant="secondary" size="sm">Open in Students</Button></Link>
+                ) : null
+              }
+            />
+          </div>
           {studentRows.length === 0 ? (
-            <EmptyState title="No students" description={totalStudents === 0 ? "Add students from the Students page." : "Open the full students list."} />
+            <EmptyState title="No students" description="Students appear here once they are synced or added for this school." />
           ) : (
-            <>
-              <table className="w-full text-[13px]">
-                <thead><tr><Th>Enrollment</Th><Th>First Name</Th><Th>Grade</Th><Th>Section</Th><Th>Joining Date</Th><Th>Status</Th></tr></thead>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead><tr><Th>Student</Th><Th>Class</Th><Th>Joined</Th><Th>Verified</Th><Th>Status</Th></tr></thead>
                 <tbody>{studentRows.map((s) => (
                   <Tr key={s.id}>
-                    <Td><Link href={`/admin/students/${s.id}`} className="font-mono text-[11px] text-ink-700 hover:text-brand-700">{s.enrollmentNumber ?? "—"}</Link></Td>
-                    <Td>{s.firstName ?? "—"}</Td>
-                    <Td muted>{s.grade ?? "—"}</Td>
-                    <Td muted>{s.section ?? "—"}</Td>
+                    <Td>
+                      <Link href={`/admin/students/${s.id}`} className="group/name block">
+                        <span className="block font-semibold text-ink-900 group-hover/name:text-brand-700">{s.firstName ?? "—"}</span>
+                        <span className="mt-0.5 block font-mono text-[11.5px] font-normal text-ink-500">{s.enrollmentNumber ?? "—"}</span>
+                      </Link>
+                    </Td>
+                    <Td muted>{s.grade ?? "—"}{s.section ? ` · ${s.section}` : ""}</Td>
                     <Td muted>{s.joiningDate ?? "—"}</Td>
-                    <Td><Badge tone={s.enabled ? "success" : "default"} size="sm">{s.enabled ? "Enabled" : "Disabled"}</Badge></Td>
+                    <Td>{s.isVerified ? <Badge tone="info" size="sm">Verified</Badge> : <span className="text-ink-300">—</span>}</Td>
+                    <Td><Badge tone={s.enabled ? "success" : "default"} dot size="sm">{s.enabled ? "Enabled" : "Disabled"}</Badge></Td>
                   </Tr>
                 ))}</tbody>
               </table>
-              {totalStudents > studentRows.length ? (
-                <div className="p-3 text-[12px] text-ink-500 border-t border-ink-100/70">
-                  Showing first {studentRows.length} of {totalStudents}. Open the <Link href={`/admin/students?schoolCode=${school.schoolCode}`} className="text-brand-700 hover:underline">full students list</Link>.
-                </div>
-              ) : null}
-            </>
+            </div>
           )}
         </Card>
       )}
@@ -184,15 +205,6 @@ export default async function SchoolDetailPage({
       <div className="mt-5">
         <RecordHistory entityType="school" entityId={id} title="School history" />
       </div>
-    </div>
-  );
-}
-
-function Stat({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="p-4 rounded-xl bg-cream-50/50 border border-ink-100/70">
-      <div className="text-[11px] uppercase tracking-wide text-ink-500 mb-1">{label}</div>
-      <div className="text-2xl font-semibold tabular-nums text-ink-900">{value}</div>
     </div>
   );
 }

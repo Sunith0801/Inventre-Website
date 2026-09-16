@@ -20,6 +20,8 @@ import { students, parents, schools } from "@/db/schema";
 import { requirePermission, isResponse, assertSchoolAccess } from "@/server/admin-guard";
 import { studentDisplayGradeSql } from "@/server/repos/grades";
 import { logActivity } from "@/server/activity";
+// One page size for the browser and this API — see students/_constants.ts.
+import { STUDENTS_PAGE_SIZE as PAGE_SIZE } from "@/app/admin/(protected)/students/_constants";
 
 const Body = z.object({
   // Student
@@ -199,7 +201,6 @@ export async function POST(req: Request) {
   });
 }
 
-const PAGE_SIZE = 150;
 
 /**
  * GET — paginated student list for the /admin/students browser. Mirrors the

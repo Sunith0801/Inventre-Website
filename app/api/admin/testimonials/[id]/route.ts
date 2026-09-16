@@ -29,7 +29,7 @@ export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const guard = await requirePermission("testimonials.write");
+  const guard = await requirePermission("content.write");
   if (isResponse(guard)) return guard;
   const { id } = await params;
   const parsed = await parseBody(req, Body);
@@ -80,7 +80,7 @@ export async function DELETE(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const guard = await requirePermission("testimonials.write");
+  const guard = await requirePermission("content.write");
   if (isResponse(guard)) return guard;
   const { id } = await params;
   const [before] = await db

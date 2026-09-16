@@ -2,12 +2,13 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { Check, Loader2, ShoppingBag, AlertCircle, ShoppingCart, Package, Ruler, X } from "lucide-react";
+import { Check, Loader2, ShoppingBag, AlertCircle, ShoppingCart, Package, Ruler, X, ChevronRight } from "lucide-react";
 import type { BundleNode } from "@/server/repos/products";
 import { useCart } from "@/lib/cart";
 import { parseBookkitLangs, type LangPair } from "@/lib/bookkit-langs";
 import { MultiAttributePicker } from "@/components/shop/pdp/MultiAttributePicker";
 import { SizeGuideTable } from "@/components/shop/pdp/SizeGuideTable";
+import type { SizeChartRow } from "@/lib/size-chart";
 
 /**
  * Reverse the `variantsByAttributeKey` map for a given variantId: returns
@@ -60,7 +61,7 @@ type Variant = {
   available: number;
 };
 
-type SizeTableRow = { size: string; chest: string; length: string; sleeve: string };
+type SizeTableRow = SizeChartRow;
 
 type ItemState = {
   node: BundleNode;
@@ -134,6 +135,10 @@ export function MagicBoxConfigurator({
   );
   // Per-item size-guide modal target. null = closed.
   const [sizeGuideFor, setSizeGuideFor] = useState<ItemState | null>(null);
+  // "What's inside" shows sub-bundles, not every piece. Tapping one opens
+  // it. Groups come from the section builder (selector group key) and,
+  // for boxes assembled before sections existed, from the item's kind.
+  const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
   const [adding, setAdding] = useState(false);
   const [added, setAdded] = useState(false);
   const [err, setErr] = useState<string>();
@@ -599,7 +604,96 @@ export function MagicBoxConfigurator({
       )}
 
       <div className="rounded-2xl border border-ink-100 bg-white divide-y divide-ink-100">
-        {items.map((it, idx) => {
+        {(() => {
+          const groupOf = (it: ItemState): { key: string; name: string } => {
+            if (it.node.selectorGroupKey && it.node.sectionName) return { key: it.node.selectorGroupKey, name: it.node.sectionName };
+            const k = it.node.bundleLevel;
+            if (k === "uniform") return { key: "uniform", name: "Uniform set" };
+            if (k === "kit" || k === "set") return { key: "bookkit", name: "Book kit" };
+            return { key: "other", name: "Other items" };
+          };
+          const order = ["uniform", "bookkit", "other"];
+          const groups: { key: string; name: string; idxs: number[] }[] = [];
+          items.forEach((it, idx) => {
+            const g = groupOf(it);
+            let entry = groups.find((x) => x.key === g.key);
+            if (!entry) { entry = { key: g.key, name: g.name, idxs: [] }; groups.push(entry); }
+            entry.idxs.push(idx);
+          });
+          groups.sort((a, b) => (order.indexOf(a.key) === -1 ? 99 : order.indexOf(a.key)) - (order.indexOf(b.key) === -1 ? 99 : order.indexOf(b.key)));
+          const toggle = (k: string) => setOpenGroups((prev) => { const n = new Set(prev); if (n.has(k)) n.delete(k); else n.add(k); return n; });
+          return groups.map((g) => {
+            const done = g.idxs.every((i) => items[i]!.variants.length === 0 || !!items[i]!.pickedVariantId);
+            const todo = g.idxs.filter((i) => items[i]!.variants.length > 0 && !items[i]!.pickedVariantId).length;
+            const open = openGroups.has(g.key);
+            // One size for every uniform piece. Plain-size items pick the
+            // variant with that size. Colour × size items keep the colour
+            // already picked (or the first colour that comes in that size)
+            // and change only the size axis — the parent can still adjust
+            // any single piece below.
+            const sizeAxisOf = (it: ItemState) => it.attributeGroups.find((gr) => /size/i.test(gr.name))?.name ?? null;
+            const entriesOf = (it: ItemState) =>
+              Object.entries(it.variantsByAttributeKey).map(([k, vid]) => {
+                let sel: Record<string, string> = {};
+                try { sel = Object.fromEntries(JSON.parse(k) as [string, string][]); } catch { /* legacy key */ }
+                return { sel, vid };
+              });
+            const isMulti = (it: ItemState) => it.attributeGroups.length >= 2 && !!sizeAxisOf(it);
+            const sizesOf = (it: ItemState): string[] =>
+              isMulti(it) ? [...new Set(entriesOf(it).map((e) => e.sel[sizeAxisOf(it)!]).filter((s): s is string => !!s))] : it.variants.map((v) => v.size);
+            const variantForSize = (it: ItemState, s: string): string | null => {
+              if (!isMulti(it)) return it.variants.find((v) => v.size === s)?.id ?? null;
+              const ax = sizeAxisOf(it)!;
+              const entries = entriesOf(it);
+              const current = entries.find((e) => e.vid === it.pickedVariantId)?.sel;
+              const same = current ? entries.find((e) => e.sel[ax] === s && Object.entries(current).every(([k, v]) => k === ax || e.sel[k] === v)) : undefined;
+              return (same ?? entries.find((e) => e.sel[ax] === s))?.vid ?? null;
+            };
+            const sizeOfPick = (it: ItemState): string | null => {
+              if (!it.pickedVariantId) return null;
+              if (isMulti(it)) return entriesOf(it).find((e) => e.vid === it.pickedVariantId)?.sel[sizeAxisOf(it)!] ?? null;
+              return it.variants.find((v) => v.id === it.pickedVariantId)?.size ?? null;
+            };
+            // The row offers every size any uniform piece comes in (a belt's
+            // S/M/L and a shirt's 22–44 rarely intersect); tapping one sets
+            // it on every piece that has it and leaves the others alone.
+            const sizeItems = g.key === "uniform" ? g.idxs.filter((i) => items[i]!.variants.length > 0) : [];
+            const sizeOrder = (a: string, b: string) => { const na = parseFloat(a), nb = parseFloat(b); return !isNaN(na) && !isNaN(nb) ? na - nb : a.localeCompare(b); };
+            const sharedSizes = sizeItems.length ? [...new Set(sizeItems.flatMap((i) => sizesOf(items[i]!)))].sort(sizeOrder) : [];
+            const applyAll = (s: string) => sizeItems.forEach((i) => { const vid = variantForSize(items[i]!, s); if (vid) pick(i, vid); });
+            return (
+              <div key={g.key}>
+                <button type="button" onClick={() => toggle(g.key)} aria-expanded={open} className="w-full flex items-center gap-3 px-4 py-3.5 text-left hover:bg-cream-50">
+                  <span className={"grid h-6 w-6 shrink-0 place-items-center rounded-full text-[11px] font-bold " + (done ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700")}>
+                    {done ? <Check className="h-3.5 w-3.5" /> : todo}
+                  </span>
+                  <span className="flex-1 min-w-0">
+                    <span className="block text-[15px] font-semibold text-ink-900">{g.name}</span>
+                    <span className="block text-[12px] text-ink-500">
+                      {g.idxs.length} item{g.idxs.length === 1 ? "" : "s"}{done ? " · ready" : ` · ${todo} size${todo === 1 ? "" : "s"} to pick`}
+                    </span>
+                  </span>
+                  <ChevronRight className={"h-4 w-4 text-ink-400 transition-transform " + (open ? "rotate-90" : "")} />
+                </button>
+                {open && sharedSizes.length > 1 ? (
+                  <div className="px-4 pb-3 -mt-1">
+                    <p className="text-[12px] font-semibold text-ink-700">One size for every uniform piece</p>
+                    <div className="mt-1.5 flex flex-wrap gap-2">
+                      {sharedSizes.map((s) => {
+                        const eligible = sizeItems.filter((i) => sizesOf(items[i]!).includes(s));
+                        const allOn = eligible.length > 0 && eligible.every((i) => sizeOfPick(items[i]!) === s);
+                        return (
+                          <button key={s} type="button" onClick={() => applyAll(s)} className={"rounded-lg border px-3 py-1.5 text-[13px] font-medium transition " + (allOn ? "border-brand bg-brand text-white" : "border-ink-200 text-ink-700 hover:border-ink-400")}>
+                            {s}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <p className="mt-1 text-[11px] text-ink-500">Change any single piece below.</p>
+                  </div>
+                ) : null}
+                {open ? <div className="divide-y divide-ink-100 border-t border-ink-100 bg-cream-50/30">{g.idxs.map((idx) => {
+          const it = items[idx]!;
           const needsChoice = it.variants.length > 0 && !it.pickedVariantId;
           const highlightMissing = showErrors && needsChoice;
           const langPairs = parseBookkitLangs(it.variants);
@@ -736,7 +830,11 @@ export function MagicBoxConfigurator({
               )}
             </div>
           );
-        })}
+        })}</div> : null}
+              </div>
+            );
+          });
+        })()}
       </div>
 
       {/* Configured-bundle review — shows the exact set of items + chosen

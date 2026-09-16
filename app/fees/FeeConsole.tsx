@@ -423,8 +423,9 @@ export default function FeeConsole({
   /** True while the selected year still has instalments left to raise. */
   const partYear = Boolean(coverage && coverage.billedCount < coverage.expectedCount);
   /* Name them while they still fit; past three, a count reads better than
-     a run-on list. (The old copy said "All five schools" — there are seven
-     since the Pune branches were added, so this counts rather than states.) */
+     a run-on list. Both this and the intro line COUNT rather than state a
+     number: the copy has gone stale twice already as branches were added
+     (five → seven with Pune, → eight with Agra). */
   const scopeLabel = useMemo(() => {
     if (!selected.length) return `All ${schools.length} schools`;
     const names = schools.filter((s) => selected.includes(s.code)).map((s) => s.name);
@@ -455,8 +456,8 @@ export default function FeeConsole({
             <em>Who has not.</em>
           </h1>
           <p className="fx-sub">
-            Every billed installment across the five MCB schools — what was charged, what was
-            conceded, what came in, and what is still outstanding.
+            Every billed installment across the {schools.length} MCB schools — what was charged,
+            what was conceded, what came in, and what is still outstanding.
           </p>
         </div>
         <div className="fx-top-right">

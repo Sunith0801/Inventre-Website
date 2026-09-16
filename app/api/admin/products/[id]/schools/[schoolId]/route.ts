@@ -5,7 +5,7 @@ import { z } from "zod";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { productSchool } from "@/db/schema";
-import { isResponse, requirePermission } from "@/server/admin-guard";
+import { isResponse, requirePermission, requireAnyPermission } from "@/server/admin-guard";
 import { invalidateCatalog } from "@/server/cache";
 import { logAdminActivity } from "@/server/activity";
 
@@ -21,7 +21,7 @@ export async function PUT(
   req: Request,
   { params }: { params: Promise<{ id: string; schoolId: string }> }
 ) {
-  const guard = await requirePermission("catalog.write");
+  const guard = await requireAnyPermission("products.write", "catalog.write");
   if (isResponse(guard)) return guard;
   const { id: productId, schoolId } = await params;
   const parsed = await parseBody(req, Body);

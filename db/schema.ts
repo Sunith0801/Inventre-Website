@@ -456,7 +456,6 @@ export const products = pgTable(
     itemCode: text("item_code"), // e.g. "KLS Boys Shirt"
     hsnCode: text("hsn_code"), // e.g. "61012000"
     gstTreatment: gstTreatmentEnum("gst_treatment").notNull().default("taxable"),
-    taxRateId: uuid("tax_rate_id"),
     sizeChartUrl: text("size_chart_url"),
     /** Free-text note shown directly under the product image on the PDP.
      *  Optional; edited in admin → product → Content tab. See migration 0068. */
@@ -509,6 +508,14 @@ export const products = pgTable(
     // QR code (audit §2.3)
     qrCodeData: jsonb("qr_code_data"), // {type, item_code, item_name, weight, cbm, checksum}
     qrCodeSvg: text("qr_code_svg"),
+    // Pricing step (migration 0087): the GST rate quoted for this product
+    // and the date its price applies from. Plain data — nothing computes
+    // tax from it yet; invoices quote it.
+    gstRate: numeric("gst_rate", { precision: 5, scale: 2 }),
+    priceEffectiveFrom: date("price_effective_from"),
+    /** Paise. The base price that takes over on `price_effective_from`;
+     *  promoted by the apply-scheduled-prices cron (migration 0088). */
+    scheduledBasePrice: integer("scheduled_base_price"),
     weightPerUnit: numeric("weight_per_unit", { precision: 10, scale: 3 }), // alias for weightGrams in kg
     // ─── ERP item-feed fields (audit.inventre.online/api/items/export) ───
     erpName: text("erp_name"), // unique product key from feed (`erp_name`)
@@ -911,34 +918,66 @@ export const stockLedger = pgTable(
   })
 );
 
-// ─── Phase 1 NEW: Tax / GST ─────────────────────────────────────────
+// ─── Ground Stock bridge bookkeeping (migration 0076) ────────────────
+// The audit ERP's Ground Stock page is the source of truth for storefront
+// availability. The bridge writes the figure itself into `bins`; these two
+// tables record where each bin's number came from and how each tick went.
 
-export const taxRates = pgTable(
-  "tax_rates",
+export const groundStockSync = pgTable(
+  "ground_stock_sync",
   {
-    id: uuid("id").defaultRandom().primaryKey(),
-    name: text("name").notNull(),
-    cgstRate: numeric("cgst_rate", { precision: 5, scale: 2 }).notNull().default("0"),
-    sgstRate: numeric("sgst_rate", { precision: 5, scale: 2 }).notNull().default("0"),
-    igstRate: numeric("igst_rate", { precision: 5, scale: 2 }).notNull().default("0"),
-    cessRate: numeric("cess_rate", { precision: 5, scale: 2 }).notNull().default("0"),
-    hsnPattern: text("hsn_pattern"),
-    isDefault: boolean("is_default").notNull().default(false),
-    createdAt: timestamp("created_at", { withTimezone: true })
+    variantId: uuid("variant_id")
+      .primaryKey()
+      .references(() => productVariants.id, { onDelete: "cascade" }),
+    itemCode: text("item_code").notNull(),
+    schoolCode: text("school_code"),
+    schoolName: text("school_name"),
+    available: integer("available").notNull().default(0),
+    counted: numeric("counted", { precision: 12, scale: 2 }),
+    packedOut: numeric("packed_out", { precision: 12, scale: 2 }),
+    snapshotAt: timestamp("snapshot_at", { withTimezone: true }),
+    matchKind: text("match_kind").notNull().default("sku"),
+    /** Keeper SKU (Ground Stock (New) code) whose pile this figure is. Migration 0077. */
+    keeperSku: text("keeper_sku"),
+    /** The audit's own name for that pile, e.g. "Black 10S Shoes". Migration 0078. */
+    keeperDescription: text("keeper_description"),
+    /** The audit's category ("Shoes") and group ("General Merchandise"). Migration 0079. */
+    keeperCategory: text("keeper_category"),
+    keeperGroup: text("keeper_group"),
+    /** Which audit page supplied the figure: "keeper" (Ground Stock (New)) or the legacy "ground_stock". */
+    source: text("source").notNull().default("ground_stock"),
+    syncedAt: timestamp("synced_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
   },
   (t) => ({
-    nameIdx: uniqueIndex("tax_rates_name_idx").on(t.name),
+    itemCodeIdx: index("ground_stock_sync_item_code_idx").on(t.itemCode),
   })
 );
 
-export const hsnCodes = pgTable("hsn_codes", {
-  code: text("code").primaryKey(),
-  description: text("description").notNull(),
-  defaultGstRate: numeric("default_gst_rate", { precision: 5, scale: 2 }),
-  category: text("category"),
-});
+export const groundStockSyncRuns = pgTable(
+  "ground_stock_sync_runs",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    startedAt: timestamp("started_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+    ok: boolean("ok").notNull().default(false),
+    trigger: text("trigger").notNull().default("cron"),
+    rowsFetched: integer("rows_fetched").notNull().default(0),
+    itemCodes: integer("item_codes").notNull().default(0),
+    matched: integer("matched").notNull().default(0),
+    unmatched: integer("unmatched").notNull().default(0),
+    changed: integer("changed").notNull().default(0),
+    cleared: integer("cleared").notNull().default(0),
+    error: text("error"),
+    unmatchedSample: jsonb("unmatched_sample"),
+  },
+  (t) => ({
+    startedIdx: index("ground_stock_sync_runs_started_idx").on(t.startedAt),
+  })
+);
 
 // ════════════════════════════════ COMMERCE ══════════════════════════
 
@@ -1393,53 +1432,6 @@ export const missingItemClaimItems = pgTable("missing_item_claim_items", {
   // item_name + size before sending to audit.
   missingComponentPath: jsonb("missing_component_path"),
   notes: text("notes"),
-});
-
-// Parent concern portal (inventre.in/portal) — migration 0064. A concern
-// raised by a parent (payment / order-delivery / customer-care), pushed to
-// the Audit call-centre Admin Panel via concern.created. Status flips return
-// from audit like exchange/missing.
-export const concerns = pgTable(
-  "concerns",
-  {
-    id: uuid("id").defaultRandom().primaryKey(),
-    concernNumber: text("concern_number"), // CON-YYYY-NNNNN (inventre-minted)
-    parentId: uuid("parent_id").references(() => parents.id),
-    orderId: uuid("order_id").references(() => orders.id), // nullable
-    category: text("category").notNull(), // login|grade_change|student_details|guardian|order_delivery|payment|customer_care
-    subType: text("sub_type"),
-    description: text("description"),
-    details: jsonb("details"), // per-category captured fields
-    team: text("team"), // customer_care | sales | "customer_care,sales"
-    contactName: text("contact_name"),
-    contactPhone: text("contact_phone"),
-    orderRef: text("order_ref"), // free-text order no. a public parent types
-    studentId: uuid("student_id"),
-    photos: jsonb("photos"),
-    status: text("status").notNull().default("submitted"), // submitted|in_progress|waiting_customer|waiting_school|resolved
-    assignedToName: text("assigned_to_name"),
-    assignedToUserId: uuid("assigned_to_user_id"),
-    auditRef: text("audit_ref"),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => ({
-    concernNumberIdx: uniqueIndex("concerns_concern_number_idx").on(t.concernNumber),
-    parentIdx: index("concerns_parent_idx").on(t.parentId),
-    orderIdx: index("concerns_order_idx").on(t.orderId),
-    statusIdx: index("concerns_status_idx").on(t.status),
-  }),
-);
-
-export const concernMessages = pgTable("concern_messages", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  concernId: uuid("concern_id")
-    .notNull()
-    .references(() => concerns.id, { onDelete: "cascade" }),
-  author: text("author").notNull(), // parent | agent | system
-  authorName: text("author_name"),
-  body: text("body").notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const payments = pgTable("payments", {
@@ -1978,10 +1970,6 @@ export const productsRelations = relations(products, ({ one, many }) => ({
     fields: [products.categoryId],
     references: [categories.id],
   }),
-  taxRate: one(taxRates, {
-    fields: [products.taxRateId],
-    references: [taxRates.id],
-  }),
   variants: many(productVariants),
   images: many(productImages),
   badges: many(productBadges),
@@ -2117,10 +2105,6 @@ export const binsRelations = relations(bins, ({ one }) => ({
     fields: [bins.warehouseId],
     references: [warehouses.id],
   }),
-}));
-
-export const taxRatesRelations = relations(taxRates, ({ many }) => ({
-  products: many(products),
 }));
 
 export const ordersRelations = relations(orders, ({ one, many }) => ({
@@ -2318,136 +2302,8 @@ export const bundleConfigsRelations = relations(bundleConfigs, ({ one }) => ({
 }));
 
 // ════════════════════════════════ ERPNext-inspired ═══════════════════
-// Suppliers, Purchase Orders, Purchase Receipts, Payment Entries,
+// Payment Entries,
 // Activity Log, Communications.
-
-export const supplierStatusEnum = pgEnum("supplier_status", [
-  "active",
-  "on_hold",
-  "blocked",
-]);
-
-export const suppliers = pgTable(
-  "suppliers",
-  {
-    id: uuid("id").defaultRandom().primaryKey(),
-    supplierCode: text("supplier_code").notNull(),
-    name: text("name").notNull(),
-    contactName: text("contact_name"),
-    phone: text("phone"),
-    email: text("email"),
-    gstin: text("gstin"),
-    pan: text("pan"),
-    address: jsonb("address"),
-    paymentTerms: text("payment_terms"), // e.g. "Net 30"
-    status: supplierStatusEnum("status").notNull().default("active"),
-    notes: text("notes"),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-  },
-  (t) => ({
-    codeIdx: uniqueIndex("suppliers_code_idx").on(t.supplierCode),
-    nameIdx: index("suppliers_name_idx").on(t.name),
-  })
-);
-
-export const purchaseOrderStatusEnum = pgEnum("purchase_order_status", [
-  "draft",
-  "submitted",
-  "partially_received",
-  "received",
-  "cancelled",
-]);
-
-export const purchaseOrders = pgTable(
-  "purchase_orders",
-  {
-    id: uuid("id").defaultRandom().primaryKey(),
-    poNumber: text("po_number").notNull(),
-    supplierId: uuid("supplier_id")
-      .notNull()
-      .references(() => suppliers.id),
-    status: purchaseOrderStatusEnum("status").notNull().default("draft"),
-    orderDate: date("order_date").notNull(),
-    expectedDate: date("expected_date"),
-    subtotal: integer("subtotal").notNull().default(0), // paise
-    taxTotal: integer("tax_total").notNull().default(0),
-    grandTotal: integer("grand_total").notNull().default(0),
-    notes: text("notes"),
-    createdBy: uuid("created_by"),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-  },
-  (t) => ({
-    numberIdx: uniqueIndex("po_number_idx").on(t.poNumber),
-    supplierIdx: index("po_supplier_idx").on(t.supplierId),
-    statusIdx: index("po_status_idx").on(t.status),
-  })
-);
-
-export const purchaseOrderItems = pgTable(
-  "purchase_order_items",
-  {
-    id: uuid("id").defaultRandom().primaryKey(),
-    poId: uuid("po_id")
-      .notNull()
-      .references(() => purchaseOrders.id, { onDelete: "cascade" }),
-    variantId: uuid("variant_id").references(() => productVariants.id),
-    description: text("description").notNull(), // free-form fallback
-    qty: integer("qty").notNull(),
-    receivedQty: integer("received_qty").notNull().default(0),
-    unitPrice: integer("unit_price").notNull(), // paise
-    total: integer("total").notNull(),
-  },
-  (t) => ({
-    poIdx: index("po_items_po_idx").on(t.poId),
-  })
-);
-
-export const purchaseReceipts = pgTable(
-  "purchase_receipts",
-  {
-    id: uuid("id").defaultRandom().primaryKey(),
-    receiptNumber: text("receipt_number").notNull(),
-    poId: uuid("po_id").references(() => purchaseOrders.id),
-    supplierId: uuid("supplier_id")
-      .notNull()
-      .references(() => suppliers.id),
-    warehouseId: uuid("warehouse_id")
-      .notNull()
-      .references(() => warehouses.id),
-    receivedAt: timestamp("received_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-    notes: text("notes"),
-    createdBy: uuid("created_by"),
-  },
-  (t) => ({
-    numIdx: uniqueIndex("receipts_num_idx").on(t.receiptNumber),
-    poIdx: index("receipts_po_idx").on(t.poId),
-  })
-);
-
-export const purchaseReceiptItems = pgTable(
-  "purchase_receipt_items",
-  {
-    id: uuid("id").defaultRandom().primaryKey(),
-    receiptId: uuid("receipt_id")
-      .notNull()
-      .references(() => purchaseReceipts.id, { onDelete: "cascade" }),
-    poItemId: uuid("po_item_id").references(() => purchaseOrderItems.id),
-    variantId: uuid("variant_id").references(() => productVariants.id),
-    description: text("description").notNull(),
-    qty: integer("qty").notNull(),
-  },
-  (t) => ({
-    receiptIdx: index("receipt_items_receipt_idx").on(t.receiptId),
-  })
-);
-
-// ─── Loyalty + Gift Cards ──────────────────────────────────────────
 
 export const loyaltyLedger = pgTable(
   "loyalty_ledger",
@@ -2613,70 +2469,6 @@ export const customerGroups = pgTable(
   })
 );
 
-// ─── Purchase Invoice (supplier-side counterpart of customer Sales Invoice) ─
-
-export const purchaseInvoiceStatusEnum = pgEnum("purchase_invoice_status", [
-  "draft",
-  "submitted",
-  "paid",
-  "partly_paid",
-  "cancelled",
-]);
-
-export const purchaseInvoices = pgTable(
-  "purchase_invoices",
-  {
-    id: uuid("id").defaultRandom().primaryKey(),
-    invoiceNumber: text("invoice_number").notNull(), // our internal number
-    supplierInvoiceNumber: text("supplier_invoice_number"), // bill # from supplier
-    supplierInvoiceDate: date("supplier_invoice_date"),
-    supplierId: uuid("supplier_id")
-      .notNull()
-      .references(() => suppliers.id),
-    poId: uuid("po_id").references(() => purchaseOrders.id),
-    receiptId: uuid("receipt_id").references(() => purchaseReceipts.id),
-    postingDate: date("posting_date").notNull(),
-    dueDate: date("due_date"),
-    subtotal: integer("subtotal").notNull().default(0),
-    taxTotal: integer("tax_total").notNull().default(0),
-    grandTotal: integer("grand_total").notNull().default(0),
-    outstandingAmount: integer("outstanding_amount").notNull().default(0),
-    status: purchaseInvoiceStatusEnum("status").notNull().default("draft"),
-    notes: text("notes"),
-    createdBy: uuid("created_by"),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-    updatedAt: timestamp("updated_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-  },
-  (t) => ({
-    numIdx: uniqueIndex("purchase_invoices_num_idx").on(t.invoiceNumber),
-    supplierIdx: index("purchase_invoices_supplier_idx").on(t.supplierId),
-    statusIdx: index("purchase_invoices_status_idx").on(t.status),
-  })
-);
-
-export const purchaseInvoiceItems = pgTable(
-  "purchase_invoice_items",
-  {
-    id: uuid("id").defaultRandom().primaryKey(),
-    invoiceId: uuid("invoice_id")
-      .notNull()
-      .references(() => purchaseInvoices.id, { onDelete: "cascade" }),
-    poItemId: uuid("po_item_id").references(() => purchaseOrderItems.id),
-    variantId: uuid("variant_id").references(() => productVariants.id),
-    description: text("description").notNull(),
-    qty: integer("qty").notNull(),
-    unitPrice: integer("unit_price").notNull(),
-    taxAmount: integer("tax_amount").notNull().default(0),
-    total: integer("total").notNull(),
-  },
-  (t) => ({
-    invIdx: index("purchase_invoice_items_inv_idx").on(t.invoiceId),
-  })
-);
 
 export const paymentMethodEnum = pgEnum("payment_method", [
   "cash",
@@ -2705,10 +2497,8 @@ export const paymentEntries = pgTable(
     method: paymentMethodEnum("method").notNull(),
     amount: integer("amount").notNull(), // paise
     parentId: uuid("parent_id").references(() => parents.id),
-    supplierId: uuid("supplier_id").references(() => suppliers.id),
     invoiceId: uuid("invoice_id").references(() => invoices.id),
     orderId: uuid("order_id").references(() => orders.id),
-    poId: uuid("po_id").references(() => purchaseOrders.id),
     referenceNumber: text("reference_number"), // bank txn id, cheque #, gateway payment id
     paymentDate: date("payment_date").notNull(),
     notes: text("notes"),
@@ -2766,7 +2556,6 @@ export const communications = pgTable(
   {
     id: uuid("id").defaultRandom().primaryKey(),
     parentId: uuid("parent_id").references(() => parents.id),
-    supplierId: uuid("supplier_id").references(() => suppliers.id),
     kind: communicationKindEnum("kind").notNull(),
     subject: text("subject"),
     body: text("body").notNull(),
@@ -2778,39 +2567,7 @@ export const communications = pgTable(
   },
   (t) => ({
     parentIdx: index("comms_parent_idx").on(t.parentId),
-    supplierIdx: index("comms_supplier_idx").on(t.supplierId),
     occurredIdx: index("comms_occurred_idx").on(t.occurredAt),
-  })
-);
-
-// Relations for new tables (kept minimal to avoid bloating)
-export const suppliersRelations = relations(suppliers, ({ many }) => ({
-  purchaseOrders: many(purchaseOrders),
-  paymentEntries: many(paymentEntries),
-}));
-
-export const purchaseOrdersRelations = relations(
-  purchaseOrders,
-  ({ one, many }) => ({
-    supplier: one(suppliers, {
-      fields: [purchaseOrders.supplierId],
-      references: [suppliers.id],
-    }),
-    items: many(purchaseOrderItems),
-  })
-);
-
-export const purchaseOrderItemsRelations = relations(
-  purchaseOrderItems,
-  ({ one }) => ({
-    po: one(purchaseOrders, {
-      fields: [purchaseOrderItems.poId],
-      references: [purchaseOrders.id],
-    }),
-    variant: one(productVariants, {
-      fields: [purchaseOrderItems.variantId],
-      references: [productVariants.id],
-    }),
   })
 );
 

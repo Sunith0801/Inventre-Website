@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { PageHeader } from "@/components/admin/ui/primitives";
 
 type Variant = {
   id: string;
@@ -66,13 +67,7 @@ export default function StockAdjustPage() {
 
   return (
     <div className="max-w-2xl space-y-6">
-      <header>
-        <h1 className="text-2xl font-bold">Adjust stock</h1>
-        <p className="text-sm text-ink-600 mt-1">
-          Increment or decrement actual stock for a variant. Writes to the
-          stock ledger automatically.
-        </p>
-      </header>
+      <PageHeader eyebrow="Inventory" title="Adjust stock" />
 
       <form onSubmit={submit} className="space-y-4 border rounded-lg p-6 bg-cream-50">
         <label className="block">

@@ -1,12 +1,6 @@
 import { NextResponse } from "next/server";
-import { parseBody } from "@/server/parse-body";
-import { z } from "zod";
 import { requirePermission, isResponse } from "@/server/admin-guard";
-import {
-  createShipment,
-  listShipments,
-} from "@/server/repos/shipments";
-import { logAdminActivity } from "@/server/activity";
+import { listShipments } from "@/server/repos/shipments";
 
 export async function GET(req: Request) {
   const guard = await requirePermission("shipments.read");
@@ -22,44 +16,4 @@ export async function GET(req: Request) {
   }
   const rows = await listShipments({ status, orderId, schoolId });
   return NextResponse.json({ shipments: rows });
-}
-
-const Body = z.object({
-  orderId: z.string().uuid(),
-  warehouseId: z.string().uuid().optional(),
-  items: z
-    .array(
-      z.object({
-        orderItemId: z.string().uuid(),
-        qty: z.number().int().min(1),
-      })
-    )
-    .min(1),
-  carrier: z.string().optional(),
-  trackingNumber: z.string().optional(),
-  shippingAddress: z.record(z.unknown()).optional(),
-});
-
-export async function POST(req: Request) {
-  const guard = await requirePermission("shipments.write");
-  if (isResponse(guard)) return guard;
-  const parsed = await parseBody(req, Body);
-  if (parsed instanceof NextResponse) return parsed;
-  const body = parsed;
-  try {
-    const result = await createShipment({ ...body, createdBy: guard.id });
-    void logAdminActivity(guard, {
-      action: "shipment.create",
-      entityType: "order",
-      entityId: body.orderId,
-      summary: `Created shipment ${result.shipmentNumber}`,
-      req,
-    });
-    return NextResponse.json(result);
-  } catch (e) {
-    return NextResponse.json(
-      { error: e instanceof Error ? e.message : "shipment failed" },
-      { status: 400 }
-    );
-  }
 }

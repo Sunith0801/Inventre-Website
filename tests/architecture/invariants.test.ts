@@ -1,6 +1,7 @@
 import { execSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { ADMIN_PAGES } from "@/lib/admin-permissions";
 
 /**
  * EXECUTABLE ARCHITECTURE RULES.
@@ -24,7 +25,10 @@ import { describe, expect, it } from "vitest";
  */
 
 const sh = (cmd: string) => execSync(cmd, { encoding: "utf8" }).trim();
-const tracked = (glob: string) => sh(`git ls-files ${glob}`).split("\n").filter(Boolean);
+// Tracked AND still on disk — a file deleted in the working tree but not yet
+// committed is still listed by `git ls-files`, and reading it would throw.
+const tracked = (glob: string) =>
+  sh(`git ls-files ${glob}`).split("\n").filter((f) => f && existsSync(f));
 
 describe("admin authorization", () => {
   /**
@@ -51,6 +55,10 @@ describe("admin authorization", () => {
     // in would be circular.
     "app/api/admin/auth/login/route.ts",
     "app/api/admin/auth/logout/route.ts",
+    // Forgot-password runs BEFORE a session exists; both steps are rate-
+    // limited and the reset token is single-use.
+    "app/api/admin/auth/forgot-password/route.ts",
+    "app/api/admin/auth/reset-password/route.ts",
     // Server-to-server, guarded by its own constant-time SYNC_STAGING_KEY
     // rather than by a staff session.
     "app/api/admin/sync-staging/route.ts",
@@ -184,5 +192,59 @@ describe("repository hygiene", () => {
       /^(\.next|node_modules|db_backups|public\.r2-backup)\//.test(f),
     );
     expect(forbidden).toEqual([]);
+  });
+});
+
+describe("permission registry", () => {
+  const slugs = new Set(ADMIN_PAGES.map((p) => p.slug));
+
+  /**
+   * A layout that gates on a slug the registry does not define is a door
+   * nobody can be given the key to: `canSeePage` looks the key up and finds
+   * nothing, so the section is dead for everyone including Super Admin. This
+   * is how a typo in a slug silently removes a section from the product.
+   */
+  it("every SectionGate names only registry slugs", () => {
+    const layouts = tracked("'app/admin/(protected)/**/layout.tsx'");
+    expect(layouts.length).toBeGreaterThan(30);
+    const unknown: string[] = [];
+    for (const f of layouts) {
+      const m = readFileSync(f, "utf8").match(/slugs=\{\[([^\]]*)\]\}/);
+      if (!m) continue;
+      for (const s of m[1].match(/"([^"]+)"/g) ?? []) {
+        const slug = s.replace(/"/g, "");
+        if (!slugs.has(slug)) unknown.push(`${f}: ${slug}`);
+      }
+    }
+    expect(unknown).toEqual([]);
+  });
+
+  /**
+   * Catalog was split into modules (0076). Each module's API must name its
+   * OWN key — an endpoint that still checks only `catalog.*` would let the
+   * hub permission reach a module it was meant to be separable from.
+   */
+  it("every catalog-module API route names its module key", () => {
+    const MODULE_API: [string, string][] = [
+      ["app/api/admin/products/price-list/", "catalog-pricing"],
+      ["app/api/admin/products/", "products"],
+      ["app/api/admin/boms/", "boms"],
+      ["app/api/admin/categories/", "categories"],
+      ["app/api/admin/attributes/", "catalog-attributes"],
+      ["app/api/admin/bundles/", "catalog-bundles"],
+      ["app/api/admin/item-prices/", "catalog-pricing"],
+      ["app/api/admin/price-lists/", "catalog-pricing"],
+      ["app/api/admin/stock/", "catalog-stock"],
+      ["app/api/admin/warehouses/", "catalog-stock"],
+    ];
+    const wrong: string[] = [];
+    for (const f of tracked("'app/api/admin/**/route.ts'")) {
+      const hit = MODULE_API.find(([prefix]) => f.startsWith(prefix));
+      if (!hit) continue;
+      const body = readFileSync(f, "utf8");
+      if (!/require(Any)?Permission\(/.test(body)) continue;
+      if (!body.includes(`"${hit[1]}.`)) wrong.push(`${f} → expected ${hit[1]}.*`);
+    }
+    expect(wrong).toEqual([]);
   });
 });

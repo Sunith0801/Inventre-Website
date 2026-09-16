@@ -39,8 +39,8 @@ export async function GET(req: Request) {
     .innerJoin(products, eq(products.id, productVariants.productId))
     .where(
       and(
-        gte(sql`${orders.createdAt}::date`, from),
-        lte(sql`${orders.createdAt}::date`, to),
+        gte(sql`(${orders.createdAt} AT TIME ZONE 'Asia/Kolkata')::date`, from),
+        lte(sql`(${orders.createdAt} AT TIME ZONE 'Asia/Kolkata')::date`, to),
         sql`${orders.paymentStatus} = 'paid'`,
         sql`${orders.status} NOT IN ('cancelled', 'returned')`
       )

@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { requirePermission, isResponse } from "@/server/admin-guard";
+import { requirePermission, requireAnyPermission, isResponse } from "@/server/admin-guard";
 import { invalidateCatalog } from "@/server/cache";
 import { logActivity } from "@/server/activity";
 import {
@@ -148,7 +148,7 @@ export type CreateBookkitResponse =
 export async function createBookkitAction(
   raw: unknown,
 ): Promise<CreateBookkitResponse> {
-  const guard = await requirePermission("catalog.write");
+  const guard = await requireAnyPermission("catalog-build.write", "catalog.write");
   if (isResponse(guard)) return { ok: false, error: "Unauthorized" };
 
   const parsed = BookkitInput.safeParse(raw);
@@ -220,7 +220,7 @@ export type CreateUniformResponse =
 export async function createUniformAction(
   raw: unknown,
 ): Promise<CreateUniformResponse> {
-  const guard = await requirePermission("catalog.write");
+  const guard = await requireAnyPermission("catalog-build.write", "catalog.write");
   if (isResponse(guard)) return { ok: false, error: "Unauthorized" };
 
   const parsed = UniformInput.safeParse(raw);

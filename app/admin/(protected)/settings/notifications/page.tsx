@@ -15,13 +15,8 @@ export default function NotificationsSettingsPage() {
   return (
     <div className="max-w-3xl">
       <PageHeader
-        breadcrumb={[
-          { label: "Settings", href: "/admin/settings" },
-          { label: "Email & SMS" },
-        ]}
         title="Email & SMS"
-        eyebrow="Settings"
-        description="Notification provider keys are sourced from environment variables. Rotate via the deployment pipeline."
+        eyebrow="System Configuration"
       />
 
       <Card className="mb-4">
@@ -37,7 +32,6 @@ export default function NotificationsSettingsPage() {
       <Card>
         <CardHeader
           title="SMS (MSG91)"
-          description="Used for parent OTP login and order status updates."
         />
         <Row
           label="Auth key"

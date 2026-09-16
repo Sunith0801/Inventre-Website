@@ -923,17 +923,33 @@ export default function ProductPage() {
                     : undefined;
                   const langData_ = langData.get(activeLangSlug);
                   const displayPrice = langData_?.price ?? product.price;
+                  // Sections first ("Notebooks · 9 items"); a kit built before
+                  // sections existed lists its sub-bundles as before. The
+                  // parts total is what the kit costs bought separately.
+                  const kitSections = new Set(activeLangTree.filter((n) => n.sectionName).map((n) => n.sectionName));
+                  const sumParts = (nodes: BundleNode[]): number =>
+                    nodes.reduce((a, n) => a + (n.children.length ? sumParts(n.children) : n.pricePaise * Math.max(1, n.qty)), 0);
+                  const kitParts = sumParts(activeLangTree);
+                  const kitPaise = Math.round((displayPrice ?? 0) * 100);
+                  const kitSaves = kitPaise > 0 && kitParts > kitPaise ? kitParts - kitPaise : 0;
                   return (
                     <div className="space-y-4">
                       <div>
-                        <header className="mb-3 flex items-center gap-2">
+                        <header className="mb-3 flex flex-wrap items-center gap-2">
                           <Package className="h-5 w-5 text-brand" />
                           <h2 className="font-display text-[18px] font-extrabold text-ink-900">
-                            What&apos;s in your kit
+                            What&apos;s in the kit
                           </h2>
                           <span className="text-[12px] text-ink-500 ml-1">
-                            {activeLangTree.length} item{activeLangTree.length === 1 ? "" : "s"} — tap to expand
+                            {kitSections.size
+                              ? `${kitSections.size} section${kitSections.size === 1 ? "" : "s"} — tap one to see its items`
+                              : `${activeLangTree.length} item${activeLangTree.length === 1 ? "" : "s"} — tap to expand`}
                           </span>
+                          {kitSaves > 0 ? (
+                            <span className="ml-auto rounded-full bg-emerald-50 px-3 py-1 text-[12px] font-semibold text-emerald-700 ring-1 ring-emerald-200">
+                              You save ₹{Math.round(kitSaves / 100).toLocaleString("en-IN")} vs buying separately
+                            </span>
+                          ) : null}
                         </header>
                         <BundleTree nodes={activeLangTree} readOnly />
                       </div>
@@ -1283,21 +1299,38 @@ export default function ProductPage() {
             </PdpSelectionProvider>
           </section>
 
-          {bundleTree.length > 0 && (
-            <section className="mx-auto max-w-7xl px-5 lg:px-8 mt-12 lg:mt-16">
-              <header className="mb-4 flex items-center gap-2">
-                <Package className="h-5 w-5 text-brand" />
-                <h2 className="font-display text-[18px] font-extrabold text-ink-900">
-                  What&apos;s inside
-                </h2>
-                <span className="text-[12px] text-ink-500 ml-1">
-                  {bundleTree.length} item{bundleTree.length === 1 ? "" : "s"}{" "}
-                  included — tap each to see its contents
-                </span>
-              </header>
-              <BundleTree nodes={bundleTree} />
-            </section>
-          )}
+          {bundleTree.length > 0 && (() => {
+            // Sections first: "Notebooks · 9 items". The parts total is
+            // what the kit would cost bought separately — the savings line
+            // is the parent's reason to buy the kit.
+            const sections = new Set(bundleTree.filter((n) => n.sectionName).map((n) => n.sectionName));
+            const sumParts = (nodes: BundleNode[]): number =>
+              nodes.reduce((a, n) => a + (n.children.length ? sumParts(n.children) : n.pricePaise * Math.max(1, n.qty)), 0);
+            const parts = sumParts(bundleTree);
+            const kitPaise = Math.round((product.price ?? 0) * 100);
+            const saves = kitPaise > 0 && parts > kitPaise ? parts - kitPaise : 0;
+            return (
+              <section className="mx-auto max-w-7xl px-5 lg:px-8 mt-12 lg:mt-16">
+                <header className="mb-4 flex flex-wrap items-center gap-2">
+                  <Package className="h-5 w-5 text-brand" />
+                  <h2 className="font-display text-[18px] font-extrabold text-ink-900">
+                    {isKit ? "What's in the kit" : "What's inside"}
+                  </h2>
+                  <span className="text-[12px] text-ink-500 ml-1">
+                    {sections.size
+                      ? `${sections.size} section${sections.size === 1 ? "" : "s"} — tap one to see its items`
+                      : `${bundleTree.length} item${bundleTree.length === 1 ? "" : "s"} included — tap each to see its contents`}
+                  </span>
+                  {saves > 0 ? (
+                    <span className="ml-auto rounded-full bg-emerald-50 px-3 py-1 text-[12px] font-semibold text-emerald-700 ring-1 ring-emerald-200">
+                      You save ₹{Math.round(saves / 100).toLocaleString("en-IN")} vs buying separately
+                    </span>
+                  ) : null}
+                </header>
+                <BundleTree nodes={bundleTree} />
+              </section>
+            );
+          })()}
         </>
       )}
       <div className="mx-auto max-w-7xl px-5 lg:px-8">

@@ -113,6 +113,11 @@ function deny(req: NextRequest, kind: "page" | "api", to?: string) {
 const PARENT_PAGE_PREFIXES = ["/shop"];
 const ADMIN_PAGE_PREFIX = "/admin";
 const ADMIN_LOGIN_PAGE = "/admin/login";
+const ADMIN_PUBLIC_PAGES = new Set([
+  ADMIN_LOGIN_PAGE,
+  "/admin/forgot-password",
+  "/admin/reset-password",
+]);
 const PARENT_API_PREFIXES = [
   "/api/orders",
   "/api/returns",
@@ -223,8 +228,8 @@ export async function middleware(req: NextRequest) {
     return NextResponse.json({ error: "Forbidden (CSRF)" }, { status: 403 });
   }
 
-  // Admin pages
-  if (path.startsWith(ADMIN_PAGE_PREFIX) && path !== ADMIN_LOGIN_PAGE) {
+  // Admin pages (the sign-in door and the forgot-password pages are public)
+  if (path.startsWith(ADMIN_PAGE_PREFIX) && !ADMIN_PUBLIC_PAGES.has(path)) {
     const me = await readSession(req, "admin");
     if (!me) return deny(req, "page", "/admin/login");
     return NextResponse.next();

@@ -54,6 +54,10 @@ const SCHOOLS: { code: string; name: string; branch: string; branchId: number }[
   // branches), the importer was just pinned to the original five.
   { code: "CAGSM", name: "Crimson Anisha Marunji", branch: "Crimson Anisha Global School Marunji", branchId: 102 },
   { code: "CAGSU", name: "Crimson Anisha Undri", branch: "Crimson Anisha Global School Undri", branchId: 103 },
+  // Agra. Added 2026-09-10 — ledger only: this is a Crimson WORLD branch
+  // (the two Anisha campuses are Marunji + Undri), and it has no Inventre
+  // schools row, so it is deliberately absent from BRANCH_TO_SCHOOL_CODE.
+  { code: "CWSAG", name: "Crimson World Agra", branch: "Crimson World School Agra", branchId: 236 },
 ];
 
 /**

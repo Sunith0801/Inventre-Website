@@ -113,7 +113,10 @@ export async function getCustomerDetail(
     if (!match) return null;
   }
 
-  const [studentRows, addressRows, orderRows] = await Promise.all([
+  // Live figures from `orders`. The `parents.total_*` counters were never
+  // written by any order path (0 on every row in production), so the
+  // record read "0 orders · ₹0" above a list of nine orders.
+  const [studentRows, addressRows, orderRows, statRows] = await Promise.all([
     db
       .select({ s: students, school: schools })
       .from(students)
@@ -126,7 +129,16 @@ export async function getCustomerDetail(
       .where(eq(orders.parentId, parentId))
       .orderBy(desc(orders.createdAt))
       .limit(20),
+    db
+      .select({
+        count: sql<number>`count(*) FILTER (WHERE ${orders.status} <> 'cancelled')::int`,
+        paidValue: sql<number>`COALESCE(SUM(${orders.total}) FILTER (WHERE ${orders.paymentStatus} = 'paid'), 0)::bigint`,
+        lastAt: sql<string | null>`MAX(${orders.createdAt})`,
+      })
+      .from(orders)
+      .where(eq(orders.parentId, parentId)),
   ]);
+  const stats = statRows[0];
 
   return {
     id: parent.id,
@@ -137,9 +149,9 @@ export async function getCustomerDetail(
     customerGroup: parent.customerGroup,
     tags: parent.tags ?? [],
     notes: parent.notes,
-    totalLifetimeValue: parent.totalLifetimeValue,
-    totalOrderCount: parent.totalOrderCount,
-    lastOrderAt: parent.lastOrderAt?.toISOString() ?? null,
+    totalLifetimeValue: Number(stats?.paidValue ?? 0),
+    totalOrderCount: Number(stats?.count ?? 0),
+    lastOrderAt: stats?.lastAt ? new Date(stats.lastAt).toISOString() : null,
     createdAt: parent.createdAt.toISOString(),
     students: studentRows.map((r) => ({
       id: r.s.id,

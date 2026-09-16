@@ -13,7 +13,8 @@ import {
   itemPrices,
   priceLists,
 } from "@/db/schema";
-import { isResponse, requirePermission } from "@/server/admin-guard";
+import { isResponse, requirePermission, requireAnyPermission } from "@/server/admin-guard";
+import { getProductReadiness } from "@/server/admin/product-readiness";
 import { invalidateCatalog } from "@/server/cache";
 import { logAdminActivity, diffFields } from "@/server/activity";
 import { getSizeAxisNameForProduct } from "@/server/repos/product-attribute-groups";
@@ -34,12 +35,11 @@ const Variant = z.object({
 });
 
 const SpecRow = z.object({ label: z.string().min(1), value: z.string().min(1) });
-const SizeRow = z.object({
-  size: z.string().min(1),
-  chest: z.string().default(""),
-  length: z.string().default(""),
-  sleeve: z.string().default(""),
-});
+// A size-chart row: `size` plus whatever measurement columns the admin
+// defined (chest/length/sleeve, waist/inseam, UK/EU/cm…). See lib/size-chart.ts.
+const SizeRow = z
+  .record(z.string().min(1).max(40), z.string().max(40))
+  .refine((r) => typeof r.size === "string" && r.size.trim().length > 0, { message: "Every size-chart row needs a size" });
 
 const Body = z.object({
   name: z.string().optional(),
@@ -65,6 +65,10 @@ const Body = z.object({
   weightGrams: z.number().int().min(0).nullable().optional(),
   minOrderQty: z.number().int().min(1).optional(),
   isMagicBox: z.boolean().optional(),
+  gstRate: z.number().min(0).max(100).nullable().optional(),
+  priceEffectiveFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+  /** Rupees. The base price that takes over on priceEffectiveFrom. */
+  scheduledBasePrice: z.number().int().min(0).nullable().optional(),
   // BOM-hierarchy classification + variant linkage (Phase 5 / 6)
   bundleLevel: z.enum(["magic_box", "bookkit", "sub_bundle", "leaf"]).nullable().optional(),
   bundleGender: z.enum(["Boys", "Girls"]).nullable().optional(),
@@ -88,12 +92,32 @@ export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const guard = await requirePermission("catalog.write");
+  const guard = await requireAnyPermission("products.write", "catalog.write");
   if (isResponse(guard)) return guard;
   const { id } = await params;
   const parsed = await parseBody(req, Body);
   if (parsed instanceof NextResponse) return parsed;
   const body = parsed;
+
+  // Publishing is gated on the same checklist the Review step shows. This
+  // is the gate; the UI only mirrors it. Whatever else the request carries
+  // is applied first in spirit — but a product that fails the list stays
+  // at its current status, so nothing half-finished reaches the storefront.
+  if (body.status === "active") {
+    const [cur] = await db.select({ status: products.status }).from(products).where(eq(products.id, id)).limit(1);
+    if (cur && cur.status !== "active") {
+      const readiness = await getProductReadiness(id);
+      if (readiness && !readiness.publishable) {
+        return NextResponse.json(
+          {
+            error: `Cannot publish: ${readiness.failing.map((c) => c.label.toLowerCase()).join(", ")}.`,
+            failing: readiness.failing.map((c) => ({ key: c.key, label: c.label, step: c.step })),
+          },
+          { status: 422 },
+        );
+      }
+    }
+  }
 
   const update: Record<string, unknown> = {};
   if (body.name !== undefined) update.name = body.name;
@@ -124,6 +148,9 @@ export async function PATCH(
   if (body.isMagicBox !== undefined) update.isMagicBox = body.isMagicBox;
   if (body.bundleLevel !== undefined) update.bundleLevel = body.bundleLevel;
   if (body.bundleGender !== undefined) update.bundleGender = body.bundleGender;
+  if (body.gstRate !== undefined) update.gstRate = body.gstRate != null ? String(body.gstRate) : null;
+  if (body.priceEffectiveFrom !== undefined) update.priceEffectiveFrom = body.priceEffectiveFrom;
+  if (body.scheduledBasePrice !== undefined) update.scheduledBasePrice = body.scheduledBasePrice != null ? body.scheduledBasePrice * 100 : null;
   if (body.isVariantItem !== undefined) update.isVariantItem = body.isVariantItem;
   if (body.variantOfProductId !== undefined)
     update.variantOfProductId = body.variantOfProductId;
@@ -634,7 +661,7 @@ export async function DELETE(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const guard = await requirePermission("catalog.write");
+  const guard = await requireAnyPermission("products.write", "catalog.write");
   if (isResponse(guard)) return guard;
   const { id } = await params;
   const [beforeDelete] = await db

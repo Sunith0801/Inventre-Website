@@ -4,8 +4,7 @@ import { useState, useMemo, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Search } from "lucide-react";
-import { ADMIN_NAV_GROUPS } from "@/lib/admin-nav";
-import type { AdminRole } from "@/lib/admin-nav";
+import { navSections, visibleItems } from "@/lib/admin-nav";
 import { cn } from "@/lib/cn";
 
 /**
@@ -13,19 +12,18 @@ import { cn } from "@/lib/cn";
  * or section. Enter on the highlighted item to navigate. Cmd/Ctrl+K
  * focuses the input from anywhere on the dashboard.
  */
-export function UniversalSearch({ role }: { role: AdminRole }) {
+export function UniversalSearch({ permissions }: { permissions: string[] }) {
   const [q, setQ] = useState("");
   const [active, setActive] = useState(0);
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
 
   const allItems = useMemo(() => {
-    return ADMIN_NAV_GROUPS.flatMap((g) =>
-      g.items
-        .filter((it) => !it.roles || it.roles.includes(role))
-        .map((it) => ({ ...it, kicker: g.kicker }))
+    const perms = new Set(permissions);
+    return navSections.flatMap((sec) =>
+      visibleItems(perms, sec).map((it) => ({ ...it, kicker: sec.kicker }))
     );
-  }, [role]);
+  }, [permissions]);
 
   const matches = useMemo(() => {
     const needle = q.trim().toLowerCase();

@@ -15,13 +15,8 @@ export default async function StockTransferPage() {
   return (
     <div className="max-w-5xl">
       <PageHeader
-        breadcrumb={[
-          { label: "Catalog", href: "/admin/catalog/stock" },
-          { label: "Stock", href: "/admin/catalog/stock" },
-          { label: "Transfer" },
-        ]}
+        breadcrumb={[{ label: "Stock", href: "/admin/catalog/stock" }, { label: "Transfer" }]}
         title="Stock transfer"
-        description="Move inventory between warehouses. Each line writes paired ledger rows (transfer_out / transfer_in) referencing each other."
       />
       <Card>
         <StockTransferForm warehouses={whs} />

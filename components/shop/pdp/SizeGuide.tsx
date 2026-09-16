@@ -1,5 +1,7 @@
 "use client";
 
+import { sizeChartColumns, sizeChartColumnLabel } from "@/lib/size-chart";
+
 import { forwardRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Ruler, Plus } from "lucide-react";
@@ -91,9 +93,9 @@ export const SizeGuide = forwardRef<HTMLDivElement, { product: Product }>(
                           <thead>
                             <tr className="text-left text-[11px] font-semibold tracking-[0.14em] uppercase text-ink-500">
                               <th className="py-3 pr-4">Size</th>
-                              <th className="py-3 pr-4">Chest</th>
-                              <th className="py-3 pr-4">Length</th>
-                              <th className="py-3 pr-4">Sleeve</th>
+                              {sizeChartColumns(table).map((c) => (
+                                <th key={c} className="py-3 pr-4">{sizeChartColumnLabel(c)}</th>
+                              ))}
                             </tr>
                           </thead>
                           <tbody className="font-mono tabular-nums">
@@ -102,9 +104,9 @@ export const SizeGuide = forwardRef<HTMLDivElement, { product: Product }>(
                                 <td className="py-3 pr-4 font-display font-bold text-ink-900">
                                   {r.size}
                                 </td>
-                                <td className="py-3 pr-4 text-ink-700">{r.chest}</td>
-                                <td className="py-3 pr-4 text-ink-700">{r.length}</td>
-                                <td className="py-3 pr-4 text-ink-700">{r.sleeve}</td>
+                                {sizeChartColumns(table).map((c) => (
+                                  <td key={c} className="py-3 pr-4 text-ink-700">{r[c] || "—"}</td>
+                                ))}
                               </tr>
                             ))}
                           </tbody>

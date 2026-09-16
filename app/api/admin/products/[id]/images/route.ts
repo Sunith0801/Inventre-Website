@@ -4,7 +4,7 @@ import { z } from "zod";
 import { eq, asc, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { productImages } from "@/db/schema";
-import { isResponse, requirePermission } from "@/server/admin-guard";
+import { isResponse, requirePermission, requireAnyPermission } from "@/server/admin-guard";
 import { invalidateCatalog } from "@/server/cache";
 import { logAdminActivity } from "@/server/activity";
 
@@ -30,7 +30,7 @@ export async function POST(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const guard = await requirePermission("catalog.write");
+  const guard = await requireAnyPermission("products.write", "catalog.write");
   if (isResponse(guard)) return guard;
   const { id } = await params;
   const parsed = await parseBody(req, PostBody);

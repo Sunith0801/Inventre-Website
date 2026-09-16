@@ -1,0 +1,5 @@
+# Promote scheduled product prices whose effective date has arrived.
+# Runs at 00:05 IST every day (server clock is UTC → 18:35 previous day).
+# Install: cp deploy/cron.d/inventre-scheduled-prices /etc/cron.d/ && chmod 644 /etc/cron.d/inventre-scheduled-prices
+# CRON_TOKEN must match the app's env (same token cleanup-carts uses).
+35 18 * * * root curl -fsS -X POST -H "x-cron-token: ${CRON_TOKEN}" http://127.0.0.1:3010/api/cron/apply-scheduled-prices >> /var/log/inventre-scheduled-prices.log 2>&1

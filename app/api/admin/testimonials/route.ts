@@ -20,7 +20,7 @@ const Body = z.object({
 });
 
 export async function POST(req: Request) {
-  const guard = await requirePermission("testimonials.write");
+  const guard = await requirePermission("content.write");
   if (isResponse(guard)) return guard;
   const parsed = await parseBody(req, Body);
   if (parsed instanceof NextResponse) return parsed;

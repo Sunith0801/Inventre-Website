@@ -1,16 +1,17 @@
-import { PageHeader, Card } from "@/components/admin/ui/primitives";
+import { PageHeader, Card, CardHeader } from "@/components/admin/ui/primitives";
 import { SchoolEditor } from "@/components/admin/SchoolEditor";
 
 export default function NewSchoolPage() {
   return (
     <div className="max-w-4xl">
       <PageHeader
+        eyebrow="Catalog"
         breadcrumb={[{ label: "Schools", href: "/admin/schools" }, { label: "New school" }]}
-        eyebrow="School"
-        title="Create a new school"
-        description="Enter the school details. You can add coordinators and SKU mappings after the school is created."
+        title="New school"
+        description="Creates the school record; grades, coordinators and uniform SKUs are added on the next screen."
       />
       <Card>
+        <CardHeader title="School details" />
         <SchoolEditor mode="create" />
       </Card>
     </div>

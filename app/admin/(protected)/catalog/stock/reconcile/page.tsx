@@ -15,13 +15,8 @@ export default async function StockReconcilePage() {
   return (
     <div className="max-w-5xl">
       <PageHeader
-        breadcrumb={[
-          { label: "Catalog", href: "/admin/catalog/stock" },
-          { label: "Stock", href: "/admin/catalog/stock" },
-          { label: "Reconcile" },
-        ]}
+        breadcrumb={[{ label: "Stock", href: "/admin/catalog/stock" }, { label: "Reconcile" }]}
         title="Stock reconciliation"
-        description="Set actual on-hand quantities from a physical count. Each line writes one ledger row with reason=adjustment and the count notes."
       />
       <Card>
         <StockReconcileForm warehouses={whs} />

@@ -1,3 +1,5 @@
+import type { SizeChartRow } from "@/lib/size-chart";
+
 export type Product = {
   id: string;
   /** URL slug used by the PDP route (/shop/[slug]). */
@@ -15,7 +17,7 @@ export type Product = {
   /** Optional gallery — falls back to [img] if absent. `colorValue` ties an
    *  image to an attribute value (e.g. "Blue") so the PDP gallery can put it
    *  first when that colour is selected; null/absent = generic image. */
-  images?: { id: string; url: string; alt: string | null; colorValue?: string | null }[];
+  images?: { id: string; url: string; alt: string | null; colorValue?: string | null; variantId?: string | null }[];
   required: boolean;
   isMagicBox?: boolean;
   isKit?: boolean;
@@ -28,7 +30,8 @@ export type Product = {
   tagline?: string;
   description?: string[];
   specs?: { label: string; value: string }[];
-  sizeTable?: { size: string; chest: string; length: string; sleeve: string }[];
+  /** Admin-defined columns — see lib/size-chart.ts. */
+  sizeTable?: SizeChartRow[];
   /** Optional size-chart reference image rendered above the size table. */
   sizeChartUrl?: string | null;
   /** Free-text note shown directly under the product image on the PDP. */
@@ -59,6 +62,8 @@ export type Product = {
   variantPrices?: {
     [size: string]: { price: number; mrp: number | null; priced?: boolean };
   };
+  /** Rupees saved versus buying a kit's or box's parts separately. */
+  savings?: number | null;
   /** Full per-variant rows, populated on the PDP. Used to look up the
    *  resolved variant's price when the customer's picked colour + size,
    *  which the size-keyed `variantPrices` map can't disambiguate. */

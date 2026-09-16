@@ -2,8 +2,14 @@
 
 import { useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Check, X } from "lucide-react";
+import { Check, X, Undo2 } from "lucide-react";
+import { Button } from "@/components/admin/ui/primitives-client";
 
+/**
+ * Approve / reject a review inline. Once decided, a single "Undo" puts it
+ * back to pending rather than offering the opposite verdict — flipping
+ * straight from approved to rejected is rarely what the operator means.
+ */
 export function ReviewModerationActions({
   reviewId,
   status,
@@ -23,22 +29,21 @@ export function ReviewModerationActions({
       router.refresh();
     });
   };
+  if (status !== "pending") {
+    return (
+      <Button variant="ghost" size="sm" busy={pending} onClick={() => set("pending")} icon={<Undo2 className="h-3.5 w-3.5" />}>
+        Undo
+      </Button>
+    );
+  }
   return (
-    <div className="flex items-center gap-2">
-      <button
-        onClick={() => set("approved")}
-        disabled={pending || status === "approved"}
-        className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 text-emerald-700 px-3 h-8 text-[12px] font-semibold hover:bg-emerald-100 disabled:opacity-50"
-      >
-        <Check className="h-3 w-3" /> Approve
-      </button>
-      <button
-        onClick={() => set("rejected")}
-        disabled={pending || status === "rejected"}
-        className="inline-flex items-center gap-1.5 rounded-full bg-red-50 text-red-700 px-3 h-8 text-[12px] font-semibold hover:bg-red-100 disabled:opacity-50"
-      >
-        <X className="h-3 w-3" /> Reject
-      </button>
+    <div className="inline-flex items-center gap-1.5 whitespace-nowrap">
+      <Button variant="primary" size="sm" busy={pending} onClick={() => set("approved")} icon={<Check className="h-3.5 w-3.5" />}>
+        Approve
+      </Button>
+      <Button variant="secondary" size="sm" disabled={pending} onClick={() => set("rejected")} icon={<X className="h-3.5 w-3.5" />}>
+        Reject
+      </Button>
     </div>
   );
 }

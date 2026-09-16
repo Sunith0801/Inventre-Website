@@ -97,11 +97,7 @@ export default async function ComboPricesPage({
   return (
     <div>
       <PageHeader
-        breadcrumb={[
-          { label: "Catalog", href: "/admin/products" },
-          { label: product.name, href: `/admin/products/${product.id}` },
-          { label: "Combo prices" },
-        ]}
+        breadcrumb={[{ label: "Products", href: "/admin/products" }, { label: product.name, href: `/admin/products/${product.id}` }, { label: "Combo prices" }]}
         title={`Per-combo pricing — ${product.name}`}
         description={
           <span className="text-[12.5px] text-ink-500">

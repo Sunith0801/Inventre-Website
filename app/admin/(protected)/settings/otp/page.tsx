@@ -11,19 +11,13 @@ export default async function OtpSettingsPage() {
   return (
     <div className="max-w-3xl">
       <PageHeader
-        breadcrumb={[
-          { label: "Settings", href: "/admin/settings" },
-          { label: "OTP delivery" },
-        ]}
         title="OTP delivery"
-        eyebrow="Settings"
-        description="Toggle real SMS and email/SMTP OTP sending. When a channel is off, OTPs for that channel fall back to a fixed bypass code from the deploy env."
+        eyebrow="System Configuration"
       />
 
       <Card className="mb-4">
         <CardHeader
           title="Channels"
-          description="Toggles apply immediately on save — no redeploy needed."
         />
         <OtpTogglesForm initial={toggles} />
       </Card>
@@ -31,7 +25,6 @@ export default async function OtpSettingsPage() {
       <Card>
         <CardHeader
           title="Bypass code"
-          description="Fixed OTP returned when a channel is OFF. Stored only in .env.deploy (OTP_BYPASS_CODE)."
         />
         <div className="text-[13px] text-ink-700">
           {bypassConfigured ? (

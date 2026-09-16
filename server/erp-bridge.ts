@@ -20,7 +20,6 @@ import {
   returnItems,
   missingItemClaims,
   missingItemClaimItems,
-  concerns,
 } from "@/db/schema";
 import { getErpConfig, isErpBridgeConfigured } from "@/server/erp-config";
 
@@ -45,12 +44,7 @@ export type ErpEventType =
   | "exchange.requested"
   // Missing-item claim — customer never received the item, just needs
   // a fresh dispatch. No reverse logistics. Same gating as exchange.
-  | "missing.requested"
-  // Parent concern-portal ticket (payment / delivery / customer-care).
-  // Pushed to the Audit call-centre Admin Panel; status flips return via
-  // /api/erp/webhooks (audit-side ingest is specced separately). Emit is
-  // best-effort — the durable record is the local `concerns` row.
-  | "concern.created";
+  | "missing.requested";
 
 /**
  * ERP bridge — non-blocking emitter that ships canonical ERPNext-shaped
@@ -1296,66 +1290,6 @@ export async function buildExchangePayload(
     },
   };
 }
-
-/**
- * Push a parent concern-portal ticket to the Audit call-centre Admin Panel.
- * Best-effort: the durable record is the local `concerns` row, so a failed
- * emit (e.g. audit ingest not yet built) just logs. `order` is sent as the
- * SO reference (so the call-centre lands on the right order) when present.
- */
-export async function emitConcernEvent(
-  concernId: string,
-  eventType: Extract<ErpEventType, `concern.${string}`>
-): Promise<void> {
-  try {
-    const [c] = await db
-      .select()
-      .from(concerns)
-      .where(eq(concerns.id, concernId))
-      .limit(1);
-    if (!c) return;
-    const [order] = c.orderId
-      ? await db.select().from(orders).where(eq(orders.id, c.orderId)).limit(1)
-      : [null as never];
-    const [parent] = c.parentId
-      ? await db.select().from(parents).where(eq(parents.id, c.parentId)).limit(1)
-      : [null as never];
-    const data = {
-      concern: {
-        id: c.id,
-        concern_number: c.concernNumber,
-        category: c.category,
-        sub_type: c.subType ?? null,
-        team: c.team ?? null, // routing hint for the audit dashboard tabs
-        description: c.description,
-        details: c.details ?? null,
-        contact_name: c.contactName ?? null,
-        contact_phone: c.contactPhone,
-        status: c.status,
-        photos: c.photos ?? [],
-        created_at: isoTimestamp(c.createdAt),
-        order: order
-          ? {
-              id: order.id,
-              order_number: order.orderNumber,
-              erp_so_name: order.erpSoName ?? null,
-            }
-          : null,
-        customer: parent
-          ? {
-              display_name: parent.name ?? null,
-              mobile: parent.phone ?? null,
-              email: parent.email ?? null,
-            }
-          : null,
-      },
-    };
-    await postErpEvent(eventType, `concern:${concernId}`, data);
-  } catch (e) {
-    console.error(`[erp-bridge] ${eventType} ${concernId} failed:`, e);
-  }
-}
-
 
 /**
  * Colour per variant, resolved from the attribute bindings

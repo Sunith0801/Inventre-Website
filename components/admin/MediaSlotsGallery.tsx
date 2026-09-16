@@ -176,39 +176,30 @@ export function MediaSlotsGallery({ initial }: { initial: Row[] }) {
   );
 
   return (
-    <div className="mt-6">
-      {/* Sticky filter strip */}
-      <div className="sticky top-0 z-20 -mx-4 px-4 py-3 bg-cream-50/95 backdrop-blur border-b border-ink-100 mb-6">
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-ink-400" />
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search slots…"
-              className="h-10 pl-9 pr-3 w-72 rounded-lg border border-ink-200 bg-white text-[13px] outline-none focus:border-ink-400"
-            />
-          </div>
-          <div className="flex items-center gap-1.5 flex-wrap">
-            <PageTab active={pageFilter === "all"} onClick={() => setPageFilter("all")}>
-              <span className="font-mono text-[10px] opacity-60">·</span>
-              All <Counter n={rows.length} />
-            </PageTab>
-            {pages.map(([id, label]) => {
-              const count = rows.filter((r) => r.slot.pageId === id).length;
-              return (
-                <PageTab
-                  key={id}
-                  active={pageFilter === id}
-                  pageId={id}
-                  onClick={() => setPageFilter(id)}
-                >
-                  <span className={cn("inline-block w-1.5 h-1.5 rounded-full", PAGE_COLORS[id].bg.replace("bg-", "bg-").replace("-100", "-500"))} />
-                  {label} <Counter n={count} />
-                </PageTab>
-              );
-            })}
-          </div>
+    <div>
+      <div className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-ink-100/70 bg-white p-2">
+        <div className="relative min-w-[200px] flex-1">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-400" />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search slots…"
+            className="h-9 w-full rounded-lg border border-ink-100 bg-cream-50 pl-9 pr-3 text-[13px] placeholder:text-ink-400 transition-[background,border,box-shadow] focus:border-ink-300 focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-300/40"
+          />
+        </div>
+        <div className="flex flex-wrap items-center gap-1">
+          <PageTab active={pageFilter === "all"} onClick={() => setPageFilter("all")}>
+            All <Counter n={rows.length} />
+          </PageTab>
+          {pages.map(([id, label]) => {
+            const count = rows.filter((r) => r.slot.pageId === id).length;
+            return (
+              <PageTab key={id} active={pageFilter === id} onClick={() => setPageFilter(id)}>
+                <span className={cn("inline-block h-1.5 w-1.5 rounded-full", PAGE_COLORS[id].bg.replace("-100", "-500"))} />
+                {label} <Counter n={count} />
+              </PageTab>
+            );
+          })}
         </div>
       </div>
 
@@ -216,21 +207,21 @@ export function MediaSlotsGallery({ initial }: { initial: Row[] }) {
       {Array.from(grouped.entries()).map(([pageLabel, { pageId, sections }]) => {
         const color = PAGE_COLORS[pageId];
         return (
-          <section key={pageLabel} className="mb-12">
-            <header className="mb-4 flex items-center gap-3">
-              <span className={cn("inline-flex items-center rounded-full px-3 h-7 text-[12px] font-bold tracking-wider uppercase", color.bg, color.text)}>
+          <section key={pageLabel} className="mb-8">
+            <header className="mb-3 flex items-center gap-3">
+              <span className={cn("inline-flex h-6 items-center rounded-full px-2.5 text-[11px] font-bold uppercase tracking-wider", color.bg, color.text)}>
                 {pageLabel}
               </span>
-              <h2 className="font-display text-[20px] font-extrabold text-ink-900">
-                {Array.from(sections.values()).reduce((a, b) => a + b.length, 0)} editable slot{Array.from(sections.values()).reduce((a, b) => a + b.length, 0) === 1 ? "" : "s"}
-              </h2>
+              <span className="text-[12px] text-ink-500">
+                {Array.from(sections.values()).reduce((a, b) => a + b.length, 0)} slot{Array.from(sections.values()).reduce((a, b) => a + b.length, 0) === 1 ? "" : "s"}
+              </span>
             </header>
             {Array.from(sections.entries()).map(([section, slotRows]) => (
               <div key={section} className="mb-6">
                 <h3 className="text-[11px] font-bold uppercase tracking-[0.16em] text-ink-500 mb-3">
                   {section}
                 </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
                   {slotRows.map((row) => (
                     <MediaSlotCard
                       key={row.slot.key}
@@ -269,29 +260,26 @@ export function MediaSlotsGallery({ initial }: { initial: Row[] }) {
 }
 
 function Counter({ n }: { n: number }) {
-  return <span className="ml-1 inline-flex items-center justify-center min-w-[22px] h-5 px-1.5 rounded-full bg-black/10 text-[10px] font-bold">{n}</span>;
+  return <span className="ml-0.5 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-black/10 px-1.5 text-[10px] font-bold tabular-nums">{n}</span>;
 }
 
 function PageTab({
   active,
   onClick,
   children,
-  pageId,
 }: {
   active: boolean;
   onClick: () => void;
   children: React.ReactNode;
-  pageId?: MediaSlot["pageId"];
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
+      aria-pressed={active}
       className={cn(
-        "inline-flex items-center gap-1.5 h-9 px-3 rounded-lg text-[12px] font-semibold transition-colors",
-        active
-          ? "bg-ink-900 text-white"
-          : "bg-white text-ink-700 border border-ink-200 hover:bg-cream-50",
+        "inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[12px] font-semibold transition-colors",
+        active ? "bg-ink-900 text-white" : "text-ink-600 hover:bg-cream-100 hover:text-ink-900",
       )}
     >
       {children}

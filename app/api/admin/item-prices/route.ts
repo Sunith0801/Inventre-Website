@@ -3,7 +3,7 @@ import { parseBody } from "@/server/parse-body";
 import { z } from "zod";
 import { db } from "@/db/client";
 import { itemPrices, productVariants, products } from "@/db/schema";
-import { isResponse, requirePermission } from "@/server/admin-guard";
+import { isResponse, requirePermission, requireAnyPermission } from "@/server/admin-guard";
 import { logAdminActivity } from "@/server/activity";
 import {
   setVariantPrice,
@@ -21,7 +21,7 @@ const SetBody = z.object({
 });
 
 export async function POST(req: Request) {
-  const guard = await requirePermission("catalog.write");
+  const guard = await requireAnyPermission("catalog-pricing.write", "catalog.write");
   if (isResponse(guard)) return guard;
   const parsed = await parseBody(req, SetBody);
   if (parsed instanceof NextResponse) return parsed;
@@ -54,7 +54,7 @@ const BulkBody = z.object({
 });
 
 export async function PATCH(req: Request) {
-  const guard = await requirePermission("catalog.write");
+  const guard = await requireAnyPermission("catalog-pricing.write", "catalog.write");
   if (isResponse(guard)) return guard;
   const parsed = await parseBody(req, BulkBody);
   if (parsed instanceof NextResponse) return parsed;

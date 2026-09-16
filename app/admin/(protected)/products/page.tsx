@@ -18,13 +18,16 @@ import {
   SearchInput,
   Button,
   EmptyState,
-  FilterChips,
+  FilterSelect,
 } from "@/components/admin/ui/primitives";
 import { ExportButton } from "@/components/admin/ExportButton";
 import { ArchiveErpDisabledButton } from "@/components/admin/ArchiveErpDisabledButton";
 import { ProductsTableClient } from "@/components/admin/ProductsTableClient";
 import { requireAnyPermission, isResponse } from "@/server/admin-guard";
 import { redirect } from "next/navigation";
+
+import { AutoSubmitForm } from "@/components/admin/AutoSubmitForm";
+import { Pagination } from "@/components/admin/ui/pagination";
 
 export const dynamic = "force-dynamic";
 
@@ -94,6 +97,14 @@ export default async function ProductsListPage({
       categoryId: products.categoryId,
       erpIsDisabled: products.erpIsDisabled,
       erpIsDeleted: products.erpIsDeleted,
+      kind: products.kind,
+      // School and grade are the first two questions about any product in
+      // this catalogue; they used to be filters only, invisible in the row.
+      // The outer table is named literally: inside a correlated subquery that
+      // joins two tables with an `id`, Drizzle's rendering of the column ref
+      // came out unqualified and Postgres called it ambiguous.
+      schoolNames: sql<string[]>`COALESCE((SELECT array_agg(s.name ORDER BY s.name) FROM product_school ps JOIN schools s ON s.id = ps.school_id WHERE ps.product_id = products.id), '{}'::text[])`,
+      gradeNames: sql<string[]>`COALESCE((SELECT array_agg(pg.grade ORDER BY pg.grade) FROM product_grades pg WHERE pg.product_id = products.id), '{}'::text[])`,
     })
     .from(products)
     .$dynamic();
@@ -235,13 +246,9 @@ export default async function ProductsListPage({
   return (
     <div>
       <PageHeader
-        eyebrow="Catalog"
+        eyebrow="Products"
         title="Products"
-        description={`${totalCount} product${totalCount === 1 ? "" : "s"}${
-          totalPages > 1
-            ? ` · page ${safePage} of ${totalPages}`
-            : ""
-        }${
+        description={`${totalCount.toLocaleString("en-IN")} product${totalCount === 1 ? "" : "s"}${
           effectiveSchoolId
             ? ` for ${
                 allSchools.find((s) => s.id === effectiveSchoolId)?.name ??
@@ -263,45 +270,30 @@ export default async function ProductsListPage({
             />
             <Link href="/admin/products/new">
               <Button icon={<Plus className="h-3.5 w-3.5" />} variant="primary">
-                Add product
+                Create product
               </Button>
             </Link>
           </div>
         }
       />
 
-      <form method="GET">
+      <AutoSubmitForm action="/admin/products">
         <Toolbar>
           <SearchInput
             defaultValue={q ?? ""}
             placeholder="Search by name, slug, or item code…"
           />
           {allSchools.length > 0 ? (
-            <select
-              name="schoolId"
-              defaultValue={schoolId ?? ""}
-              className="h-9 px-2.5 rounded-lg border border-ink-200 text-[13px] bg-white"
-            >
-              <option value="">All schools</option>
+            <FilterSelect label="School" name="schoolId" defaultValue={schoolId ?? ""}>
               {allSchools.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.name}
                 </option>
               ))}
-            </select>
+            </FilterSelect>
           ) : null}
           {gradeOpts.length > 0 ? (
-            <select
-              name="grade"
-              defaultValue={grade ?? ""}
-              className="h-9 px-2.5 rounded-lg border border-ink-200 text-[13px] bg-white"
-              title={
-                effectiveSchoolId
-                  ? "Filter by the school's grade"
-                  : "Pick a school to see its grade names"
-              }
-            >
-              <option value="">All grades</option>
+            <FilterSelect label="Grade" name="grade" defaultValue={grade ?? ""}>
               {standardGradeOpts.length > 0 ? (
                 <optgroup label={effectiveSchoolId ? "School grades" : "Grades"}>
                   {standardGradeOpts.map((o) => (
@@ -320,21 +312,14 @@ export default async function ProductsListPage({
                   ))}
                 </optgroup>
               ) : null}
-            </select>
+            </FilterSelect>
           ) : null}
-          <FilterChips
-            options={STATUS_OPTIONS}
-            value={status ?? null}
-            baseHref="/admin/products"
-            paramName="status"
-          />
-          <select
-            name="kind"
-            defaultValue={kind ?? ""}
-            className="h-9 px-2.5 rounded-lg border border-ink-200 text-[13px] bg-white"
-            title="Filter by item type"
-          >
-            <option value="">Main items</option>
+          <FilterSelect label="Status" name="status" defaultValue={status ?? ""}>
+            {STATUS_OPTIONS.filter((o) => o.value).map((o) => (
+              <option key={o.value} value={o.value ?? ""}>{o.label}</option>
+            ))}
+          </FilterSelect>
+          <FilterSelect label="Item type" allLabel="Main items" name="kind" defaultValue={kind ?? ""}>
             <option value="kit">Bookkits</option>
             <option value="magic_box">Magic Boxes</option>
             <option value="uniform">Uniforms</option>
@@ -343,33 +328,16 @@ export default async function ProductsListPage({
             <option value="consumable">Consumables</option>
             <option value="sub_bundle">Sub-bundles</option>
             <option value="all">All types</option>
-          </select>
-          <select
-            name="erp"
-            defaultValue={erp ?? ""}
-            className="h-9 px-2.5 rounded-lg border border-ink-200 text-[13px] bg-white"
-            title="Filter by ERP-disabled flag"
-          >
-            <option value="">ERP: any</option>
-            <option value="enabled">ERP: enabled</option>
-            <option value="disabled">ERP: disabled</option>
-          </select>
-          <Button type="submit" variant="secondary">
-            Apply
-          </Button>
+          </FilterSelect>
+          <FilterSelect label="ERP" name="erp" defaultValue={erp ?? ""}>
+            <option value="enabled">Enabled</option>
+            <option value="disabled">Disabled</option>
+          </FilterSelect>
           <ArchiveErpDisabledButton />
         </Toolbar>
-      </form>
-      {/* Auto-apply: any dropdown change submits the GET filter form. */}
-      <script
-        dangerouslySetInnerHTML={{
-          __html:
-            "document.addEventListener('change',function(e){var t=e.target;" +
-            "if(t&&t.tagName==='SELECT'&&t.form&&(t.form.method||'').toLowerCase()==='get'){t.form.submit();}});",
-        }}
-      />
+      </AutoSubmitForm>
 
-      <Card padded={false}>
+      <Card padded={false} className="overflow-hidden">
         {rows.length === 0 ? (
           <EmptyState
             icon={Package}
@@ -388,85 +356,33 @@ export default async function ProductsListPage({
               categoryId: p.categoryId,
               erpIsDisabled: p.erpIsDisabled,
               erpIsDeleted: p.erpIsDeleted,
+              kind: p.kind,
+              schools: p.schoolNames ?? [],
+              grades: p.gradeNames ?? [],
             }))}
             imageByProduct={Object.fromEntries(imageByProduct)}
             catName={Object.fromEntries(catName)}
             variantCount={Object.fromEntries(variantCount)}
           />
         )}
+        {totalCount > 0 ? (
+          <Pagination
+            page={safePage}
+            pages={Math.max(1, totalPages)}
+            from={(safePage - 1) * PAGE_SIZE + 1}
+            to={Math.min(safePage * PAGE_SIZE, totalCount)}
+            total={totalCount}
+            noun="product"
+            hrefFor={(pg) => {
+              const params = new URLSearchParams();
+              for (const [k, v] of Object.entries({ q, status, schoolId, erp, grade, kind })) if (v) params.set(k, v);
+              if (pg > 1) params.set("page", String(pg));
+              const qs = params.toString();
+              return qs ? `/admin/products?${qs}` : "/admin/products";
+            }}
+          />
+        ) : null}
       </Card>
-
-      {totalPages > 1 && (
-        <Pagination
-          page={safePage}
-          totalPages={totalPages}
-          totalCount={totalCount}
-          pageSize={PAGE_SIZE}
-          searchParams={{ q, status, schoolId, erp, grade, kind }}
-        />
-      )}
-    </div>
-  );
-}
-
-function Pagination({
-  page,
-  totalPages,
-  totalCount,
-  pageSize,
-  searchParams,
-}: {
-  page: number;
-  totalPages: number;
-  totalCount: number;
-  pageSize: number;
-  searchParams: Record<string, string | undefined>;
-}) {
-  const firstRow = (page - 1) * pageSize + 1;
-  const lastRow = Math.min(page * pageSize, totalCount);
-  const hrefFor = (p: number) => {
-    const params = new URLSearchParams();
-    for (const [k, v] of Object.entries(searchParams)) {
-      if (v) params.set(k, v);
-    }
-    if (p > 1) params.set("page", String(p));
-    const qs = params.toString();
-    return qs ? `/admin/products?${qs}` : "/admin/products";
-  };
-  return (
-    <div className="mt-4 flex items-center justify-between gap-2 text-[12.5px] text-ink-600">
-      <span>
-        Showing <b>{firstRow}</b>–<b>{lastRow}</b> of <b>{totalCount}</b>
-      </span>
-      <div className="flex items-center gap-1.5">
-        <Link
-          href={hrefFor(Math.max(1, page - 1))}
-          aria-disabled={page <= 1}
-          className={
-            "rounded-lg border px-3 h-8 inline-flex items-center text-[12.5px] font-semibold " +
-            (page <= 1
-              ? "border-ink-100 text-ink-300 pointer-events-none"
-              : "border-ink-200 text-ink-700 hover:border-ink-900")
-          }
-        >
-          ← Prev
-        </Link>
-        <span className="px-2 text-ink-500">
-          Page {page} of {totalPages}
-        </span>
-        <Link
-          href={hrefFor(Math.min(totalPages, page + 1))}
-          aria-disabled={page >= totalPages}
-          className={
-            "rounded-lg border px-3 h-8 inline-flex items-center text-[12.5px] font-semibold " +
-            (page >= totalPages
-              ? "border-ink-100 text-ink-300 pointer-events-none"
-              : "border-ink-200 text-ink-700 hover:border-ink-900")
-          }
-        >
-          Next →
-        </Link>
-      </div>
     </div>
   );
 }

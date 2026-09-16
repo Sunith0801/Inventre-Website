@@ -14,11 +14,33 @@
 
 import * as React from "react";
 import Link from "next/link";
+import { navSections, sectionHref } from "@/lib/admin-nav";
 import { ChevronRight, Search, Inbox, ArrowUpRight } from "lucide-react";
 import { cn } from "@/lib/cn";
 
 // Re-export client-only primitives so all imports work from one path.
 export { Button, IconBtn } from "./primitives-client";
+
+// Form controls (server-renderable) — same single import path.
+export {
+  Field,
+  Input,
+  Select,
+  Textarea,
+  Checkbox,
+  Radio,
+  FormGrid,
+  FormActions,
+  FormError,
+} from "./form";
+export type { ControlSize } from "./form";
+
+// Overlay + navigation primitives.
+export { FilterSelect } from "./filter-select";
+export { DateField } from "./date-field";
+export { Menu } from "./menu";
+export type { MenuItem } from "./menu";
+export { Pagination, PerPagePicker } from "./pagination";
 
 // ════════════════════════════════════════════════════════════════════
 // Primary color helpers (semantic mappings to existing tokens)
@@ -54,11 +76,19 @@ export function PageHeader({
   breadcrumb?: { label: string; href?: string }[];
   actions?: React.ReactNode;
 }) {
+  // The trail always starts at the section the page belongs to, taken from
+  // the eyebrow — "Customer Relationship (CRM) › Students › Sitara" — so a
+  // breadcrumb reads like the sidebar hierarchy and every level is a link.
+  const eyebrowSection = eyebrow ? navSections.find((sec) => sec.kicker === eyebrow) : undefined;
+  const trail =
+    breadcrumb && breadcrumb.length > 0 && eyebrowSection && breadcrumb[0]?.label !== eyebrowSection.kicker
+      ? [{ label: eyebrowSection.kicker, href: sectionHref(eyebrowSection) }, ...breadcrumb]
+      : breadcrumb;
   return (
     <header className="mb-6 lg:mb-8">
-      {breadcrumb && breadcrumb.length > 0 ? (
-        <nav className="flex items-center gap-1 text-[12px] text-ink-500 mb-2">
-          {breadcrumb.map((b, i) => (
+      {trail && trail.length > 0 ? (
+        <nav className="flex flex-wrap items-center gap-1 text-[12px] text-ink-500 mb-2">
+          {trail.map((b, i) => (
             <span key={i} className="flex items-center gap-1">
               {b.href ? (
                 <Link href={b.href} className="hover:text-ink-900 transition-colors">
@@ -67,7 +97,7 @@ export function PageHeader({
               ) : (
                 <span>{b.label}</span>
               )}
-              {i < breadcrumb.length - 1 ? (
+              {i < trail.length - 1 ? (
                 <ChevronRight className="h-3 w-3 text-ink-300" />
               ) : null}
             </span>
@@ -76,10 +106,27 @@ export function PageHeader({
       ) : null}
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div className="min-w-0">
-          {eyebrow ? (
-            <div className="text-[11px] font-semibold tracking-[0.14em] uppercase text-brand-600 mb-1">
-              {eyebrow}
-            </div>
+          {eyebrow && !(trail && trail.length > 0 && eyebrowSection) ? (
+            // The eyebrow is the section this page belongs to. When a
+            // breadcrumb already starts with that section it is not repeated. When it names a
+            // sidebar section it is a link to that section's landing page —
+            // the same way the logo is a link home — so "Pricing & Taxation"
+            // above "Payment Surcharges" takes you back to the section's
+            // modules. Anything else (e.g. "Modules") stays plain text.
+            (() => {
+              const section = navSections.find((sec) => sec.kicker === eyebrow);
+              const cls = "text-[11px] font-semibold tracking-[0.14em] uppercase text-brand-600 mb-1";
+              return section ? (
+                <Link
+                  href={sectionHref(section)}
+                  className={cn(cls, "inline-block rounded transition-colors hover:text-brand-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-300")}
+                >
+                  {eyebrow}
+                </Link>
+              ) : (
+                <div className={cls}>{eyebrow}</div>
+              );
+            })()
           ) : null}
           <h1 className="text-[26px] lg:text-[32px] font-bold tracking-tight text-ink-900 leading-[1.15]">
             {title}
@@ -166,18 +213,21 @@ export function Stat({
   trend?: { dir: "up" | "down" | "flat"; label: string };
 }) {
   return (
-    <div className="rounded-2xl border border-ink-100/70 bg-white p-4 lg:p-5 shadow-[0_1px_2px_rgba(10,10,10,0.03)]">
+    <div className="min-w-0 rounded-2xl border border-ink-100/70 bg-white p-4 lg:p-5 shadow-[0_1px_2px_rgba(10,10,10,0.03)]">
       <div className="flex items-start justify-between gap-3">
-        <div className="text-[11px] font-semibold tracking-[0.14em] uppercase text-ink-500">
+        <div className="min-w-0 text-[11px] font-semibold tracking-[0.14em] uppercase text-ink-500">
           {label}
         </div>
         {Icon ? (
-          <div className={cn("grid h-8 w-8 place-items-center rounded-xl", tone[iconTone])}>
+          <div className={cn("grid h-8 w-8 shrink-0 place-items-center rounded-xl", tone[iconTone])}>
             <Icon className="h-4 w-4" />
           </div>
         ) : null}
       </div>
-      <div className="mt-2 text-[28px] lg:text-[30px] font-bold tracking-tight text-ink-900 tabular-nums leading-none">
+      {/* A long rupee total ("₹14,63,74,626.16") in a half-width phone card
+          ran past the card edge: smaller type below `sm`, and wrap rather
+          than overflow if it still does not fit. */}
+      <div className="mt-2 text-[24px] sm:text-[28px] lg:text-[30px] font-bold tracking-tight text-ink-900 tabular-nums leading-none [overflow-wrap:anywhere]">
         {value}
       </div>
       {hint || trend ? (
@@ -348,14 +398,26 @@ export function DataTable({
   children,
   className,
   empty,
+  scroll = true,
 }: {
   children: React.ReactNode;
   className?: string;
   empty?: React.ReactNode;
+  /**
+   * Wide admin tables must scroll sideways on a narrow screen rather than
+   * clip. The card keeps `overflow-hidden` so the 2xl corners still round;
+   * the inner rail is what actually scrolls. Before this existed every
+   * table simply lost its right-hand columns below ~900px.
+   *
+   * Pass `scroll={false}` for a card whose content is not a <table> and
+   * genuinely must overflow visibly (a popover anchored to a row).
+   */
+  scroll?: boolean;
 }) {
+  const body = empty ?? children;
   return (
     <div className={cn("rounded-2xl border border-ink-100/70 bg-white overflow-hidden", className)}>
-      {empty ?? children}
+      {scroll ? <div className="overflow-x-auto">{body}</div> : body}
     </div>
   );
 }
@@ -369,7 +431,8 @@ export const Th = React.forwardRef<
       ref={ref}
       {...rest}
       className={cn(
-        "px-4 py-2.5 text-[11px] font-semibold tracking-[0.06em] uppercase text-ink-500",
+        // Base look comes from the global admin table rules (globals.css);
+        // the primitive only carries alignment so bare <th>s match it.
         right ? "text-right" : "text-left",
         className
       )}
@@ -388,9 +451,10 @@ export const Td = React.forwardRef<
       ref={ref}
       {...rest}
       className={cn(
-        "px-4 py-3 text-[13px]",
         right ? "text-right tabular-nums" : "text-left",
-        muted ? "text-ink-500" : "text-ink-900",
+        // `muted` dims a secondary column; the first column is already bold
+        // and dark via the global table rules.
+        muted ? "!text-ink-500 !font-normal" : "",
         className
       )}
     >
@@ -418,7 +482,7 @@ export function Tr({
   return (
     <tr
       className={cn(
-        "border-t border-ink-100/70 hover:bg-cream-50/70 transition-colors group",
+        "group",
         className
       )}
     >

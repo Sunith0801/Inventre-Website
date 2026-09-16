@@ -3,9 +3,15 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { useTransition } from "react";
 import { cn } from "@/lib/cn";
+import { FilterSelect } from "@/components/admin/ui/primitives";
 
 type Opt = { value: string; label: string };
 
+/**
+ * The three pickers that define whose shop is being previewed: school, grade,
+ * and whether the student is new (Magic Boxes only) or returning. Same
+ * labelled-dropdown toolbar as every list page; changing one navigates.
+ */
 export function CatalogPreviewPicker({
   schools,
   grades,
@@ -37,96 +43,58 @@ export function CatalogPreviewPicker({
   };
 
   return (
-    <div className="space-y-3">
-      {/* Visible "loading" strip above the picker — opacity-60 alone wasn't
-          legible enough to communicate that the page IS reacting to the
-          dropdown change. Catalog server-render can take 1-2s cold; admins
-          were calling the filter "frozen". */}
-      {pending && (
-        <div className="inline-flex items-center gap-2 rounded-full bg-brand-50 border border-brand-100 px-3 py-1 text-[12px] font-semibold text-brand-700">
-          <span className="inline-block h-2 w-2 rounded-full bg-brand-600 animate-pulse" />
-          Loading catalog for new filter…
-        </div>
-      )}
-    <div
-      className={cn(
-        "flex flex-col md:flex-row md:items-end gap-3 md:gap-4 transition-opacity",
-        pending && "opacity-60 pointer-events-none"
-      )}
-    >
-      <Field label="School">
-        <select
-          value={activeSchoolId}
-          onChange={(e) => update({ schoolId: e.target.value })}
-          disabled={pending}
-          className="w-full md:w-72 h-10 rounded-lg border border-ink-200 bg-white px-3 text-[13.5px] text-ink-900 focus:outline-none focus:ring-2 focus:ring-brand-300 disabled:bg-cream-50"
-        >
-          {schools.length === 0 ? (
-            <option value="">No schools</option>
-          ) : (
-            schools.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))
-          )}
-        </select>
-      </Field>
+    <div className={cn("mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-ink-100/70 bg-white p-2 transition-opacity", pending && "opacity-70")}>
+      <FilterSelect
+        label="School"
+        noAll
+        className="min-w-[260px] max-w-[420px] flex-1"
+        value={activeSchoolId}
+        onChange={(e) => update({ schoolId: e.target.value })}
+        disabled={pending || schools.length === 0}
+      >
+        {schools.length === 0 ? <option value="">No schools</option> : null}
+        {schools.map((s) => (
+          <option key={s.id} value={s.id}>{s.name}</option>
+        ))}
+      </FilterSelect>
 
-      <Field label="Grade">
-        <select
-          value={activeGrade}
-          onChange={(e) => update({ grade: e.target.value })}
-          disabled={grades.length === 0}
-          className="w-full md:w-56 h-10 rounded-lg border border-ink-200 bg-white px-3 text-[13.5px] text-ink-900 disabled:bg-cream-50 disabled:text-ink-400 focus:outline-none focus:ring-2 focus:ring-brand-300"
-        >
-          {grades.length === 0 ? (
-            <option value="">No grades tagged</option>
-          ) : (
-            grades.map((g) => (
-              <option key={g.value} value={g.value}>
-                {g.label}
-              </option>
-            ))
-          )}
-        </select>
-      </Field>
+      <FilterSelect
+        label="Grade"
+        noAll
+        className="min-w-[160px]"
+        value={activeGrade}
+        onChange={(e) => update({ grade: e.target.value })}
+        disabled={pending || grades.length === 0}
+      >
+        {grades.length === 0 ? <option value="">No grades tagged</option> : null}
+        {grades.map((g) => (
+          <option key={g.value} value={g.value}>{g.label}</option>
+        ))}
+      </FilterSelect>
 
-      <Field label="Student type">
-        <div
-          role="tablist"
-          className="inline-flex rounded-lg border border-ink-200 bg-white p-0.5"
-        >
-          <Toggle active={mode === "ret"} onClick={() => update({ mode: "ret" })}>
-            Returning
-          </Toggle>
-          <Toggle active={mode === "new"} onClick={() => update({ mode: "new" })}>
-            New
-          </Toggle>
-        </div>
-      </Field>
+      <div role="tablist" aria-label="Student type" className="inline-flex h-9 items-center rounded-lg bg-cream-100 p-0.5">
+        <Toggle active={mode === "ret"} disabled={pending} onClick={() => update({ mode: "ret" })}>Returning student</Toggle>
+        <Toggle active={mode === "new"} disabled={pending} onClick={() => update({ mode: "new" })}>New student</Toggle>
+      </div>
+
+      {pending ? (
+        <span className="inline-flex items-center gap-2 text-[12px] font-medium text-ink-500">
+          <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-brand-600" />
+          Loading…
+        </span>
+      ) : null}
     </div>
-    </div>
-  );
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <label className="block">
-      <span className="block mb-1 text-[11px] font-semibold tracking-[0.12em] uppercase text-ink-500">
-        {label}
-      </span>
-      {children}
-    </label>
   );
 }
 
 function Toggle({
   active,
+  disabled,
   onClick,
   children,
 }: {
   active: boolean;
+  disabled?: boolean;
   onClick: () => void;
   children: React.ReactNode;
 }) {
@@ -135,10 +103,11 @@ function Toggle({
       type="button"
       role="tab"
       aria-selected={active}
+      disabled={disabled}
       onClick={onClick}
       className={cn(
-        "px-3 h-9 rounded-md text-[13px] font-medium transition-colors",
-        active ? "bg-ink-900 text-white" : "text-ink-600 hover:text-ink-900"
+        "h-8 rounded-md px-3 text-[12.5px] font-semibold transition-colors disabled:opacity-60",
+        active ? "bg-white text-ink-900 shadow-sm" : "text-ink-500 hover:text-ink-800"
       )}
     >
       {children}

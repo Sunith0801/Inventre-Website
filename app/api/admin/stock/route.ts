@@ -7,11 +7,11 @@ import {
   products,
 } from "@/db/schema";
 import { eq, sql } from "drizzle-orm";
-import { isResponse, requirePermission } from "@/server/admin-guard";
+import { isResponse, requirePermission, requireAnyPermission } from "@/server/admin-guard";
 import { listLowStock } from "@/server/repos/inventory";
 
 export async function GET(req: Request) {
-  const guard = await requirePermission("catalog.read");
+  const guard = await requireAnyPermission("catalog-stock.read", "catalog.read");
   if (isResponse(guard)) return guard;
 
   const url = new URL(req.url);

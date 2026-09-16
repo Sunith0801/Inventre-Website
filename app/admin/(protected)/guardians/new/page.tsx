@@ -1,11 +1,19 @@
-import { PageHeader, Card } from "@/components/admin/ui/primitives";
+import { PageHeader, Card, CardHeader } from "@/components/admin/ui/primitives";
 import { GuardianEditor } from "@/components/admin/GuardianEditor";
 
 export default function NewGuardianPage() {
   return (
     <div className="max-w-3xl">
-      <PageHeader breadcrumb={[{ label: "Guardians", href: "/admin/guardians" }, { label: "New guardian" }]} eyebrow="Guardian" title="Create a new guardian" description="Guardians are people who can be linked to one or more students. They don't log in to the storefront — that's the parent account." />
-      <Card><GuardianEditor mode="create" /></Card>
+      <PageHeader
+        eyebrow="Customer Relationship (CRM)"
+        breadcrumb={[{ label: "Guardians", href: "/admin/guardians" }, { label: "New guardian" }]}
+        title="New guardian"
+        description="Creates the guardian in ERPNext as well. Link students from the student record afterwards."
+      />
+      <Card>
+        <CardHeader title="Contact details" />
+        <GuardianEditor mode="create" />
+      </Card>
     </div>
   );
 }

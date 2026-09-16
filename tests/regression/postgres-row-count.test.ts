@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { execSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 
@@ -24,7 +24,7 @@ const SOURCE_DIRS = ["app", "lib", "server", "components"];
 function sourceFiles(): string[] {
   return execSync(`git ls-files ${SOURCE_DIRS.join(" ")}`, { encoding: "utf8" })
     .split("\n")
-    .filter((f) => /\.tsx?$/.test(f));
+    .filter((f) => /\.tsx?$/.test(f) && existsSync(f));
 }
 
 describe("postgres.js result shape", () => {

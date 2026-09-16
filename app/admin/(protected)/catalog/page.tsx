@@ -7,10 +7,6 @@ import {
   IndianRupee,
   ExternalLink,
   Pencil,
-  ListTree,
-  Boxes,
-  Layers,
-  ArrowRight,
   Wrench,
   Plus,
 } from "lucide-react";
@@ -19,10 +15,10 @@ import { schools } from "@/db/schema";
 import { requireAnyPermission, isResponse } from "@/server/admin-guard";
 import {
   PageHeader,
+  Button,
   Card,
   Badge,
   EmptyState,
-  SectionTitle,
 } from "@/components/admin/ui/primitives";
 import { unstable_cache } from "next/cache";
 import { CatalogPreviewPicker } from "@/components/admin/CatalogPreviewPicker";
@@ -144,102 +140,42 @@ export default async function CatalogPreviewPage({ searchParams }: { searchParam
     <div>
       <PageHeader
         eyebrow="Catalog"
-        title="Catalog"
-        description={
-          <>
-            One place for everything catalog. Pick a{" "}
-            <span className="font-medium text-ink-800">school + grade + student type</span>{" "}
-            below to see exactly what that parent sees on the storefront. Click any
-            item card to edit it, or jump straight to a tool with the links underneath.
-          </>
-        }
-        breadcrumb={[{ label: "Admin", href: "/admin/dashboard" }, { label: "Catalog" }]}
+        title="Shop Preview"
+        description="The shop exactly as a parent at this school and grade sees it. Pick a school, a grade and the student type."
         actions={
           <div className="flex items-center gap-2">
-            <Link
-              href="/admin/catalog/setup"
-              className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border border-ink-200 text-ink-700 text-[13px] font-semibold hover:bg-cream-100"
-            >
-              <Wrench className="h-3.5 w-3.5" /> Set up schools & grades
+            <Link href="/admin/catalog/setup">
+              <Button variant="secondary" icon={<Wrench className="h-3.5 w-3.5" />}>School Setup</Button>
             </Link>
-            <Link
-              href="/admin/catalog/build"
-              className="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-lg bg-brand text-white text-[13px] font-bold hover:bg-brand-600"
-            >
-              <Plus className="h-3.5 w-3.5" /> Create new item
+            <Link href="/admin/catalog/build">
+              <Button variant="primary" icon={<Plus className="h-3.5 w-3.5" />}>Create new item</Button>
             </Link>
           </div>
         }
       />
 
-      {/* ── Step 1: Pick context. The pickers are the entry point. ─────── */}
-      <Card className="mb-4 border-brand-200 ring-1 ring-brand-100">
-        <div className="p-4 lg:p-5">
-          <div className="flex items-center gap-2 mb-3">
-            <span className="grid h-5 w-5 place-items-center rounded-full bg-brand-600 text-white text-[11px] font-bold">
-              1
-            </span>
-            <span className="text-[12px] font-semibold text-ink-700 uppercase tracking-[0.12em]">
-              Start here · pick a student context
-            </span>
-          </div>
-          <CatalogPreviewPicker
-            schools={schoolRows.map((s) => ({
-              id: s.id,
-              name: s.name + (s.code ? ` · ${s.code}` : ""),
-            }))}
-            grades={grades}
-            activeSchoolId={activeSchoolId}
-            activeGrade={activeGrade}
-            mode={isNewStudent ? "new" : "ret"}
-          />
-        </div>
-      </Card>
+      <CatalogPreviewPicker
+        schools={schoolRows.map((s) => ({
+          id: s.id,
+          name: s.name + (s.code ? ` · ${s.code}` : ""),
+        }))}
+        grades={grades}
+        activeSchoolId={activeSchoolId}
+        activeGrade={activeGrade}
+        mode={isNewStudent ? "new" : "ret"}
+      />
 
-      {/* ── Other catalog tools (always visible, low-key). ─────────────── */}
-      <Card className="mb-6">
-        <div className="p-3 lg:p-4">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-[11px] font-semibold text-ink-500 uppercase tracking-[0.12em]">
-              Other catalog tools
-            </span>
-            <span className="text-[11px] text-ink-400">
-              — open these when you already know what you want to change
-            </span>
-          </div>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
-            <ToolLink href="/admin/catalog/build" icon={Plus} label="Create new (guided)" hint="Bookkit, Uniform, Magic Box…" />
-            <ToolLink href="/admin/products" icon={Package} label="Products" hint="All items + variants" />
-            <ToolLink href="/admin/boms" icon={Library} label="Bundles & BOMs" hint="Kits + Magic Boxes" />
-            <ToolLink href="/admin/catalog/pricing" icon={IndianRupee} label="Pricing" hint="Per-school prices" />
-            <ToolLink href="/admin/catalog/stock" icon={Boxes} label="Stock" hint="Warehouse qty" />
-            <ToolLink href="/admin/categories" icon={ListTree} label="Categories" hint="Hierarchy tree" />
-            <ToolLink href="/admin/catalog/attributes" icon={Layers} label="Variants" hint="Size, colour…" />
-          </div>
-        </div>
-      </Card>
-
-      <div className="mb-3 flex items-center gap-2">
-        <span className="grid h-5 w-5 place-items-center rounded-full bg-ink-900 text-white text-[11px] font-bold">
-          2
-        </span>
-        <span className="text-[12px] font-semibold text-ink-700 uppercase tracking-[0.12em]">
-          What this parent sees
-        </span>
-      </div>
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <SectionTitle>
-          {products.length} item{products.length === 1 ? "" : "s"} visible
-          {activeSchool ? ` — ${activeSchool.name}` : ""}
+      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+        <p className="text-[13px] text-ink-700">
+          <span className="font-semibold text-ink-900">{products.length} item{products.length === 1 ? "" : "s"}</span>
+          {activeSchool ? ` visible at ${activeSchool.name}` : ""}
           {activeGrade ? ` · ${activeGrade}` : ""}
           {" · "}
-          <span className="text-ink-500">{isNewStudent ? "New student" : "Returning student"}</span>
-        </SectionTitle>
-        <div className="text-[12px] text-ink-500">
-          {isNewStudent
-            ? "New-student view: only Magic Boxes for this (school, grade)."
-            : "Returning-student view: root-only catalog (BOM children hidden)."}
-        </div>
+          {isNewStudent ? "New student" : "Returning student"}
+        </p>
+        <p className="text-[12px] text-ink-500">
+          {isNewStudent ? "New students see only the Magic Boxes for this grade." : "Returning students see the full catalogue; items inside a kit are hidden."}
+        </p>
       </div>
 
       {products.length === 0 ? (
@@ -254,18 +190,8 @@ export default async function CatalogPreviewPage({ searchParams }: { searchParam
           action={
             activeSchoolId && activeGrade ? (
               <div className="flex flex-wrap items-center justify-center gap-2">
-                <Link
-                  href="/admin/catalog/build"
-                  className="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-lg bg-brand text-white text-[13px] font-bold hover:bg-brand-600"
-                >
-                  <Plus className="h-3.5 w-3.5" /> Create new item
-                </Link>
-                <Link
-                  href="/admin/products"
-                  className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border border-ink-200 text-ink-700 text-[13px] font-semibold hover:bg-cream-100"
-                >
-                  Open Products
-                </Link>
+                <Link href="/admin/catalog/build"><Button variant="primary" icon={<Plus className="h-3.5 w-3.5" />}>Create new item</Button></Link>
+                <Link href="/admin/products"><Button variant="secondary">Open Products</Button></Link>
               </div>
             ) : null
           }
@@ -353,35 +279,5 @@ export default async function CatalogPreviewPage({ searchParams }: { searchParam
         </div>
       )}
     </div>
-  );
-}
-
-function ToolLink({
-  href,
-  icon: Icon,
-  label,
-  hint,
-}: {
-  href: string;
-  icon: React.ComponentType<{ className?: string }>;
-  label: string;
-  hint: string;
-}) {
-  return (
-    <Link
-      href={href}
-      className="group flex items-start gap-2.5 p-2.5 rounded-lg border border-ink-100 hover:border-ink-300 hover:bg-cream-50 transition-colors"
-    >
-      <div className="grid h-7 w-7 place-items-center rounded-md bg-cream-100 group-hover:bg-white">
-        <Icon className="h-3.5 w-3.5 text-ink-700" />
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-1 text-[12.5px] font-semibold text-ink-900">
-          {label}
-          <ArrowRight className="h-3 w-3 text-ink-400 opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all" />
-        </div>
-        <div className="text-[11px] text-ink-500 truncate">{hint}</div>
-      </div>
-    </Link>
   );
 }

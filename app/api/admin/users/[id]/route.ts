@@ -7,6 +7,7 @@ import { db } from "@/db/client";
 import { users } from "@/db/schema";
 import { requirePermission, isResponse } from "@/server/admin-guard";
 import { logActivity } from "@/server/activity";
+import { legacyRoleFor } from "@/lib/admin-roles-view";
 
 const Body = z.object({
   email: z.string().email().optional(),
@@ -29,18 +30,15 @@ async function enumForRoleId(
     sql`SELECT slug FROM admin_roles WHERE id = ${roleId} LIMIT 1`,
   )) as unknown as { slug: string }[];
   if (!row) return null;
-  if (row.slug === "super-admin") return "super";
-  if (row.slug === "operations") return "ops";
-  if (row.slug === "school-admin") return "school_admin";
-  // Custom role — pick the closest legacy enum so requireAdmin gates don't
-  // wholesale 403. Custom roles get "ops" treatment (mid-power); their
-  // actual access is governed by admin_role_permissions + overrides.
-  return "ops";
+  // Super Admin is unrestricted, a school-side role is scoped to its school,
+  // and every other role gets "ops" treatment — its actual access is governed
+  // by admin_role_permissions + overrides.
+  return legacyRoleFor(row.slug);
 }
 
 /** Map legacy enum value to the canonical admin_roles row id. */
 async function roleIdForEnum(role: "super" | "ops" | "school_admin"): Promise<string | null> {
-  const slug = role === "super" ? "super-admin" : role === "ops" ? "operations" : "school-admin";
+  const slug = role === "super" ? "super-admin" : role === "ops" ? "operations" : "school";
   const [row] = (await db.execute(sql`SELECT id FROM admin_roles WHERE slug = ${slug} LIMIT 1`)) as unknown as { id: string }[];
   return row?.id ?? null;
 }
@@ -155,7 +153,16 @@ export async function DELETE(
     }
   }
 
-  await db.delete(users).where(eq(users.id, id));
+  // The account goes; what it did stays. Audit rows, content edits and media
+  // uploads keep their records with the author cleared (those columns have
+  // no ON DELETE rule, so the delete would otherwise be refused outright),
+  // while per-user permission overrides cascade away with the row.
+  await db.transaction(async (tx) => {
+    await tx.execute(sql`UPDATE audit_log SET user_id = NULL WHERE user_id = ${id}::uuid`);
+    await tx.execute(sql`UPDATE content_blocks SET updated_by = NULL WHERE updated_by = ${id}::uuid`);
+    await tx.execute(sql`UPDATE media SET uploaded_by = NULL WHERE uploaded_by = ${id}::uuid`);
+    await tx.delete(users).where(eq(users.id, id));
+  });
 
   await logActivity({
     actorId: guard.id,

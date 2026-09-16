@@ -1,5 +1,10 @@
 import "server-only";
 import { getParentOrderDetailFromErp } from "@/server/erp-customer-orders";
+import {
+  classifyReturnItems,
+  computeReturnsWindow,
+  type ReturnsWindow,
+} from "@/server/return-line-eligibility";
 
 /**
  * Customer-raised exchange / missing-item eligibility — single source of
@@ -16,9 +21,9 @@ import { getParentOrderDetailFromErp } from "@/server/erp-customer-orders";
  * packed/shipped; conversely the mirror can briefly lag a just-delivered
  * local order). OR-ing them keeps every gate in agreement.
  *
- * NOTE (2026-07-23): the post-delivery time window was removed — a
- * delivered item stays eligible forever. Only delivery + the
- * one-active-request-per-item lock gate a request now.
+ * Delivery is gated per item; on top of it sits an ORDER-level 7-day
+ * window counted from the day the last item arrived — see
+ * getReturnsWindowForOrder / computeReturnsWindow (2026-09-16).
  */
 
 /**
@@ -44,4 +49,29 @@ export async function isOrderDeliveredForReturns(
   // let a parent act on any delivered order id.
   if (!detail) return false;
   return localStatus === "delivered" || detail.status === "delivered";
+}
+
+/**
+ * The order's post-delivery request window (7 days from the day its LAST
+ * item was delivered) — for the submit handlers, which only hold the local
+ * `orders` row. Mirrors exactly what the button gate + form pages compute
+ * (order-level delivered = local status OR mirror status; delivery date =
+ * local deliveredAt, else the mirror's). Null when the order is not visible
+ * to this parent's family.
+ */
+export async function getReturnsWindowForOrder(
+  parentId: string,
+  orderId: string,
+  orderNumber: string,
+  localStatus: string | null,
+  localDeliveredAt: Date | null,
+): Promise<ReturnsWindow | null> {
+  const detail = await getParentOrderDetailFromErp(parentId, orderNumber);
+  if (!detail) return null;
+  const orderDelivered =
+    localStatus === "delivered" || detail.status === "delivered";
+  const deliveredAt =
+    localDeliveredAt ?? (detail.deliveredAt ? new Date(detail.deliveredAt) : null);
+  const cls = await classifyReturnItems(orderId, orderNumber, orderDelivered, deliveredAt);
+  return computeReturnsWindow(cls);
 }

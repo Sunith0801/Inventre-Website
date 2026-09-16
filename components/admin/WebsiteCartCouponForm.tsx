@@ -9,8 +9,15 @@
  */
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Save, Trash2, RefreshCw } from "lucide-react";
-import { Button } from "@/components/admin/ui/primitives-client";
+import { Save, Trash2, RefreshCw, X } from "lucide-react";
+import {
+  Button,
+  Field,
+  FormError,
+  FormGrid,
+  Input,
+  Select,
+} from "@/components/admin/ui/primitives";
 
 type DType = "Fixed" | "Percentage";
 
@@ -47,6 +54,16 @@ const EMPTY: CouponInitial = {
   maximumDiscountAmount: 0,
 };
 
+/** A small heading over one row of fields — the form reads as four rows. */
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="space-y-2.5">
+      <h3 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-500">{title}</h3>
+      {children}
+    </section>
+  );
+}
+
 export function WebsiteCartCouponForm({
   initial,
   mode,
@@ -58,16 +75,10 @@ export function WebsiteCartCouponForm({
   const init = initial ?? EMPTY;
   const [couponCode, setCouponCode] = useState(init.couponCode);
   const [isActive, setIsActive] = useState(init.isActive);
-  const [schoolErpName, setSchoolErpName] = useState<string | null>(
-    init.schoolErpName,
-  );
-  const [studentErpName, setStudentErpName] = useState<string | null>(
-    init.studentErpName,
-  );
+  const [schoolErpName, setSchoolErpName] = useState<string | null>(init.schoolErpName);
+  const [studentErpName, setStudentErpName] = useState<string | null>(init.studentErpName);
   const [grade, setGrade] = useState<string | null>(init.grade);
-  const [gradeOptions, setGradeOptions] = useState<
-    Array<{ grade: string; schoolGiven: string | null }>
-  >([]);
+  const [gradeOptions, setGradeOptions] = useState<Array<{ grade: string; schoolGiven: string | null }>>([]);
   const [loadingGrades, setLoadingGrades] = useState(false);
 
   // Load grades whenever the selected school changes. Clearing the school
@@ -86,10 +97,7 @@ export function WebsiteCartCouponForm({
     )
       .then((r) => r.json())
       .then((d) => {
-        const list = (d.grades ?? []) as Array<{
-          grade: string;
-          schoolGiven: string | null;
-        }>;
+        const list = (d.grades ?? []) as Array<{ grade: string; schoolGiven: string | null }>;
         setGradeOptions(list);
         // Drop the current grade if the new school doesn't offer it.
         if (grade && !list.some((g) => g.grade === grade)) setGrade(null);
@@ -100,21 +108,13 @@ export function WebsiteCartCouponForm({
     // intentionally not depending on `grade` — we only re-fetch on school change
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [schoolErpName]);
-  const [startDatetime, setStartDatetime] = useState(
-    init.startDatetime ? toLocalInput(init.startDatetime) : "",
-  );
-  const [endDatetime, setEndDatetime] = useState(
-    init.endDatetime ? toLocalInput(init.endDatetime) : "",
-  );
+  const [startDatetime, setStartDatetime] = useState(init.startDatetime ? toLocalInput(init.startDatetime) : "");
+  const [endDatetime, setEndDatetime] = useState(init.endDatetime ? toLocalInput(init.endDatetime) : "");
   const [oneTimeUse, setOneTimeUse] = useState(init.oneTimeUse);
-  const [canUseMultipleTimes, setCanUseMultipleTimes] = useState(
-    init.canUseMultipleTimes,
-  );
+  const [canUseMultipleTimes, setCanUseMultipleTimes] = useState(init.canUseMultipleTimes);
   const [discountType, setDiscountType] = useState<DType>(init.discountType);
   const [discount, setDiscount] = useState(String(init.discount));
-  const [maximumDiscountAmount, setMaximumDiscountAmount] = useState(
-    String(init.maximumDiscountAmount),
-  );
+  const [maximumDiscountAmount, setMaximumDiscountAmount] = useState(String(init.maximumDiscountAmount));
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
   const [deleting, startDelete] = useTransition();
@@ -181,22 +181,17 @@ export function WebsiteCartCouponForm({
       } catch (e) {
         // Network error, CSP, abort — without this catch useTransition swallows
         // the rejection and the button just returns to idle with no feedback.
-        setError(
-          "Network error: " + (e instanceof Error ? e.message : "request failed"),
-        );
+        setError("Network error: " + (e instanceof Error ? e.message : "request failed"));
       }
     });
   };
 
   const remove = () => {
     if (!init.id) return;
-    if (!confirm("Delete this coupon? It will also be removed from ERPNext."))
-      return;
+    if (!confirm("Delete this coupon? It will also be removed from ERPNext.")) return;
     startDelete(async () => {
       try {
-        const r = await fetch(`/api/admin/website-cart-coupons/${init.id}`, {
-          method: "DELETE",
-        });
+        const r = await fetch(`/api/admin/website-cart-coupons/${init.id}`, { method: "DELETE" });
         if (!r.ok) {
           const d = await r.json().catch(() => ({}));
           setError(d.error ?? `Delete failed (HTTP ${r.status})`);
@@ -205,228 +200,172 @@ export function WebsiteCartCouponForm({
         router.push("/admin/discounts");
         router.refresh();
       } catch (e) {
-        setError(
-          "Network error: " + (e instanceof Error ? e.message : "request failed"),
-        );
+        setError("Network error: " + (e instanceof Error ? e.message : "request failed"));
       }
     });
   };
 
   const randomize = () =>
     setCouponCode(
-      "INV" +
-        Math.random().toString(36).toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8),
+      "INV" + Math.random().toString(36).toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8),
     );
 
+  const isPct = discountType === "Percentage";
+
   return (
-    <form onSubmit={submit} className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-      <Field label="Coupon code" required hint="Same field as ERPNext.coupon_code">
-        <div className="flex gap-2">
-          <input
-            type="text"
-            value={couponCode}
-            onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
-            required
-            className={inputClass + " font-mono"}
-            placeholder="INVABC1234"
-          />
-          {mode === "new" ? (
-            <button
-              type="button"
-              onClick={randomize}
-              className="h-9 px-3 rounded-lg border border-ink-200 bg-white text-[12px] font-semibold text-ink-700 hover:bg-cream-50 inline-flex items-center gap-1.5"
-              title="Generate random code"
+    <form onSubmit={submit} className="space-y-5">
+      <Section title="Code">
+        <FormGrid cols={3}>
+          <Field label="Coupon code" htmlFor="cp-code" required className="md:col-span-2 lg:col-span-2">
+            <div className="flex gap-2">
+              <Input
+                id="cp-code"
+                value={couponCode}
+                onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+                required
+                placeholder="INVABC1234"
+                className="font-mono"
+                readOnly={mode === "edit"}
+              />
+              {mode === "new" ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={randomize}
+                  icon={<RefreshCw className="h-3.5 w-3.5" />}
+                  title="Generate a random code"
+                >
+                  Generate
+                </Button>
+              ) : null}
+            </div>
+          </Field>
+          <Field label="Status" htmlFor="cp-active">
+            <Select id="cp-active" value={isActive ? "1" : "0"} onChange={(e) => setIsActive(e.target.value === "1")}>
+              <option value="1">Active</option>
+              <option value="0">Inactive</option>
+            </Select>
+          </Field>
+        </FormGrid>
+      </Section>
+
+      <Section title="Who can use it">
+        <FormGrid cols={3}>
+          <Field label="School" htmlFor="cp-school">
+            <ErpLinkPicker id="cp-school" kind="school" value={schoolErpName} onChange={setSchoolErpName} placeholder="Any school" />
+          </Field>
+          <Field label="Student" htmlFor="cp-student">
+            <ErpLinkPicker id="cp-student" kind="student" value={studentErpName} onChange={setStudentErpName} placeholder="Any student" />
+          </Field>
+          <Field label="Grade" htmlFor="cp-grade">
+            <Select
+              id="cp-grade"
+              value={grade ?? ""}
+              onChange={(e) => setGrade(e.target.value || null)}
+              disabled={!schoolErpName || loadingGrades}
             >
-              <RefreshCw className="h-3.5 w-3.5" /> Generate
-            </button>
-          ) : null}
-        </div>
-      </Field>
+              <option value="">
+                {!schoolErpName
+                  ? "Any grade"
+                  : loadingGrades
+                    ? "Loading grades…"
+                    : gradeOptions.length === 0
+                      ? "No grades mapped for this school"
+                      : "Any grade"}
+              </option>
+              {gradeOptions.map((g) => (
+                <option key={g.grade} value={g.grade}>
+                  {g.grade}
+                  {g.schoolGiven ? ` · ${g.schoolGiven}` : ""}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        </FormGrid>
+      </Section>
 
-      <Field label="Active">
-        <label className="flex items-center gap-2 h-9">
-          <input
-            type="checkbox"
-            checked={isActive}
-            onChange={(e) => setIsActive(e.target.checked)}
-            className="h-4 w-4"
-          />
-          <span className="text-[13px] text-ink-700">
-            Coupon is currently redeemable
-          </span>
-        </label>
-      </Field>
+      <Section title="Validity">
+        <FormGrid cols={3}>
+          <Field label="Starts" htmlFor="cp-start">
+            <Input id="cp-start" type="datetime-local" value={startDatetime} onChange={(e) => setStartDatetime(e.target.value)} />
+          </Field>
+          <Field label="Ends" htmlFor="cp-end">
+            <Input id="cp-end" type="datetime-local" value={endDatetime} onChange={(e) => setEndDatetime(e.target.value)} />
+          </Field>
+          <Field label="Usage" htmlFor="cp-usage">
+            {/* ERP forbids one_time_use and can_use_multiple_times both set;
+                one control makes the invalid combination unreachable. */}
+            <Select
+              id="cp-usage"
+              value={oneTimeUse ? "once" : canUseMultipleTimes ? "multi" : "default"}
+              onChange={(e) => {
+                if (e.target.value === "once") setOneTime(true);
+                else if (e.target.value === "multi") setMulti(true);
+                else { setOneTimeUse(false); setCanUseMultipleTimes(false); }
+              }}
+            >
+              <option value="once">One-time use</option>
+              <option value="multi">Reusable</option>
+              <option value="default">Not set</option>
+            </Select>
+          </Field>
+        </FormGrid>
+      </Section>
 
-      <Field label="School" hint="Optional — restricts coupon to one school">
-        <ErpLinkPicker
-          kind="school"
-          value={schoolErpName}
-          onChange={setSchoolErpName}
-          placeholder="Any school"
-        />
-      </Field>
-      <Field label="Student" hint="Optional — restricts coupon to one student">
-        <ErpLinkPicker
-          kind="student"
-          value={studentErpName}
-          onChange={setStudentErpName}
-          placeholder="Any student"
-        />
-      </Field>
+      <Section title="Discount">
+        <FormGrid cols={3}>
+          <Field label="Type" htmlFor="cp-type" required>
+            <Select id="cp-type" value={discountType} onChange={(e) => setDiscountType(e.target.value as DType)}>
+              <option value="Fixed">Fixed amount (₹)</option>
+              <option value="Percentage">Percentage (%)</option>
+            </Select>
+          </Field>
+          <Field label={isPct ? "Discount (%)" : "Discount (₹)"} htmlFor="cp-discount" required>
+            <Input
+              id="cp-discount"
+              type="number"
+              step="0.01"
+              min={0}
+              max={isPct ? 100 : undefined}
+              value={discount}
+              onChange={(e) => setDiscount(e.target.value)}
+              required
+            />
+          </Field>
+          <Field label="Maximum discount (₹)" htmlFor="cp-cap">
+            <Input
+              id="cp-cap"
+              type="number"
+              min={0}
+              step={1}
+              value={maximumDiscountAmount}
+              onChange={(e) => setMaximumDiscountAmount(e.target.value)}
+              disabled={!isPct}
+            />
+          </Field>
+        </FormGrid>
+      </Section>
 
-      <Field
-        label="Grade"
-        hint={
-          schoolErpName
-            ? "Optional — restricts coupon to one grade within the school"
-            : "Pick a school first to enable grade selection"
-        }
-        className="lg:col-span-2"
-      >
-        <select
-          value={grade ?? ""}
-          onChange={(e) => setGrade(e.target.value || null)}
-          disabled={!schoolErpName || loadingGrades}
-          className={inputClass + " disabled:opacity-50"}
-        >
-          <option value="">
-            {!schoolErpName
-              ? "— Any grade (no school selected) —"
-              : loadingGrades
-                ? "Loading grades…"
-                : gradeOptions.length === 0
-                  ? "— No grades mapped for this school —"
-                  : "— Any grade —"}
-          </option>
-          {gradeOptions.map((g) => (
-            <option key={g.grade} value={g.grade}>
-              {g.grade}
-              {g.schoolGiven ? ` · ${g.schoolGiven}` : ""}
-            </option>
-          ))}
-        </select>
-      </Field>
+      <FormError>{error}</FormError>
 
-      <Field label="Start date / time">
-        <input
-          type="datetime-local"
-          value={startDatetime}
-          onChange={(e) => setStartDatetime(e.target.value)}
-          className={inputClass}
-        />
-      </Field>
-      <Field label="End date / time">
-        <input
-          type="datetime-local"
-          value={endDatetime}
-          onChange={(e) => setEndDatetime(e.target.value)}
-          className={inputClass}
-        />
-      </Field>
-
-      <Field label="One time use">
-        <label className="flex items-center gap-2 h-9">
-          <input
-            type="checkbox"
-            checked={oneTimeUse}
-            onChange={(e) => setOneTime(e.target.checked)}
-            className="h-4 w-4"
-          />
-          <span className="text-[13px] text-ink-700">
-            Single redemption across the entire site
-          </span>
-        </label>
-      </Field>
-      <Field label="Can be used multiple times">
-        <label className="flex items-center gap-2 h-9">
-          <input
-            type="checkbox"
-            checked={canUseMultipleTimes}
-            onChange={(e) => setMulti(e.target.checked)}
-            className="h-4 w-4"
-          />
-          <span className="text-[13px] text-ink-700">
-            Reusable per customer (mutually exclusive with above)
-          </span>
-        </label>
-      </Field>
-
-      <Field label="Discount type" required>
-        <select
-          value={discountType}
-          onChange={(e) => setDiscountType(e.target.value as DType)}
-          className={inputClass}
-        >
-          <option value="Fixed">Fixed (₹)</option>
-          <option value="Percentage">Percentage (%)</option>
-        </select>
-      </Field>
-      <Field
-        label={discountType === "Percentage" ? "Discount (%)" : "Discount (₹)"}
-        required
-      >
-        <input
-          type="number"
-          step="0.01"
-          min={0}
-          max={discountType === "Percentage" ? 100 : undefined}
-          value={discount}
-          onChange={(e) => setDiscount(e.target.value)}
-          required
-          className={inputClass}
-        />
-      </Field>
-
-      <Field
-        label="Maximum discount amount (₹)"
-        hint={
-          discountType === "Percentage"
-            ? "Caps the % discount; 0 = no cap"
-            : "Ignored for Fixed type"
-        }
-        className="lg:col-span-2"
-      >
-        <input
-          type="number"
-          min={0}
-          step={1}
-          value={maximumDiscountAmount}
-          onChange={(e) => setMaximumDiscountAmount(e.target.value)}
-          disabled={discountType === "Fixed"}
-          className={inputClass + " disabled:opacity-50"}
-        />
-      </Field>
-
-      <div className="lg:col-span-2 flex items-center justify-between pt-2">
-        <div className="text-[11px] text-ink-500">
-          {init.erpName ? (
-            <>
-              ERPNext docname:{" "}
-              <span className="font-mono text-ink-700">{init.erpName}</span>
-            </>
-          ) : mode === "new" ? (
-            "Will be created in ERPNext on save"
-          ) : (
-            "Local-only (not yet synced to ERPNext)"
-          )}
-        </div>
-        <div className="flex items-center gap-3">
-          {error ? <span className="text-[13px] text-red-700">{error}</span> : null}
+      <div className="flex items-center justify-between gap-2 border-t border-ink-100/70 pt-4">
+        <div>
           {mode === "edit" ? (
-            <button
+            <Button
               type="button"
+              variant="danger"
               onClick={remove}
-              disabled={deleting || pending}
-              className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg text-[12px] font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50"
+              busy={deleting}
+              disabled={pending}
+              icon={<Trash2 className="h-3.5 w-3.5" />}
             >
-              <Trash2 className="h-3.5 w-3.5" />
-              {deleting ? "Deleting…" : "Delete"}
-            </button>
+              Delete
+            </Button>
           ) : null}
-          <Button busy={pending} icon={<Save className="h-3.5 w-3.5" />} type="submit">
-            {mode === "new" ? "Create coupon" : "Save changes"}
-          </Button>
         </div>
+        <Button busy={pending} icon={<Save className="h-3.5 w-3.5" />} type="submit">
+          {mode === "new" ? "Create coupon" : "Save changes"}
+        </Button>
       </div>
     </form>
   );
@@ -437,11 +376,13 @@ export function WebsiteCartCouponForm({
 /* returns the canonical ERP `name` string so the saved value is what    */
 /* ERPNext stores.                                                       */
 function ErpLinkPicker({
+  id,
   kind,
   value,
   onChange,
   placeholder,
 }: {
+  id?: string;
   kind: "school" | "student";
   value: string | null;
   onChange: (v: string | null) => void;
@@ -449,9 +390,7 @@ function ErpLinkPicker({
 }) {
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
-  const [results, setResults] = useState<
-    Array<{ erpName: string; label: string }>
-  >([]);
+  const [results, setResults] = useState<Array<{ erpName: string; label: string }>>([]);
   const [loading, setLoading] = useState(false);
   const wrapRef = useRef<HTMLDivElement | null>(null);
 
@@ -466,7 +405,7 @@ function ErpLinkPicker({
   useEffect(() => {
     if (!open) return;
     const ctrl = new AbortController();
-    const id = window.setTimeout(async () => {
+    const timer = window.setTimeout(async () => {
       if (kind === "student" && q.trim().length < 2) {
         setResults([]);
         return;
@@ -478,12 +417,7 @@ function ErpLinkPicker({
           { signal: ctrl.signal },
         );
         const d = await r.json();
-        const rows = (d.results ?? []) as Array<{
-          erpName: string;
-          name?: string;
-          firstName?: string;
-          lastName?: string;
-        }>;
+        const rows = (d.results ?? []) as Array<{ erpName: string; name?: string; firstName?: string; lastName?: string }>;
         setResults(
           rows.map((row) => ({
             erpName: row.erpName,
@@ -501,29 +435,28 @@ function ErpLinkPicker({
     }, 200);
     return () => {
       ctrl.abort();
-      window.clearTimeout(id);
+      window.clearTimeout(timer);
     };
   }, [q, open, kind]);
 
   return (
     <div className="relative" ref={wrapRef}>
       {value ? (
-        <div className="flex items-center gap-2">
-          <span className="flex-1 h-9 px-3 inline-flex items-center rounded-lg bg-cream-50 border border-ink-200 text-[12.5px] font-mono text-ink-800 truncate">
-            {value}
-          </span>
+        <div className="flex h-9 items-center gap-2 rounded-lg border border-ink-100 bg-cream-50 pl-3 pr-1">
+          <span className="min-w-0 flex-1 truncate font-mono text-[12.5px] text-ink-800">{value}</span>
           <button
             type="button"
             onClick={() => onChange(null)}
-            className="h-9 px-2.5 rounded-lg border border-ink-200 text-[12px] text-ink-600 hover:bg-cream-50"
+            className="grid h-7 w-7 place-items-center rounded-md text-ink-400 hover:bg-white hover:text-ink-900"
+            aria-label="Clear"
             title="Clear"
           >
-            ✕
+            <X className="h-3.5 w-3.5" />
           </button>
         </div>
       ) : (
-        <input
-          type="text"
+        <Input
+          id={id}
           value={q}
           onFocus={() => setOpen(true)}
           onChange={(e) => {
@@ -531,18 +464,16 @@ function ErpLinkPicker({
             setOpen(true);
           }}
           placeholder={placeholder ?? `Search ${kind}…`}
-          className={inputClass}
+          autoComplete="off"
         />
       )}
       {open && !value ? (
-        <div className="absolute z-30 left-0 right-0 mt-1 max-h-72 overflow-auto rounded-lg border border-ink-200 bg-white shadow-lg">
+        <div className="absolute left-0 right-0 z-30 mt-1 max-h-72 overflow-auto rounded-xl border border-ink-100 bg-white shadow-[0_12px_32px_-12px_rgba(10,10,10,0.25)]">
           {loading ? (
             <div className="px-3 py-2 text-[12px] text-ink-400">Searching…</div>
           ) : results.length === 0 ? (
             <div className="px-3 py-2 text-[12px] text-ink-400">
-              {kind === "student" && q.trim().length < 2
-                ? "Type at least 2 letters"
-                : "No matches"}
+              {kind === "student" && q.trim().length < 2 ? "Type at least 2 letters" : "No matches"}
             </div>
           ) : (
             results.map((r) => (
@@ -555,7 +486,7 @@ function ErpLinkPicker({
                   setOpen(false);
                   setQ("");
                 }}
-                className="w-full text-left px-3 py-2 text-[12.5px] hover:bg-cream-50 border-b border-ink-50 last:border-0"
+                className="block w-full border-b border-ink-50 px-3 py-2 text-left text-[12.5px] last:border-0 hover:bg-cream-50"
               >
                 {r.label}
               </button>
@@ -564,35 +495,6 @@ function ErpLinkPicker({
         </div>
       ) : null}
     </div>
-  );
-}
-
-const inputClass =
-  "w-full h-9 px-3 text-[13px] rounded-lg bg-white border border-ink-200 placeholder:text-ink-400 " +
-  "focus:outline-none focus:border-ink-400 focus:ring-2 focus:ring-brand-300/30 transition";
-
-function Field({
-  label,
-  hint,
-  required,
-  children,
-  className,
-}: {
-  label: string;
-  hint?: string;
-  required?: boolean;
-  children: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <label className={"block " + (className ?? "")}>
-      <span className="text-[12px] font-semibold text-ink-700">
-        {label}
-        {required ? <span className="text-red-600 ml-0.5">*</span> : null}
-      </span>
-      {hint ? <span className="text-[11px] text-ink-500 ml-2">{hint}</span> : null}
-      <div className="mt-1.5">{children}</div>
-    </label>
   );
 }
 

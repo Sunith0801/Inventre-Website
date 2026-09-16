@@ -167,15 +167,24 @@ export function BuyBox({
   }, []);
 
   const noSizesAvailable = product.sizes.length === 0;
-  // Per ops directive (2026-05-26): never block add-to-cart on stock. Stock
-  // is no longer synced from ERP — keep variantStock around for admin
-  // diagnostics but always treat the variant as available to the customer.
   const variantStock = size ? product.variantStocks?.[size] : undefined;
-  void variantStock;
-  const sizeOutOfStock = false;
-  const canAdd = useMultiAxisPicker
-    ? Boolean(resolvedVariantId) && product.inStock
-    : !noSizesAvailable && size && product.inStock && !sizeOutOfStock;
+  // Refined below once the Colour × Size variant is resolved; the size-keyed
+  // map collapses colours sharing a size, so it is only the fallback.
+  const sizeKeyedOutOfStock = variantStock !== undefined && variantStock <= 0;
+  // Stock is synced from the audit's Ground Stock every 5 minutes
+  // (2026-09-16), so a size with nothing counted cannot be added. For the
+  // single-axis picker the size keys `variantStocks`; for the multi-axis
+  // picker the resolved Colour × Size variant carries its own figure.
+  const stockByVariantId = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const v of product.variants ?? []) m.set(v.id, v.stockQty);
+    return m;
+  }, [product.variants]);
+  const resolvedVariantStock = resolvedVariantId
+    ? stockByVariantId.get(resolvedVariantId)
+    : undefined;
+  const resolvedVariantOutOfStock =
+    resolvedVariantStock !== undefined && resolvedVariantStock <= 0;
 
   // When the product has a non-size attribute (Colour, House, …), resolve
   // the variantId on the client using `variantsByAttributeKey`. The legacy
@@ -274,6 +283,70 @@ export function BuyBox({
     const key = buildAttributeKey(sel);
     return map[key] ?? null;
   }, [nonSizeAttrGroups.length, attrSel, size, sizeAxisName, sizeAxis, product.variantsByAttributeKey]);
+
+  // Price of every size for the CURRENT colour — resolved through the same
+  // colour × size map as the variant itself, then looked up in the full
+  // variant rows. Null when every size costs the same (no hint needed).
+  const priceBySize = useMemo<Record<string, number> | null>(() => {
+    if (!sizeAxis || !sizeAxisName || !product.variants?.length) return null;
+    const map = product.variantsByAttributeKey ?? {};
+    const byId = new Map(product.variants.map((v) => [v.id, v.pricePaise]));
+    const out: Record<string, number> = {};
+    for (const v of sizeAxis.values) {
+      const vid = map[buildAttributeKey({ ...attrSel, [sizeAxisName]: v })];
+      const paise = vid ? byId.get(vid) : undefined;
+      if (paise != null && paise > 0) out[v] = Math.round(paise / 100);
+    }
+    return new Set(Object.values(out)).size > 1 ? out : null;
+  }, [sizeAxis, sizeAxisName, attrSel, product.variants, product.variantsByAttributeKey]);
+
+  // Tell the Gallery which exact variant is selected, so a photo pinned to
+  // one size shows for that size only.
+  const publishVariantId = pdpSelection?.setVariantId;
+  const currentVariantId = resolvedAttrVariantId ?? (size ? product.variantIds?.[size] ?? null : null);
+  useEffect(() => {
+    publishVariantId?.(currentVariantId);
+  }, [currentVariantId, publishVariantId]);
+
+  // Stock of the exact variant the parent has picked. With a Colour axis
+  // the size-keyed map cannot tell "White S" from "Blue S", so ask the
+  // resolved variant first.
+  const attrResolvedStock = resolvedAttrVariantId
+    ? stockByVariantId.get(resolvedAttrVariantId)
+    : undefined;
+  const sizeOutOfStock =
+    attrResolvedStock !== undefined ? attrResolvedStock <= 0 : sizeKeyedOutOfStock;
+
+  // Sizes that are sold out for the CURRENT colour (or other non-size
+  // choice) — rendered struck through with a "Sold out" title, the same
+  // treatment the single-axis pills already give. Falls back to the
+  // size-keyed map when there is no attribute lookup.
+  const soldOutSizes = useMemo<Set<string>>(() => {
+    const out = new Set<string>();
+    if (!sizeAxis || !sizeAxisName) return out;
+    const map = product.variantsByAttributeKey ?? {};
+    const hasMap = Object.keys(map).length > 0 && nonSizeAttrGroups.length > 0;
+    for (const v of sizeAxis.values) {
+      let stock: number | undefined;
+      if (hasMap) {
+        const sel: Record<string, string> = { ...attrSel, [sizeAxisName]: v };
+        const id = map[buildAttributeKey(sel)];
+        stock = id ? stockByVariantId.get(id) : undefined;
+      } else {
+        stock = product.variantStocks?.[v];
+      }
+      if (stock !== undefined && stock <= 0) out.add(v);
+    }
+    return out;
+  }, [sizeAxis, sizeAxisName, attrSel, nonSizeAttrGroups.length, product.variantsByAttributeKey, product.variantStocks, stockByVariantId]);
+
+  const canAdd = useMultiAxisPicker
+    ? Boolean(resolvedVariantId) && product.inStock && !resolvedVariantOutOfStock
+    : !noSizesAvailable && size && product.inStock && !sizeOutOfStock;
+  // What the Add-to-cart button says: the whole product sold out, or the
+  // size (and colour) the parent has picked.
+  const selectedOutOfStock =
+    !product.inStock || (useMultiAxisPicker ? resolvedVariantOutOfStock : sizeOutOfStock);
 
   const handleAdd = async () => {
     if (!canAdd || addBusy) return;
@@ -552,6 +625,8 @@ export function BuyBox({
             attrValue={attrSel[group.name] ?? group.values[0] ?? ""}
             onAttrChange={(v) => setAttrSel((s) => ({ ...s, [group.name]: v }))}
             availableValues={isSize ? availableSizes : null}
+            soldOutValues={isSize ? soldOutSizes : null}
+            priceHints={isSize ? priceBySize : null}
           />
         );
       })}
@@ -671,7 +746,6 @@ export function BuyBox({
                 key={s}
                 type="button"
                 onClick={() => setSize(s)}
-                disabled={oos}
                 title={
                   oos
                     ? "Sold out"
@@ -680,15 +754,29 @@ export function BuyBox({
                     : undefined
                 }
                 className={
-                  "relative h-11 min-w-11 px-4 rounded-md border text-[14px] font-semibold transition-all " +
-                  (oos
-                    ? "bg-cream-50 text-ink-300 border-ink-100 line-through cursor-not-allowed"
-                    : active
-                    ? "bg-ink-900 text-white border-ink-900"
+                  "relative min-h-11 min-w-11 px-4 py-1.5 rounded-md border text-[14px] font-semibold transition-all " +
+                  // Sold-out sizes stay selectable: picking one turns the
+                  // Add-to-cart button into "Out of stock".
+                  (active
+                    ? "bg-ink-900 text-white border-ink-900" + (oos ? " line-through" : "")
+                    : oos
+                    ? "bg-cream-50 text-ink-400 border-ink-200 line-through hover:border-ink-900"
                     : "bg-white text-ink-800 border-ink-200 hover:border-ink-900")
                 }
               >
-                {s}
+                <span className="block leading-none">{s}</span>
+                {/* Each size's own price, when sizes differ — a 32 and a
+                    40 shirt are not the same price and the parent should
+                    see that before picking. */}
+                {(() => {
+                  const vp = product.variantPrices?.[s]?.price;
+                  const uniform = product.variantPrices ? new Set(Object.values(product.variantPrices).map((x) => x.price)).size <= 1 : true;
+                  return vp != null && !uniform && !oos ? (
+                    <span className={"mt-0.5 block text-[10px] font-medium leading-none tabular-nums " + (active ? "text-white/70" : "text-ink-500")}>
+                      ₹{vp.toLocaleString("en-IN")}
+                    </span>
+                  ) : null;
+                })()}
                 {low && !active && (
                   <span className="absolute -top-1.5 -right-1.5 grid h-4 min-w-4 px-1 place-items-center rounded-full bg-amber-500 text-[9px] font-bold text-white">
                     {stock}
@@ -714,7 +802,14 @@ export function BuyBox({
           type="button"
           onClick={handleAdd}
           disabled={!canAdd || addBusy || !activePriced}
-          className="flex-1 inline-flex items-center justify-center gap-2 rounded-full bg-brand text-white px-6 h-12 text-[14px] font-bold hover:bg-brand-600 active:scale-[0.99] transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-[inset_0_1px_0_rgba(255,255,255,0.25)]"
+          className={
+            "flex-1 inline-flex items-center justify-center gap-2 rounded-full px-6 h-12 text-[14px] font-bold active:scale-[0.99] transition-all disabled:cursor-not-allowed " +
+            // Sold out is a message, not a dimmed button: keep it fully
+            // legible in the warning colour rather than fading it to 40%.
+            (selectedOutOfStock && !added
+              ? "bg-brand-50 text-brand-700 border-2 border-brand-300 disabled:opacity-100 tracking-wide uppercase"
+              : "bg-brand text-white hover:bg-brand-600 disabled:opacity-40 shadow-[inset_0_1px_0_rgba(255,255,255,0.25)]")
+          }
         >
           <AnimatePresence mode="wait">
             {added ? (
@@ -726,6 +821,17 @@ export function BuyBox({
                 className="inline-flex items-center gap-2"
               >
                 <Check className="h-4 w-4" /> Added to cart
+              </motion.span>
+            ) : selectedOutOfStock ? (
+              <motion.span
+                key="oos"
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -6 }}
+                className="inline-flex items-center gap-2"
+              >
+                <ShoppingBag className="h-4 w-4" />
+                Out of stock
               </motion.span>
             ) : !activePriced ? (
               <motion.span
@@ -851,6 +957,8 @@ function AttributeGroupPicker({
   attrValue,
   onAttrChange,
   availableValues,
+  soldOutValues,
+  priceHints,
 }: {
   name: string;
   values: string[];
@@ -866,6 +974,14 @@ function AttributeGroupPicker({
    *  a parent shopping for "blue" sees that "30" exists in the catalog but
    *  isn't stocked in blue. Null = no filtering (all values enabled). */
   availableValues?: Set<string> | null;
+  /** Sizes with nothing on the shelf for the current colour — rendered
+   *  struck through and titled "Sold out"; still visible so the parent
+   *  sees the size exists. */
+  soldOutValues?: Set<string> | null;
+  /** Rupees per size value for the current colour, when sizes are priced
+   *  differently. A 32 and a 40 are not the same price and the parent
+   *  should see that on the button, not after picking. */
+  priceHints?: Record<string, number> | null;
 }) {
   const value = isSize ? selectedSize : attrValue ?? values[0] ?? "";
   const setValue = isSize ? onSelectSize : (onAttrChange ?? (() => {}));
@@ -894,7 +1010,12 @@ function AttributeGroupPicker({
       <div className="mt-2.5 flex flex-wrap gap-2">
         {values.map((v) => {
           const active = v === cleanValue;
+          const soldOut = !!soldOutValues?.has(v);
           const unavailable = availableValues != null && !availableValues.has(v);
+          // A sold-out size stays selectable (user's call, 2026-09-16): picking
+          // it turns the Add-to-cart button into "Out of stock", which is the
+          // clearer message. Only a size that does not exist in this colour
+          // is disabled.
           return (
             <button
               key={v}
@@ -904,17 +1025,24 @@ function AttributeGroupPicker({
                 setValue(isSize ? `${prefix}${v}` : v);
               }}
               disabled={unavailable}
-              title={unavailable ? "Not available for the selected colour" : undefined}
+              title={soldOut ? "Sold out" : unavailable ? "Not available for the selected colour" : undefined}
               className={
-                "h-11 min-w-11 px-4 rounded-md border text-[13px] font-semibold transition-all " +
+                "min-h-11 min-w-11 px-4 py-1.5 rounded-md border text-[13px] font-semibold transition-all " +
                 (unavailable
                   ? "bg-ink-50 text-ink-300 border-ink-100 line-through cursor-not-allowed"
                   : active
-                    ? "bg-ink-900 text-white border-ink-900"
-                    : "bg-white text-ink-800 border-ink-200 hover:border-ink-900")
+                    ? "bg-ink-900 text-white border-ink-900" + (soldOut ? " line-through" : "")
+                    : soldOut
+                      ? "bg-white text-ink-400 border-ink-200 line-through hover:border-ink-900"
+                      : "bg-white text-ink-800 border-ink-200 hover:border-ink-900")
               }
             >
-              {v}
+              <span className="block leading-none">{v}</span>
+              {priceHints && priceHints[v] != null && !soldOut && !unavailable ? (
+                <span className={"mt-0.5 block text-[10px] font-medium leading-none tabular-nums " + (active ? "text-white/70" : "text-ink-500")}>
+                  ₹{priceHints[v]!.toLocaleString("en-IN")}
+                </span>
+              ) : null}
             </button>
           );
         })}

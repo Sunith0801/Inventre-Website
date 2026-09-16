@@ -69,5 +69,5 @@ export async function POST(req: NextRequest) {
     summary: `Created role "${name}" with ${permissions.length} permission(s)`,
   });
 
-  return NextResponse.json({ id: row.id, redirectTo: `/admin/roles/${row.id}` });
+  return NextResponse.json({ id: row.id, redirectTo: `/admin/roles/${slug}` });
 }

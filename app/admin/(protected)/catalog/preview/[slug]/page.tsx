@@ -53,16 +53,6 @@ export default async function CatalogPreviewDetailPage({
       <PageHeader
         eyebrow="Catalog · Shop Preview"
         title={product.name}
-        description={
-          <span className="text-ink-600">
-            Admin view of the storefront product detail page. Same data the parent sees.
-          </span>
-        }
-        breadcrumb={[
-          { label: "Admin", href: "/admin/dashboard" },
-          { label: "Catalog", href: backHref },
-          { label: product.name },
-        ]}
         actions={
           <div className="flex items-center gap-2">
             <Link

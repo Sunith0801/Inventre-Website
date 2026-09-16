@@ -150,6 +150,15 @@
 }
 .fx-band > div {
   position: relative;
+  /* Grid items default to min-width:auto, so a track can never shrink below
+     its min-content. `.fx-note` is nowrap, so the longest note ("1,952
+     students owe money · excludes …") set the floor for its column and
+     pushed the 4th card off-screen at ~1280px — and its own
+     text-overflow:ellipsis could never fire. min-width:0 lets the track
+     shrink and hands the ellipsis back its job. */
+  min-width: 0;
+  /* Size the figure against THIS card, not the viewport (see .fx-figure). */
+  container-type: inline-size;
   padding: 16px 18px 18px;
   background: var(--tone-soft, var(--paper-2));
   border-top: 3px solid var(--tone, var(--ink));
@@ -161,6 +170,14 @@
 .fx-band .kicker { color: var(--tone); opacity: 0.85; font-weight: 500; }
 .fx-figure {
   font-size: clamp(34px, 4.2vw, 54px);
+}
+/* A band figure is bounded by its card, so scaling it on viewport width
+   overshoots between the 900px breakpoint and ~1400px: at 1280 the card is
+   ~256px of usable width while 4.2vw asks for 54px, and "₹107.70 Cr" wrapped
+   onto two lines. cqw measures the card, so 1440+ is unchanged (still capped
+   at 54px) and only the genuinely narrow cards step down. */
+.fx-band .fx-figure {
+  font-size: clamp(28px, 16cqw, 54px);
   font-weight: 800;
   letter-spacing: -0.04em;
   line-height: 1;

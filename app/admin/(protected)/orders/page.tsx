@@ -11,7 +11,11 @@ import {
   SearchInput,
   EmptyState,
   Button,
+  Input,
+  FilterSelect,
+  Stat,
 } from "@/components/admin/ui/primitives";
+import { Pagination } from "@/components/admin/ui/pagination";
 import { SyncFromErpButton } from "@/components/admin/SyncFromErpButton";
 import { OrdersBulkRefresh } from "@/components/admin/OrdersBulkRefresh";
 import { AutoSubmitForm } from "@/components/admin/AutoSubmitForm";
@@ -91,38 +95,19 @@ const KpiTile = ({
   value,
   href,
   active,
-  tone,
 }: {
   label: string;
   value: number;
   href: string;
   active: boolean;
-  tone: "success" | "warning" | "danger" | "violet" | "neutral";
-}) => {
-  const toneClasses = {
-    success: "bg-emerald-50 border-emerald-200 text-emerald-900",
-    warning: "bg-amber-50 border-amber-200 text-amber-900",
-    danger: "bg-red-50 border-red-200 text-red-900",
-    violet: "bg-violet-50 border-violet-200 text-violet-900",
-    neutral: "bg-ink-50 border-ink-200 text-ink-900",
-  }[tone];
-  const activeRing = active
-    ? "ring-2 ring-offset-1 ring-brand-500 border-brand-500"
-    : "hover:shadow-sm";
-  return (
-    <a
-      href={href}
-      className={`block rounded-xl border px-4 py-3 transition-all ${toneClasses} ${activeRing}`}
-    >
-      <div className="text-[10.5px] font-semibold uppercase tracking-[0.08em] opacity-70">
-        {label}
-      </div>
-      <div className="mt-1 font-display text-[22px] font-extrabold tabular-nums leading-none">
-        {value.toLocaleString("en-IN")}
-      </div>
-    </a>
-  );
-};
+  tone?: string;
+}) => (
+  // Client-side navigation keeps the scroll position and the toolbar's
+  // typed search intact; a full document reload lost both.
+  <Link href={href} className={`block rounded-2xl ${active ? "ring-2 ring-brand/40" : ""}`}>
+    <Stat label={label} value={value.toLocaleString("en-IN")} />
+  </Link>
+);
 
 export default async function AdminOrdersPage({
   searchParams,
@@ -364,9 +349,9 @@ export default async function AdminOrdersPage({
   return (
     <div>
       <PageHeader
-        eyebrow="Sales"
+        eyebrow="Sales & Distribution"
         title="Sales Orders"
-        description={`${total.toLocaleString("en-IN")} orders to deliver — from ERPNext (Inventre Edu Services Pvt Ltd).`}
+        description={`${total.toLocaleString("en-IN")} order${total === 1 ? "" : "s"}${term || statusBucket || dateRange || from || to ? " in this filter" : ""}`}
         actions={
           <div className="flex items-center gap-2">
             <ExportOrdersButton
@@ -388,7 +373,7 @@ export default async function AdminOrdersPage({
       {/* KPI tiles — reflect every active filter except the bucket
           filter itself. Click any tile to narrow / clear the Status
           filter; the active tile gets a ring + bold border. */}
-      <div className="mb-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+      <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5 lg:gap-4">
         <KpiTile
           label="All orders"
           value={kpis.total}
@@ -435,79 +420,59 @@ export default async function AdminOrdersPage({
             defaultValue={term}
             placeholder="Search order # or customer…"
           />
-          <select
-            name="statusBucket"
-            defaultValue={statusBucket ?? ""}
-            className="h-9 px-2.5 rounded-lg border border-ink-200 text-[13px] bg-white"
-          >
-            <option value="">All statuses</option>
+          {/* These four carried the same hand-typed class string that appears
+              17 times across the panel. They are primitives now, so they pick
+              up the shared focus ring and the disabled/invalid states. */}
+          <FilterSelect label="Payment" name="statusBucket" defaultValue={statusBucket ?? ""}>
             <option value="confirmed">Confirmed</option>
             <option value="pending">Pending</option>
             <option value="aborted">Aborted by Customer</option>
             <option value="failed">Failed</option>
-          </select>
-          <select
-            name="dateRange"
-            defaultValue={dateRange ?? ""}
-            className="h-9 px-2.5 rounded-lg border border-ink-200 text-[13px] bg-white"
-          >
-            <option value="">All time</option>
+          </FilterSelect>
+          <FilterSelect label="Period" allLabel="All time" name="dateRange" defaultValue={dateRange ?? ""}>
             <option value="today">Today</option>
             <option value="week">This week</option>
             <option value="month">This month</option>
-          </select>
-          <input
+          </FilterSelect>
+          <Input
             type="date"
             name="from"
             defaultValue={from ?? ""}
-            className="h-9 px-2.5 rounded-lg border border-ink-200 text-[13px] bg-white"
             aria-label="From date"
+            className="w-auto"
           />
-          <input
+          <Input
             type="date"
             name="to"
             defaultValue={to ?? ""}
-            className="h-9 px-2.5 rounded-lg border border-ink-200 text-[13px] bg-white"
             aria-label="To date"
+            className="w-auto"
           />
         </Toolbar>
       </AutoSubmitForm>
 
-      <Card padded={false}>
+      <Card padded={false} className="overflow-hidden">
         {rows.length === 0 ? (
           <EmptyState
             icon={ShoppingBag}
             title={term ? `No orders match “${term}”` : "No orders"}
-            description="ERPNext Sales Orders awaiting delivery appear here."
+            description="Orders placed on the shop and synced from ERPNext appear here."
           />
         ) : (
           <OrdersBulkRefresh rows={rows} isSuperAdmin={guard.role === "super"} />
         )}
+        {total > 0 ? (
+          <Pagination
+            page={page}
+            pages={Math.max(1, pages)}
+            from={(page - 1) * PAGE + 1}
+            to={Math.min(page * PAGE, total)}
+            total={total}
+            noun="order"
+            hrefFor={(p) => qp({ page: p })}
+          />
+        ) : null}
       </Card>
-
-      {pages > 1 ? (
-        <div className="flex items-center gap-2 mt-4 text-[13px]">
-          {page > 1 ? (
-            <Link
-              href={qp({ page: page - 1 })}
-              className="px-3 py-1.5 rounded-lg border border-ink-200 bg-white"
-            >
-              ‹ Prev
-            </Link>
-          ) : null}
-          <span className="text-ink-500">
-            Page {page} of {pages}
-          </span>
-          {page < pages ? (
-            <Link
-              href={qp({ page: page + 1 })}
-              className="px-3 py-1.5 rounded-lg border border-ink-200 bg-white"
-            >
-              Next ›
-            </Link>
-          ) : null}
-        </div>
-      ) : null}
     </div>
   );
 }

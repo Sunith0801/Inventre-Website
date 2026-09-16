@@ -13,7 +13,6 @@ import { phone10NullableSchema } from "@/lib/phone";
 const Patch = z.object({
   enabled: z.boolean().optional(),
   isNewStudent: z.boolean().optional(),
-  isVerified: z.boolean().optional(),
   schoolCode: z.string().min(1).optional(),
   enrollmentNumber: z.string().min(1).optional(),
   firstName: z.string().min(1).optional(),
@@ -25,9 +24,6 @@ const Patch = z.object({
   houseColor: z.string().nullable().optional(),
   medium: z.string().nullable().optional(),
   curriculum: z.string().nullable().optional(),
-  shoeSize: z.string().nullable().optional(),
-  shirtSize: z.string().nullable().optional(),
-  trouserSize: z.string().nullable().optional(),
   studentEmailId: z.string().min(1).optional(),
   studentMobileNumber: phone10NullableSchema.optional(),
   dateOfBirth: z.string().nullable().optional(),
@@ -165,23 +161,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     await invalidateCatalog();
   }
 
-  // When an admin un-verifies a student (isVerified=false), treat it as
-  // "this account needs to go through first-time setup again": reset the
-  // linked parent's first_time_login flag and clear their password so the
-  // next sign-in forces OTP-verify + create-password.
-  if (body.isVerified === false) {
-    const [stu] = await db
-      .select({ parentId: schema.students.parentId })
-      .from(schema.students)
-      .where(eq(schema.students.id, id))
-      .limit(1);
-    if (stu?.parentId) {
-      await db
-        .update(schema.parents)
-        .set({ firstTimeLogin: true, passwordHash: null })
-        .where(eq(schema.parents.id, stu.parentId));
-    }
-  }
+  // Verification is owned by the customer flows (register / first-time
+  // sign-in). Admins can see it but never set or clear it here.
 
   revalidatePath("/admin/students");
   revalidatePath(`/admin/students/${id}`);
@@ -199,7 +180,6 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       {
         enabled: "Enabled",
         isNewStudent: "New student",
-        isVerified: "Verified",
         schoolCode: "School code",
         schoolId: "School",
         enrollmentNumber: "Enrollment number",
@@ -213,9 +193,6 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         houseColor: "House colour",
         medium: "Medium",
         curriculum: "Curriculum",
-        shoeSize: "Shoe size",
-        shirtSize: "Shirt size",
-        trouserSize: "Trouser size",
         studentEmailId: "Student email",
         studentMobileNumber: "Student mobile",
         dateOfBirth: "Date of birth",

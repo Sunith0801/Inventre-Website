@@ -7,6 +7,7 @@ import { Plus, Upload } from "lucide-react";
 import { PageHeader, Button } from "@/components/admin/ui/primitives";
 import { getCurrentUser } from "@/server/session";
 import { StudentsBrowser } from "./StudentsBrowser";
+import { StudentsExportButton } from "./ExportButton";
 import { STUDENTS_PAGE_SIZE } from "./_constants";
 import { redirect } from "next/navigation";
 import { requireAnyPermission, isResponse } from "@/server/admin-guard";
@@ -186,11 +187,12 @@ export default async function ErpStudentsPage({
   return (
     <div>
       <PageHeader
-        eyebrow="People"
+        eyebrow="Customer Relationship (CRM)"
         title="Students"
         description={`${total.toLocaleString()} student${total === 1 ? "" : "s"} matching current filters`}
         actions={
           <div className="flex items-center gap-2">
+            <StudentsExportButton />
             <Link href="/admin/students/import">
               <Button variant="secondary" icon={<Upload className="h-3.5 w-3.5" />}>Bulk import</Button>
             </Link>

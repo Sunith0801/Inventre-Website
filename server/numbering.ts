@@ -167,15 +167,6 @@ export async function allocClaimNumber(date: Date = new Date()): Promise<string>
   return `MIS-${year}-${pad(n, 5)}`;
 }
 
-export async function allocConcernNumber(date: Date = new Date()): Promise<string> {
-  // Parent concern-portal tickets (payment / delivery / customer-care).
-  // CON- prefix so call-centre can tell them apart from RTN-/MIS- at a
-  // glance. Same atomic counter as every other number — single source.
-  const year = String(date.getFullYear());
-  const n = await nextNumber("CON", year);
-  return `CON-${year}-${pad(n, 5)}`;
-}
-
 export async function allocCustomerCode(date: Date = new Date()): Promise<string> {
   const year = String(date.getFullYear());
   const n = await nextNumber("CUST", year);

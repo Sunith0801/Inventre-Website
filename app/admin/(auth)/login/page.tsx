@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Lock, ArrowRight, Eye, EyeOff } from "lucide-react";
 
@@ -79,7 +80,12 @@ export default function AdminLoginPage() {
               />
             </label>
             <label className="block">
-              <span className="text-[12px] font-semibold text-ink-700">Password</span>
+              <span className="flex items-center justify-between">
+                <span className="text-[12px] font-semibold text-ink-700">Password</span>
+                <Link href="/admin/forgot-password" className="text-[11.5px] font-medium text-ink-500 hover:text-brand">
+                  Forgot password?
+                </Link>
+              </span>
               <div className="mt-1 flex rounded-xl border border-ink-200 bg-white overflow-hidden focus-within:border-ink-900">
                 <input
                   type={show ? "text" : "password"}

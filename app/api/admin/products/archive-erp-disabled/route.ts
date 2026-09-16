@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db, schema } from "@/db/client";
 import { and, eq, sql } from "drizzle-orm";
-import { isResponse, requirePermission } from "@/server/admin-guard";
+import { isResponse, requirePermission, requireAnyPermission } from "@/server/admin-guard";
 import { logAdminActivity } from "@/server/activity";
 
 /**
@@ -18,7 +18,7 @@ import { logAdminActivity } from "@/server/activity";
  */
 
 export async function GET() {
-  const guard = await requirePermission("catalog.read");
+  const guard = await requireAnyPermission("products.read", "catalog.read");
   if (isResponse(guard)) return guard;
   const [counts] = await db
     .select({
@@ -37,7 +37,7 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-  const guard = await requirePermission("catalog.write");
+  const guard = await requireAnyPermission("products.write", "catalog.write");
   if (isResponse(guard)) return guard;
   const result = await db
     .update(schema.products)

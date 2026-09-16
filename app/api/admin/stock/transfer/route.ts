@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { parseBody } from "@/server/parse-body";
 import { z } from "zod";
 import { db } from "@/db/client";
-import { isResponse, requirePermission } from "@/server/admin-guard";
+import { isResponse, requirePermission, requireAnyPermission } from "@/server/admin-guard";
 import { logAdminActivity } from "@/server/activity";
 import { applyStockChange } from "@/server/repos/inventory";
 
@@ -27,7 +27,7 @@ const Body = z.object({
 });
 
 export async function POST(req: Request) {
-  const guard = await requirePermission("catalog.write");
+  const guard = await requireAnyPermission("catalog-stock.write", "catalog.write");
   if (isResponse(guard)) return guard;
   const parsed = await parseBody(req, Body);
   if (parsed instanceof NextResponse) return parsed;

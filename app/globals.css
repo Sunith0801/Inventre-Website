@@ -81,8 +81,104 @@ body {
 .pp-layout { display: flex; flex-direction: column; gap: 1.25rem; }
 .pp-main { min-width: 0; }
 .pp-side { min-width: 0; }
+/* Grid cells and form controls default to min-width:auto, so a 3-column
+   pricing row could not shrink below ~750px and the whole column slid under
+   the side panel on a laptop. Let every cell and control shrink to its
+   column; the cards then stay inside the main column at any width. */
+.pp-main .grid > *,
+.pp-main form,
+.pp-main input,
+.pp-main select,
+.pp-main textarea { min-width: 0; max-width: 100%; }
 @media (min-width: 1024px) {
   .pp-layout { flex-direction: row; align-items: flex-start; }
   .pp-main { flex: 1 1 0%; min-width: 0; }
   .pp-side { width: 320px; flex: 0 0 320px; }
+}
+
+/* ── Admin content scales with the screen ─────────────────────────────
+   The admin is designed at ~1600px of content. On a smaller laptop the
+   same page is scaled down proportionally so the header, filters and
+   tables keep their layout instead of wrapping or clipping columns.
+   Only the content column scales — the sidebar has its own breakpoints. */
+@media (min-width: 1024px) and (max-width: 1279.98px) { .admin-scale { zoom: 0.78; } }
+@media (min-width: 1280px) and (max-width: 1365.98px) { .admin-scale { zoom: 0.82; } }
+@media (min-width: 1366px) and (max-width: 1535.98px) { .admin-scale { zoom: 0.88; } }
+@media (min-width: 1536px) and (max-width: 1679.98px) { .admin-scale { zoom: 0.94; } }
+
+/* ── One font, tabular codes ──────────────────────────────────────────
+   `font-mono` is mapped to the brand face (tailwind.config.ts). What a
+   code column still needs from a monospace is that digits line up, so the
+   class keeps tabular figures and a touch more tracking. */
+.font-mono {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+}
+
+/* ── Admin tables ─────────────────────────────────────────────────────
+   One look for every table under /admin, whether it was built with the
+   Th/Td primitives or a bare <table>: a quiet header strip, generous rows
+   that highlight under the cursor, a bold first column so each row has a
+   name, and numbers that line up. Selectors use :where() so their
+   specificity stays at utility level and any per-cell class (text-right,
+   text-ink-500, w-8 …) still wins. */
+@layer components {
+  .admin-scale :where(table) {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+  }
+  .admin-scale :where(thead th) {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    padding: 11px 16px;
+    background: theme("colors.cream.50");
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: theme("colors.ink.500");
+    text-align: left;
+    white-space: nowrap;
+    border-bottom: 1px solid theme("colors.ink.100");
+  }
+  .admin-scale :where(tbody td) {
+    padding: 13px 16px;
+    font-size: 13px;
+    line-height: 1.35;
+    color: theme("colors.ink.800");
+    vertical-align: middle;
+    border-top: 1px solid rgb(237 236 232 / 0.8);
+    transition: background-color 120ms ease;
+  }
+  .admin-scale :where(tbody tr:first-child td) {
+    border-top: 0;
+  }
+  .admin-scale :where(thead th:first-child),
+  .admin-scale :where(tbody td:first-child) {
+    padding-left: 20px;
+  }
+  .admin-scale :where(thead th:last-child),
+  .admin-scale :where(tbody td:last-child) {
+    padding-right: 20px;
+  }
+  .admin-scale :where(tbody td:first-child) {
+    font-weight: 500;
+    color: theme("colors.ink.900");
+  }
+  .admin-scale :where(tbody tr:hover td) {
+    background: rgb(250 247 242 / 0.8);
+  }
+  .admin-scale :where(td.text-right, th.text-right) {
+    font-variant-numeric: tabular-nums;
+  }
+  .admin-scale :where(tfoot td) {
+    padding: 12px 16px;
+    font-size: 13px;
+    font-weight: 600;
+    color: theme("colors.ink.900");
+    border-top: 2px solid theme("colors.ink.100");
+    background: theme("colors.cream.50");
+  }
 }

@@ -2,9 +2,11 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { FileText, Truck, Undo2, Repeat } from "lucide-react";
+import { FileText } from "lucide-react";
 import { Button } from "@/components/admin/ui/primitives-client";
 
+/** Order-level actions. Shipments, returns and exchanges are raised from the
+ *  storefront and ERPNext, not from here — the only admin action is the invoice. */
 export function OrderActions({
   orderId,
   hasInvoice,
@@ -41,54 +43,17 @@ export function OrderActions({
 
   return (
     <div className="space-y-3">
-      <div className="grid grid-cols-1 gap-2">
-        <Button
-          variant="primary"
-          size="sm"
-          icon={<FileText className="h-3.5 w-3.5" />}
-          onClick={generateInvoice}
-          busy={pending}
-        >
-          {hasInvoice ? "View / re-link invoice" : "Generate invoice"}
-        </Button>
-        <a href={`/admin/shipments/new?orderId=${orderId}`}>
-          <Button
-            variant="secondary"
-            size="sm"
-            icon={<Truck className="h-3.5 w-3.5" />}
-            className="w-full"
-          >
-            Create shipment
-          </Button>
-        </a>
-        <a href={`/admin/returns/new?orderId=${orderId}`}>
-          <Button
-            variant="secondary"
-            size="sm"
-            icon={<Undo2 className="h-3.5 w-3.5" />}
-            className="w-full"
-          >
-            Start return
-          </Button>
-        </a>
-        {/* SPOC / staff: raise an exchange on behalf of the parent. The page
-            + API enforce the spoc-exchange permission and per-school scope,
-            so this link is safe to show unconditionally (non-permitted admins
-            get a 404). */}
-        <a href={`/admin/exchanges/new?orderId=${orderId}`}>
-          <Button
-            variant="secondary"
-            size="sm"
-            icon={<Repeat className="h-3.5 w-3.5" />}
-            className="w-full"
-          >
-            Raise exchange
-          </Button>
-        </a>
-      </div>
-      {msg ? (
-        <p className="text-[12px] text-ink-600">{msg}</p>
-      ) : null}
+      <Button
+        variant="primary"
+        size="sm"
+        icon={<FileText className="h-3.5 w-3.5" />}
+        onClick={generateInvoice}
+        busy={pending}
+        className="w-full"
+      >
+        {hasInvoice ? "View / re-link invoice" : "Generate invoice"}
+      </Button>
+      {msg ? <p className="text-[12px] text-ink-600">{msg}</p> : null}
     </div>
   );
 }

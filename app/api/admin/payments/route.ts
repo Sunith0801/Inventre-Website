@@ -7,8 +7,7 @@ import {
   paymentEntries,
   invoices,
   orders,
-  purchaseInvoices,
-} from "@/db/schema";
+  } from "@/db/schema";
 import { requirePermission, isResponse } from "@/server/admin-guard";
 import { allocPaymentNumber } from "@/server/numbering";
 import { logAdminActivity } from "@/server/activity";
@@ -28,10 +27,8 @@ const Body = z.object({
   ]),
   amount: z.number().int().min(1), // paise
   parentId: z.string().uuid().nullable().optional(),
-  supplierId: z.string().uuid().nullable().optional(),
   invoiceId: z.string().uuid().nullable().optional(),
   orderId: z.string().uuid().nullable().optional(),
-  poId: z.string().uuid().nullable().optional(),
   referenceNumber: z.string().nullable().optional(),
   paymentDate: z.string(),
   notes: z.string().nullable().optional(),
@@ -51,7 +48,6 @@ export async function POST(req: Request) {
     invoiceOutstanding?: number;
     orderId?: string;
     orderPaymentStatus?: string;
-    purchaseInvoiceId?: string;
   } = {};
 
   const [created] = await db.transaction(async (tx) => {
@@ -63,10 +59,8 @@ export async function POST(req: Request) {
         method: body.method,
         amount: body.amount,
         parentId: body.parentId ?? null,
-        supplierId: body.supplierId ?? null,
         invoiceId: body.invoiceId ?? null,
         orderId: body.orderId ?? null,
-        poId: body.poId ?? null,
         referenceNumber: body.referenceNumber ?? null,
         paymentDate: body.paymentDate,
         notes: body.notes ?? null,
@@ -86,17 +80,19 @@ export async function POST(req: Request) {
           0,
           inv.outstandingAmount - body.amount
         );
-        const newStatus =
+        // Enum-valid statuses only: `invoice_status` has "partially_paid",
+        // not "partly_paid" (the old literal would have failed the insert).
+        const newStatus: typeof inv.status =
           newOutstanding === 0
             ? "paid"
             : newOutstanding < inv.grandTotal
-            ? "partly_paid"
+            ? "partially_paid"
             : inv.status;
         await tx
           .update(invoices)
           .set({
             outstandingAmount: newOutstanding,
-            status: newStatus as never,
+            status: newStatus,
             updatedAt: new Date(),
           })
           .where(eq(invoices.id, body.invoiceId));
@@ -124,49 +120,16 @@ export async function POST(req: Request) {
             sql`${paymentEntries.orderId} = ${body.orderId} AND ${paymentEntries.direction} = 'received'`
           );
         const totalPaid = Number(s?.paid ?? 0);
-        const newStatus =
-          totalPaid >= ord.total
-            ? "paid"
-            : totalPaid > 0
-            ? "partly_paid"
-            : ord.paymentStatus;
+        // `payment_status` has no partial state (pending/paid/failed/refunded):
+        // an order stays pending until the received total covers it.
+        const newStatus: typeof ord.paymentStatus =
+          totalPaid >= ord.total ? "paid" : ord.paymentStatus;
         await tx
           .update(orders)
-          .set({ paymentStatus: newStatus as never })
+          .set({ paymentStatus: newStatus })
           .where(eq(orders.id, body.orderId));
         reconcile.orderId = body.orderId;
         reconcile.orderPaymentStatus = newStatus;
-      }
-    }
-
-    // ── Reconcile against a supplier (purchase) invoice ─────────
-    if (body.direction === "paid" && body.invoiceId) {
-      // body.invoiceId is overloaded — try purchase_invoices first
-      const [pinv] = await tx
-        .select()
-        .from(purchaseInvoices)
-        .where(eq(purchaseInvoices.id, body.invoiceId))
-        .limit(1);
-      if (pinv) {
-        const newOutstanding = Math.max(
-          0,
-          pinv.outstandingAmount - body.amount
-        );
-        const newStatus =
-          newOutstanding === 0
-            ? "paid"
-            : newOutstanding < pinv.grandTotal
-            ? "partly_paid"
-            : pinv.status;
-        await tx
-          .update(purchaseInvoices)
-          .set({
-            outstandingAmount: newOutstanding,
-            status: newStatus as never,
-            updatedAt: new Date(),
-          })
-          .where(eq(purchaseInvoices.id, body.invoiceId));
-        reconcile.purchaseInvoiceId = body.invoiceId;
       }
     }
 

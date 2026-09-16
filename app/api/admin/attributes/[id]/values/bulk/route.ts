@@ -4,7 +4,7 @@ import { z } from "zod";
 import { eq, inArray, and, notInArray } from "drizzle-orm";
 import { db } from "@/db/client";
 import { productAttributeValues } from "@/db/schema";
-import { isResponse, requirePermission } from "@/server/admin-guard";
+import { isResponse, requirePermission, requireAnyPermission } from "@/server/admin-guard";
 import { logAdminActivity } from "@/server/activity";
 
 /**
@@ -37,7 +37,7 @@ export async function PUT(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const guard = await requirePermission("catalog.write");
+  const guard = await requireAnyPermission("catalog-attributes.write", "catalog.write");
   if (isResponse(guard)) return guard;
   const { id: attributeId } = await params;
   const parsed = await parseBody(req, Body);

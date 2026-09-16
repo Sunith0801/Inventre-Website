@@ -73,13 +73,19 @@ export function ProductCard({ p }: { p: Product }) {
           </div>
         )}
 
-        {p.badge && (
+        {p.savings ? (
+          // A kit or box priced below its parts — the reason to buy the
+          // bundle, said on the card. Wins over NEW / BESTSELLER.
+          <span className="absolute top-3 left-3 rounded-full bg-emerald-600 px-2.5 py-1 text-[10px] font-bold tracking-wider uppercase text-white shadow-sm">
+            Save ₹{p.savings.toLocaleString("en-IN")}
+          </span>
+        ) : p.badge ? (
           <span
             className={`absolute top-3 left-3 rounded-full px-2.5 py-1 text-[10px] font-bold tracking-wider uppercase ${badgeStyles[p.badge]}`}
           >
             {p.badge}
           </span>
-        )}
+        ) : null}
 
         <button
           type="button"
@@ -206,6 +212,11 @@ export function ProductCard({ p }: { p: Product }) {
               </span>
             </>
           )}
+          {!p.mrp && p.savings ? (
+            <span className="text-[11px] font-semibold text-emerald-700">
+              ₹{(p.price + p.savings).toLocaleString("en-IN")} bought separately
+            </span>
+          ) : null}
         </div>
       </div>
     </motion.a>

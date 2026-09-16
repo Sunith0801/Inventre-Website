@@ -97,7 +97,6 @@ export function BomEditor({
     <Card>
       <CardHeader
         title="BOM contents"
-        description="The sub-items this Bookkit / Magic Box bundles. Editable."
       />
       <datalist id="bom-editor-items">
         {items.map((i) => (

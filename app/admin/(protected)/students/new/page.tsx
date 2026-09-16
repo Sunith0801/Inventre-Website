@@ -59,7 +59,6 @@ export default async function NewStudentPage() {
         breadcrumb={[{ label: "Students", href: "/admin/students" }, { label: "New student" }]}
         eyebrow="Student"
         title="Create a new student"
-        description="Identity and personal details. Address, guardians and siblings can be added on the detail page after creation."
       />
       <Card>
         <StudentEditor

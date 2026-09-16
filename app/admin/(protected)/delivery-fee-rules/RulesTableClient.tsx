@@ -1,8 +1,12 @@
 "use client";
 
-import { useRef } from "react";
-import { Button } from "@/components/admin/ui/primitives";
+import { useRef, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { Pencil, Trash2, Plus } from "lucide-react";
+import { Button, Menu } from "@/components/admin/ui/primitives";
+import { ConfirmDialog } from "@/components/admin/ui/dialog";
 import { RuleFormDialog, type RuleFormDialogHandle, type RuleFormInitial } from "./RuleFormDialog";
+import { deleteRule } from "./actions";
 
 const EMPTY: RuleFormInitial = {
   school: "",
@@ -24,7 +28,7 @@ export function NewRuleButton({
   const ref = useRef<RuleFormDialogHandle>(null);
   return (
     <>
-      <Button variant="primary" onClick={() => ref.current?.open(EMPTY)}>
+      <Button variant="primary" icon={<Plus className="h-3.5 w-3.5" />} onClick={() => ref.current?.open(EMPTY)}>
         New rule
       </Button>
       <RuleFormDialog ref={ref} schools={schools} grades={grades} />
@@ -32,27 +36,59 @@ export function NewRuleButton({
   );
 }
 
-/** Edit + Delete cell. Owns its own dialog instance so each row's modal
- *  prefills independently — simpler than threading a single global ref. */
+/** Row menu: Edit opens the prefilled form; Delete asks first. Each row
+ *  owns its own dialog instance so prefill never leaks between rows. */
 export function RuleRowActions({
   initial,
   schools,
   grades,
-  onDelete,
 }: {
-  initial: RuleFormInitial;
+  initial: RuleFormInitial & { name: string };
   schools: string[];
   grades: string[];
-  onDelete: React.ReactNode;
 }) {
+  const router = useRouter();
   const ref = useRef<RuleFormDialogHandle>(null);
+  const [confirm, setConfirm] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [pending, start] = useTransition();
+
+  const remove = () => {
+    setErr(null);
+    const fd = new FormData();
+    fd.append("name", initial.name);
+    start(async () => {
+      const r = await deleteRule(fd);
+      if (!r.ok) {
+        setErr(r.error);
+        return;
+      }
+      setConfirm(false);
+      router.refresh();
+    });
+  };
+
   return (
-    <div className="flex items-center gap-2">
-      <Button variant="secondary" onClick={() => ref.current?.open(initial)}>
-        Edit
-      </Button>
-      {onDelete}
+    <>
+      <Menu
+        label={`Actions for ${initial.name}`}
+        items={[
+          { label: "Edit rule", icon: <Pencil className="h-3.5 w-3.5" />, onSelect: () => ref.current?.open(initial) },
+          { kind: "separator" },
+          { label: "Delete rule", icon: <Trash2 className="h-3.5 w-3.5" />, danger: true, onSelect: () => setConfirm(true) },
+        ]}
+      />
       <RuleFormDialog ref={ref} schools={schools} grades={grades} />
-    </div>
+      <ConfirmDialog
+        open={confirm}
+        onClose={() => (pending ? undefined : setConfirm(false))}
+        onConfirm={remove}
+        title={`Delete rule ${initial.name}?`}
+        description={`${initial.school || "This school"} stops charging this delivery fee straight away. The rule is removed from ERPNext as well.`}
+        confirmLabel="Delete rule"
+        busy={pending}
+        error={err}
+      />
+    </>
   );
 }

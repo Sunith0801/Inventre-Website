@@ -3,7 +3,7 @@ import { parseBody } from "@/server/parse-body";
 import { z } from "zod";
 import { db } from "@/db/client";
 import { productAttributes } from "@/db/schema";
-import { isResponse, requirePermission } from "@/server/admin-guard";
+import { isResponse, requirePermission, requireAnyPermission } from "@/server/admin-guard";
 import { normalizeAttributeName } from "@/lib/normalize-attribute-name";
 import { logAdminActivity } from "@/server/activity";
 
@@ -16,14 +16,14 @@ const Body = z.object({
 });
 
 export async function GET() {
-  const guard = await requirePermission("catalog.read");
+  const guard = await requireAnyPermission("catalog-attributes.read", "catalog.read");
   if (isResponse(guard)) return guard;
   const rows = await db.select().from(productAttributes);
   return NextResponse.json({ attributes: rows });
 }
 
 export async function POST(req: Request) {
-  const guard = await requirePermission("catalog.write");
+  const guard = await requireAnyPermission("catalog-attributes.write", "catalog.write");
   if (isResponse(guard)) return guard;
   const parsed = await parseBody(req, Body);
   if (parsed instanceof NextResponse) return parsed;

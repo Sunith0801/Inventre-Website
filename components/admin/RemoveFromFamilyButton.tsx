@@ -1,87 +1,128 @@
 "use client";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle } from "lucide-react";
-import { Button } from "@/components/admin/ui/primitives";
+import { AlertTriangle, UserMinus } from "lucide-react";
+import { Button, Field, Input } from "@/components/admin/ui/primitives";
+import { Dialog } from "@/components/admin/ui/dialog";
 
 /**
  * Destructive admin action — calls
  * `POST /api/admin/data/students/[id]/unlink`, which disables the
  * student and detaches it from the currently-linked parent + deletes
- * the guardian links carrying that parent's phone. Confirms in-page so
- * a misfired click can't silently break a family.
+ * the guardian links carrying that parent's phone.
+ *
+ * It is the most consequential button on the student record, so it opens
+ * a dialog that spells out exactly what changes on the parent's side and
+ * makes the operator type REMOVE — a misfired click can't break a family.
  */
-export function RemoveFromFamilyButton({ studentId }: { studentId: string }) {
+export function RemoveFromFamilyButton({
+  studentId,
+  studentName,
+  parentLabel,
+}: {
+  studentId: string;
+  studentName: string;
+  /** "Mohammad Imran · 9959156229" — who the student is being detached from. */
+  parentLabel: string | null;
+}) {
   const router = useRouter();
-  const [confirming, setConfirming] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [typed, setTyped] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [busy, start] = useTransition();
+  const armed = typed.trim().toUpperCase() === "REMOVE";
+
+  const close = () => {
+    if (busy) return;
+    setOpen(false);
+    setTyped("");
+    setErr(null);
+  };
 
   function run() {
+    if (!armed) return;
     setErr(null);
     start(async () => {
-      const r = await fetch(`/api/admin/data/students/${studentId}/unlink`, {
-        method: "POST",
-      });
+      const r = await fetch(`/api/admin/data/students/${studentId}/unlink`, { method: "POST" });
       if (!r.ok) {
         const data = (await r.json().catch(() => null)) as { error?: string } | null;
-        setErr(data?.error ?? `Failed to unlink (HTTP ${r.status})`);
+        setErr(data?.error ?? `Could not remove (HTTP ${r.status})`);
         return;
       }
-      setConfirming(false);
+      setOpen(false);
       router.refresh();
     });
   }
 
-  if (!confirming) {
-    return (
-      <div>
-        <Button
-          type="button"
-          variant="secondary"
-          icon={<AlertTriangle className="h-3.5 w-3.5" />}
-          onClick={() => setConfirming(true)}
-        >
-          Remove from family
-        </Button>
-        {err ? <div className="mt-2 text-[12px] text-red-700">{err}</div> : null}
-      </div>
-    );
-  }
-
   return (
-    <div className="rounded-lg border border-red-200 bg-red-50/60 p-4">
-      <div className="flex items-start gap-3">
-        <AlertTriangle className="h-5 w-5 text-red-600 mt-0.5 flex-shrink-0" />
-        <div className="flex-1 text-[13px] text-red-900">
-          <div className="font-bold">Detach this student from the family?</div>
-          <div className="mt-1 text-[12.5px]">
-            The student will be disabled (no longer shown on the storefront)
-            and the parent&apos;s phone will be removed from this student&apos;s
-            guardian list. Order history is preserved. The student will not
-            re-attach automatically on the next ERPNext sync.
+    <>
+      <Button
+        type="button"
+        variant="danger"
+        icon={<UserMinus className="h-3.5 w-3.5" />}
+        onClick={() => setOpen(true)}
+      >
+        Remove from family
+      </Button>
+
+      {open ? (
+        <Dialog
+          open
+          onClose={close}
+          title="Remove this student from the family?"
+          description={
+            parentLabel
+              ? `${studentName} will be detached from ${parentLabel}.`
+              : `${studentName} will be detached from its parent account.`
+          }
+          busy={busy}
+          width="sm"
+          footer={
+            <>
+              <Button type="button" variant="secondary" onClick={close} disabled={busy}>
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                variant="danger"
+                busy={busy}
+                disabled={!armed}
+                onClick={run}
+                icon={<UserMinus className="h-3.5 w-3.5" />}
+              >
+                Remove from family
+              </Button>
+            </>
+          }
+        >
+          <div className="space-y-4">
+            <ul className="space-y-2 rounded-xl border border-red-200 bg-red-50/60 p-4 text-[13px] text-red-900">
+              <li className="flex gap-2"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" /> The parent stops seeing this student on the website straight away.</li>
+              <li className="flex gap-2"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" /> The student is switched off and blocked until an admin re-enables it and adds a guardian again.</li>
+              <li className="flex gap-2"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" /> The parent&apos;s mobile is removed from this student&apos;s guardians; siblings are not affected.</li>
+            </ul>
+            <p className="text-[12.5px] text-ink-600">
+              Orders, cart and history are kept, and the change is written to the student&apos;s history so it can be traced.
+            </p>
+            <Field label="Type REMOVE to confirm" htmlFor="unlink-confirm" required>
+              <Input
+                id="unlink-confirm"
+                value={typed}
+                onChange={(e) => setTyped(e.target.value)}
+                placeholder="REMOVE"
+                autoComplete="off"
+                autoFocus
+                className="font-mono uppercase"
+              />
+            </Field>
+            {err ? (
+              <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-[12.5px] font-medium text-red-700">
+                {err}
+              </div>
+            ) : null}
           </div>
-          {err ? <div className="mt-2 font-mono text-[12px]">{err}</div> : null}
-          <div className="mt-3 flex items-center gap-2">
-            <Button
-              type="button"
-              variant="primary"
-              busy={busy}
-              onClick={run}
-              icon={<AlertTriangle className="h-3.5 w-3.5" />}
-            >
-              Yes, remove
-            </Button>
-            <button
-              type="button"
-              onClick={() => setConfirming(false)}
-              className="h-9 px-4 rounded-lg text-[13px] font-semibold text-ink-700 hover:bg-cream-100 transition"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
+        </Dialog>
+      ) : null}
+    </>
   );
 }

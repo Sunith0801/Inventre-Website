@@ -28,6 +28,7 @@ const SCHOOLS: { code: string; name: string; branch: string }[] = [
   { code: "WMAWF", name: "Winmore Whitefield", branch: "Winmore Academy Whitefield" },
   { code: "CAGSM", name: "Crimson Anisha Marunji", branch: "Crimson Anisha Global School Marunji" },
   { code: "CAGSU", name: "Crimson Anisha Undri", branch: "Crimson Anisha Global School Undri" },
+  { code: "CWSAG", name: "Crimson World Agra", branch: "Crimson World School Agra" },
 ];
 
 function rowsOf<T>(res: unknown): T[] {

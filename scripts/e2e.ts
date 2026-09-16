@@ -517,7 +517,7 @@ async function adminLoginAndPages(): Promise<Jar> {
     "/admin", "/admin/dashboard", "/admin/schools", "/admin/schools/new",
     "/admin/products", "/admin/products/new", "/admin/categories", "/admin/orders",
     "/admin/students", "/admin/students/import", "/admin/reviews",
-    "/admin/testimonials", "/admin/content", "/admin/content/blocks",
+    "/admin/content/testimonials", "/admin/content", "/admin/content/blocks",
     "/admin/content/faqs", "/admin/settings", "/admin/settings/users",
   ];
   for (const path of pages) {
@@ -1067,20 +1067,9 @@ async function optionBPhases() {
     await http(jar, "/api/admin/shipments");
   });
 
-  // Phase 7 — Invoices, Tax, HSN
+  // Phase 7 — Invoices
   await test("phaseB-7", "GET /api/admin/invoices", async () => {
     await http(jar, "/api/admin/invoices");
-  });
-  await test("phaseB-7", "GET /api/admin/tax/rates", async () => {
-    const r = await http(jar, "/api/admin/tax/rates");
-    const data = await json<{ rates: unknown[] }>(r);
-    if (data.rates.length === 0) throw new Error("no tax rates seeded");
-    return `${data.rates.length} rates`;
-  });
-  await test("phaseB-7", "GET /api/admin/tax/hsn", async () => {
-    const r = await http(jar, "/api/admin/tax/hsn");
-    const data = await json<{ hsnCodes: unknown[] }>(r);
-    if (data.hsnCodes.length === 0) throw new Error("no HSN codes seeded");
   });
 
   // Phase 8 — Discount rules
@@ -1116,7 +1105,7 @@ async function optionBPhases() {
   });
 
   // Phase 11 — Reports
-  for (const rpt of ["sales", "stock", "customers", "gst", "fulfillment"]) {
+  for (const rpt of ["sales", "customers", "gst", "fulfillment"]) {
     await test("phaseB-11", `GET /api/admin/reports/${rpt}`, async () => {
       await http(jar, `/api/admin/reports/${rpt}`);
     });
@@ -1126,7 +1115,6 @@ async function optionBPhases() {
   for (const path of [
     "/admin/customers",
     "/admin/shipments",
-    "/admin/shipments/new?orderId=00000000-0000-0000-0000-000000000000",
     "/admin/invoices",
     "/admin/returns",
     "/admin/discounts",
@@ -1135,10 +1123,8 @@ async function optionBPhases() {
     "/admin/catalog/stock/adjust",
     "/admin/catalog/pricing",
     "/admin/catalog/bundles",
-    "/admin/tax/rates",
     "/admin/reports",
     "/admin/reports/sales",
-    "/admin/reports/stock",
     "/admin/reports/customers",
     "/admin/reports/gst",
     "/admin/reports/fulfillment",

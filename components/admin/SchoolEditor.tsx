@@ -4,6 +4,8 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Save, Trash2, Plus } from "lucide-react";
 import { Button } from "@/components/admin/ui/primitives-client";
+import { Field, Input, Select, Checkbox, FormGrid, FormError, Th, Td, Tr } from "@/components/admin/ui/primitives";
+import { ConfirmDialog } from "@/components/admin/ui/dialog";
 
 type SchoolForm = {
   schoolCode: string;
@@ -37,6 +39,10 @@ const empty: SchoolForm = {
   booksDetailsCheckbox: false,
 };
 
+function SectionHeading({ children }: { children: React.ReactNode }) {
+  return <h3 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-500">{children}</h3>;
+}
+
 export function SchoolEditor({
   mode,
   schoolId,
@@ -50,6 +56,7 @@ export function SchoolEditor({
   const [form, setForm] = useState<SchoolForm>({ ...empty, ...initial });
   const [busy, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   function set<K extends keyof SchoolForm>(k: K, v: SchoolForm[K]) {
     setForm((f) => ({ ...f, [k]: v }));
@@ -91,11 +98,11 @@ export function SchoolEditor({
 
   function remove() {
     if (!schoolId) return;
-    if (!confirm("Delete this school? Coordinators, grade mappings and SKU mappings will also be removed. This cannot be undone.")) return;
     start(async () => {
       const r = await fetch(`/api/admin/data/schools/${schoolId}`, { method: "DELETE" });
       if (!r.ok) {
         setError("Delete failed");
+        setConfirmDelete(false);
         return;
       }
       router.push("/admin/schools");
@@ -103,49 +110,88 @@ export function SchoolEditor({
   }
 
   return (
-    <div className="space-y-5">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Field label="School Code *" value={form.schoolCode} onChange={(v) => set("schoolCode", v)} mono placeholder="TSUSC" />
-        <Field label="School Name *" value={form.schoolName} onChange={(v) => set("schoolName", v)} placeholder="TSUS Chennai" />
-        <Field label="Branch Name" value={form.branchName} onChange={(v) => set("branchName", v)} placeholder="Chennai" />
-        <Field label="Website URL" value={form.websiteUrl} onChange={(v) => set("websiteUrl", v)} placeholder="https://…" />
-        <SelectField label="Status" value={form.status} onChange={(v) => set("status", v as "Active" | "Inactive")} options={["Active", "Inactive"]} />
-        <Field label="School Logo URL" value={form.schoolLogoUrl} onChange={(v) => set("schoolLogoUrl", v)} placeholder="https://pub-d46aef8f98ef4da0a1834fb6f554ae2c.r2.dev/erp-media/…png" mono />
+    <div className="space-y-6">
+      <div className="space-y-3">
+        <SectionHeading>School</SectionHeading>
+        <FormGrid cols={2}>
+          <Field label="School code" htmlFor="s-code" required hint="Short ERPNext code, e.g. SASKS">
+            <Input id="s-code" value={form.schoolCode} onChange={(e) => set("schoolCode", e.target.value.toUpperCase())} placeholder="SASKS" className="font-mono uppercase" />
+          </Field>
+          <Field label="School name" htmlFor="s-name" required>
+            <Input id="s-name" value={form.schoolName} onChange={(e) => set("schoolName", e.target.value)} placeholder="St Andrews School" />
+          </Field>
+          <Field label="Branch" htmlFor="s-branch">
+            <Input id="s-branch" value={form.branchName} onChange={(e) => set("branchName", e.target.value)} placeholder="Keesara" />
+          </Field>
+          <Field label="Status" htmlFor="s-status">
+            <Select id="s-status" value={form.status} onChange={(e) => set("status", e.target.value as "Active" | "Inactive")}>
+              <option value="Active">Active</option>
+              <option value="Inactive">Inactive</option>
+            </Select>
+          </Field>
+          <Field label="Website" htmlFor="s-web">
+            <Input id="s-web" type="url" value={form.websiteUrl} onChange={(e) => set("websiteUrl", e.target.value)} placeholder="https://" />
+          </Field>
+          <Field label="Logo URL" htmlFor="s-logo">
+            <Input id="s-logo" type="url" value={form.schoolLogoUrl} onChange={(e) => set("schoolLogoUrl", e.target.value)} placeholder="https://…/logo.png" className="font-mono" />
+          </Field>
+        </FormGrid>
       </div>
 
-      <h3 className="text-[14px] font-semibold text-ink-800 mt-4">Address & Contacts</h3>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Field label="Street" value={form.street} onChange={(v) => set("street", v)} className="md:col-span-2" />
-        <Field label="City" value={form.city} onChange={(v) => set("city", v)} />
-        <Field label="State" value={form.state} onChange={(v) => set("state", v)} />
-        <Field label="Country" value={form.country} onChange={(v) => set("country", v)} />
-        <Field label="Pincode" value={form.pincode} onChange={(v) => set("pincode", v)} mono />
+      <div className="space-y-3">
+        <SectionHeading>Address</SectionHeading>
+        <FormGrid cols={3}>
+          <Field label="Street" htmlFor="s-street" className="sm:col-span-2 lg:col-span-2">
+            <Input id="s-street" value={form.street} onChange={(e) => set("street", e.target.value)} />
+          </Field>
+          <Field label="City" htmlFor="s-city">
+            <Input id="s-city" value={form.city} onChange={(e) => set("city", e.target.value)} />
+          </Field>
+          <Field label="State" htmlFor="s-state">
+            <Input id="s-state" value={form.state} onChange={(e) => set("state", e.target.value)} />
+          </Field>
+          <Field label="Country" htmlFor="s-country">
+            <Input id="s-country" value={form.country} onChange={(e) => set("country", e.target.value)} placeholder="India" />
+          </Field>
+          <Field label="Pincode" htmlFor="s-pin">
+            <Input id="s-pin" inputMode="numeric" value={form.pincode} onChange={(e) => set("pincode", e.target.value)} className="font-mono" />
+          </Field>
+        </FormGrid>
       </div>
 
-      <div className="flex gap-4 pt-2">
-        <label className="flex items-center gap-2 cursor-pointer">
-          <input type="checkbox" checked={form.uniformDetailsCheckbox} onChange={(e) => set("uniformDetailsCheckbox", e.target.checked)} className="h-4 w-4 rounded border-ink-300" />
-          <span className="text-[13px]">Uniform details</span>
-        </label>
-        <label className="flex items-center gap-2 cursor-pointer">
-          <input type="checkbox" checked={form.booksDetailsCheckbox} onChange={(e) => set("booksDetailsCheckbox", e.target.checked)} className="h-4 w-4 rounded border-ink-300" />
-          <span className="text-[13px]">Books details</span>
-        </label>
-      </div>
-
-      <div className="flex items-center justify-between pt-4 border-t border-ink-100/70">
-        <div>{error ? <span className="text-[13px] text-red-700">{error}</span> : null}</div>
-        <div className="flex items-center gap-2">
-          {mode === "edit" ? (
-            <Button busy={busy} variant="danger" onClick={remove} type="button" icon={<Trash2 className="h-3.5 w-3.5" />}>
-              Delete
-            </Button>
-          ) : null}
-          <Button busy={busy} variant="primary" onClick={save} type="button" icon={<Save className="h-3.5 w-3.5" />}>
-            {mode === "create" ? "Create school" : "Save changes"}
-          </Button>
+      <div className="space-y-3">
+        <SectionHeading>What this school sells</SectionHeading>
+        <div className="flex flex-wrap gap-x-8 gap-y-3">
+          <Checkbox label="Uniforms" hint="Uniform SKU mappings apply" checked={form.uniformDetailsCheckbox} onChange={(e) => set("uniformDetailsCheckbox", e.target.checked)} />
+          <Checkbox label="Books" hint="Book kits per grade" checked={form.booksDetailsCheckbox} onChange={(e) => set("booksDetailsCheckbox", e.target.checked)} />
         </div>
       </div>
+
+      <FormError>{error}</FormError>
+
+      <div className="flex items-center justify-between gap-2 border-t border-ink-100/70 pt-4">
+        <div>
+          {mode === "edit" ? (
+            <Button busy={busy} variant="danger" onClick={() => setConfirmDelete(true)} type="button" icon={<Trash2 className="h-3.5 w-3.5" />}>
+              Delete school
+            </Button>
+          ) : null}
+        </div>
+        <Button busy={busy} variant="primary" onClick={save} type="button" icon={<Save className="h-3.5 w-3.5" />}>
+          {mode === "create" ? "Create school" : "Save changes"}
+        </Button>
+      </div>
+
+      <ConfirmDialog
+        open={confirmDelete}
+        onClose={() => (busy ? undefined : setConfirmDelete(false))}
+        onConfirm={remove}
+        title="Delete this school?"
+        description="Coordinators, grade mappings and uniform SKU mappings are removed with it. Students and orders that reference the school code are left in place. This cannot be undone."
+        confirmLabel="Delete school"
+        busy={busy}
+        error={error}
+      />
     </div>
   );
 }
@@ -167,11 +213,13 @@ export function CoordinatorEditor({
 }) {
   const router = useRouter();
   const [busy, start] = useTransition();
-  const [newRow, setNewRow] = useState({ pocName: "", email: "", contactNumber: "", alternateNumber: "", role: "" });
+  const blank = { pocName: "", email: "", contactNumber: "", alternateNumber: "", role: "" };
+  const [newRow, setNewRow] = useState(blank);
   const [error, setError] = useState<string | null>(null);
+  const [toRemove, setToRemove] = useState<{ id: string; name: string } | null>(null);
 
   function add() {
-    if (!newRow.pocName.trim()) { setError("POC name required"); return; }
+    if (!newRow.pocName.trim()) { setError("Contact name is required"); return; }
     setError(null);
     start(async () => {
       const r = await fetch(`/api/admin/data/schools/${schoolId}/coordinators`, {
@@ -186,95 +234,98 @@ export function CoordinatorEditor({
         }),
       });
       if (!r.ok) { setError("Failed to add"); return; }
-      setNewRow({ pocName: "", email: "", contactNumber: "", alternateNumber: "", role: "" });
+      setNewRow(blank);
       router.refresh();
     });
   }
 
   function remove(rowId: string) {
-    if (!confirm("Remove this coordinator?")) return;
     start(async () => {
       const r = await fetch(`/api/admin/data/schools/${schoolId}/coordinators/${rowId}`, { method: "DELETE" });
+      setToRemove(null);
       if (!r.ok) { setError("Failed to delete"); return; }
       router.refresh();
     });
   }
 
+  const cell = (k: keyof typeof blank, placeholder: string, mono?: boolean) => (
+    <Input
+      inputSize="sm"
+      value={newRow[k]}
+      onChange={(e) => setNewRow((r) => ({ ...r, [k]: e.target.value }))}
+      placeholder={placeholder}
+      aria-label={placeholder}
+      className={mono ? "font-mono" : undefined}
+    />
+  );
+
   return (
     <div>
-      <table className="w-full text-[13px]">
-        <thead className="bg-cream-50/60 text-ink-600">
-          <tr>
-            <th className="px-2 py-2 text-left w-10">No.</th>
-            <th className="px-2 py-2 text-left">POC Name</th>
-            <th className="px-2 py-2 text-left">Email</th>
-            <th className="px-2 py-2 text-left">Contact</th>
-            <th className="px-2 py-2 text-left">Alternate</th>
-            <th className="px-2 py-2 text-left">Role</th>
-            <th className="px-2 py-2 text-right w-10"></th>
-          </tr>
-        </thead>
-        <tbody>
-          {initial.map((r) => (
-            <tr key={r.id} className="border-t border-ink-100/70">
-              <td className="px-2 py-1.5 text-ink-500">{r.rowIdx}</td>
-              <td className="px-2 py-1.5">{r.pocName ?? "—"}</td>
-              <td className="px-2 py-1.5 text-ink-600">{r.email ?? "—"}</td>
-              <td className="px-2 py-1.5 text-ink-600 font-mono text-[12px]">{r.contactNumber ?? "—"}</td>
-              <td className="px-2 py-1.5 text-ink-600 font-mono text-[12px]">{r.alternateNumber ?? "—"}</td>
-              <td className="px-2 py-1.5">{r.role ?? "—"}</td>
-              <td className="px-2 py-1.5 text-right">
-                <button onClick={() => remove(r.id)} type="button" className="text-ink-400 hover:text-red-600 p-1" aria-label="Delete">
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
-              </td>
+      <div className="overflow-x-auto">
+        <table className="w-full">
+          <thead>
+            <tr>
+              <Th>Contact</Th>
+              <Th>Role</Th>
+              <Th>Mobile</Th>
+              <Th>Alternate</Th>
+              <Th>Email</Th>
+              <Th right><span className="sr-only">Actions</span></Th>
             </tr>
-          ))}
-          <tr className="border-t border-ink-100/70 bg-cream-50/30">
-            <td className="px-2 py-1.5 text-ink-400 text-[11px]">{initial.length + 1}</td>
-            <td className="px-1 py-1"><CellInput value={newRow.pocName} onChange={(v) => setNewRow((r) => ({ ...r, pocName: v }))} placeholder="Full name *" /></td>
-            <td className="px-1 py-1"><CellInput value={newRow.email} onChange={(v) => setNewRow((r) => ({ ...r, email: v }))} placeholder="email@…" /></td>
-            <td className="px-1 py-1"><CellInput value={newRow.contactNumber} onChange={(v) => setNewRow((r) => ({ ...r, contactNumber: v }))} placeholder="+91-…" mono /></td>
-            <td className="px-1 py-1"><CellInput value={newRow.alternateNumber} onChange={(v) => setNewRow((r) => ({ ...r, alternateNumber: v }))} placeholder="alt" mono /></td>
-            <td className="px-1 py-1"><CellInput value={newRow.role} onChange={(v) => setNewRow((r) => ({ ...r, role: v }))} placeholder="role" /></td>
-            <td className="px-2 py-1 text-right">
-              <Button busy={busy} variant="primary" onClick={add} type="button" icon={<Plus className="h-3 w-3" />}>Add</Button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-      {error ? <div className="mt-2 text-[12px] text-red-700">{error}</div> : null}
-    </div>
-  );
-}
+          </thead>
+          <tbody>
+            {initial.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="!py-6 text-center !text-[13px] !font-normal !text-ink-500">
+                  No coordinators yet — add the school&apos;s point of contact below.
+                </td>
+              </tr>
+            ) : null}
+            {initial.map((r) => (
+              <Tr key={r.id}>
+                <Td>{r.pocName ?? "—"}</Td>
+                <Td muted>{r.role ?? "—"}</Td>
+                <Td muted><span className="font-mono">{r.contactNumber ?? "—"}</span></Td>
+                <Td muted><span className="font-mono">{r.alternateNumber ?? "—"}</span></Td>
+                <Td muted>{r.email ?? "—"}</Td>
+                <Td right>
+                  <button
+                    onClick={() => setToRemove({ id: r.id, name: r.pocName ?? "this coordinator" })}
+                    type="button"
+                    className="grid h-7 w-7 place-items-center rounded-md text-ink-300 hover:bg-red-50 hover:text-red-600"
+                    aria-label="Remove coordinator"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </Td>
+              </Tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
 
-function Field({ label, value, onChange, mono, placeholder, className }: { label: string; value: string; onChange: (v: string) => void; mono?: boolean; placeholder?: string; className?: string }) {
-  return (
-    <div className={className}>
-      <label className="text-[11px] uppercase tracking-wide text-ink-500 mb-1 block">{label}</label>
-      <input type="text" value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder}
-        className={(mono ? "font-mono text-[12px] " : "text-[13px] ") + "w-full h-9 px-3 rounded-lg bg-white border border-ink-200 placeholder:text-ink-400 focus:outline-none focus:border-ink-400 focus:ring-2 focus:ring-brand-300/30 transition"}
+      <div className="border-t border-ink-100/70 bg-cream-50/40 px-5 py-4">
+        <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-500">Add coordinator</div>
+        <div className="grid grid-cols-2 gap-2 lg:grid-cols-[1.4fr_1fr_1fr_1fr_1.4fr_auto]">
+          {cell("pocName", "Full name *")}
+          {cell("role", "Role, e.g. Principal")}
+          {cell("contactNumber", "Mobile", true)}
+          {cell("alternateNumber", "Alternate", true)}
+          {cell("email", "Email")}
+          <Button busy={busy} variant="primary" size="sm" onClick={add} type="button" icon={<Plus className="h-3 w-3" />}>Add</Button>
+        </div>
+        {error ? <div className="mt-2 text-[12px] font-medium text-red-700">{error}</div> : null}
+      </div>
+
+      <ConfirmDialog
+        open={toRemove !== null}
+        onClose={() => (busy ? undefined : setToRemove(null))}
+        onConfirm={() => toRemove && remove(toRemove.id)}
+        title="Remove this coordinator?"
+        description={toRemove ? `${toRemove.name} is removed from the school's contacts.` : undefined}
+        confirmLabel="Remove"
+        busy={busy}
       />
     </div>
-  );
-}
-
-function SelectField({ label, value, onChange, options }: { label: string; value: string; onChange: (v: string) => void; options: string[] }) {
-  return (
-    <div>
-      <label className="text-[11px] uppercase tracking-wide text-ink-500 mb-1 block">{label}</label>
-      <select value={value} onChange={(e) => onChange(e.target.value)}
-        className="w-full h-9 px-3 text-[13px] rounded-lg bg-white border border-ink-200 focus:outline-none focus:border-ink-400 focus:ring-2 focus:ring-brand-300/30 transition">
-        {options.map((o) => <option key={o} value={o}>{o}</option>)}
-      </select>
-    </div>
-  );
-}
-
-function CellInput({ value, onChange, placeholder, mono }: { value: string; onChange: (v: string) => void; placeholder?: string; mono?: boolean }) {
-  return (
-    <input type="text" value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder}
-      className={(mono ? "font-mono text-[12px] " : "text-[13px] ") + "w-full h-8 px-2 rounded bg-white border border-transparent placeholder:text-ink-400 hover:border-ink-200 focus:outline-none focus:border-ink-400 focus:ring-2 focus:ring-brand-300/30 transition"}
-    />
   );
 }

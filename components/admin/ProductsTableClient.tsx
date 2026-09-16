@@ -33,7 +33,39 @@ export type AdminProductRow = {
   categoryId: string | null;
   erpIsDisabled: boolean;
   erpIsDeleted: boolean;
+  kind: string;
+  schools: string[];
+  grades: string[];
 };
+
+const KIND: Record<string, { label: string; tone: "brand" | "info" | "violet" | "subtle" | "default" | "warning" }> = {
+  magic_box: { label: "Magic Box", tone: "brand" },
+  kit: { label: "Book Kit", tone: "info" },
+  sub_bundle: { label: "Sub-bundle", tone: "violet" },
+  uniform: { label: "Uniform", tone: "warning" },
+  book: { label: "Book", tone: "subtle" },
+  accessory: { label: "Item", tone: "default" },
+  consumable: { label: "Consumable", tone: "default" },
+  excluded: { label: "Excluded", tone: "default" },
+};
+
+const STATUS_LABEL: Record<ProductStatus, string> = { draft: "Draft", active: "Published", archived: "Hidden" };
+
+/** "Grade 1, Grade 2, Grade 3" → "Grade 1–3" where the run is contiguous. */
+function compactGrades(grades: string[]): string {
+  if (grades.length === 0) return "All grades";
+  const nums = grades.map((g) => ({ g, n: parseInt(g.match(/^Grade (\d+)$/)?.[1] ?? "") }));
+  const numeric = nums.filter((x) => !isNaN(x.n)).sort((a, b) => a.n - b.n);
+  const other = nums.filter((x) => isNaN(x.n)).map((x) => x.g);
+  const runs: string[] = [];
+  for (let i = 0; i < numeric.length; ) {
+    let j = i;
+    while (j + 1 < numeric.length && numeric[j + 1]!.n === numeric[j]!.n + 1) j++;
+    runs.push(j > i ? `Grade ${numeric[i]!.n}–${numeric[j]!.n}` : numeric[i]!.g);
+    i = j + 1;
+  }
+  return [...other, ...runs].join(", ");
+}
 
 type Props = {
   rows: AdminProductRow[];
@@ -129,6 +161,13 @@ export function ProductsTableClient({
         body: JSON.stringify({ ids, status: next }),
       });
       if (!res.ok) throw new Error("Bulk PATCH failed");
+      const d = (await res.json().catch(() => ({}))) as { skipped?: { id: string; reasons: string[] }[] };
+      if (d.skipped?.length) {
+        // Roll back the optimistic flip on the rows the server refused.
+        const refused = new Set(d.skipped.map((s) => s.id));
+        setItems((cur) => cur.map((r) => (refused.has(r.id) ? { ...r, status: snapshot.get(r.id)! } : r)));
+        setError(`${d.skipped.length} product${d.skipped.length === 1 ? " was" : "s were"} not ready to publish (${[...new Set(d.skipped.flatMap((s) => s.reasons))].join("; ").toLowerCase()}). Open each one's Review & publish step.`);
+      }
       clearSelection();
       router.refresh();
     } catch {
@@ -178,9 +217,10 @@ export function ProductsTableClient({
               />
             </Th>
             <Th>Product</Th>
-            <Th>Item code</Th>
-            <Th>Category</Th>
-            <Th>Variants</Th>
+            <Th>Type</Th>
+            <Th>School</Th>
+            <Th>Grade</Th>
+            <Th right>Variants</Th>
             <Th>Status</Th>
             <Th right>Base price</Th>
             <Th right>Actions</Th>
@@ -219,23 +259,40 @@ export function ProductsTableClient({
                       >
                         {p.name}
                       </Link>
-                      <div className="text-[11px] font-mono text-ink-500 mt-0.5 truncate">
-                        {p.slug}
+                      <div className="mt-0.5 truncate text-[11px] text-ink-500">
+                        {p.itemCode ? <span className="font-mono">{p.itemCode}</span> : null}
+                        {p.itemCode && p.categoryId && catName[p.categoryId] ? " · " : ""}
+                        {p.categoryId ? catName[p.categoryId] ?? "" : ""}
                       </div>
                     </div>
                   </div>
                 </Td>
-                <Td muted>
-                  <span className="font-mono text-[12px]">{p.itemCode ?? "—"}</span>
+                <Td>
+                  <Badge tone={KIND[p.kind]?.tone ?? "default"} size="sm">{KIND[p.kind]?.label ?? p.kind}</Badge>
                 </Td>
-                <Td muted>{p.categoryId ? catName[p.categoryId] ?? "—" : "—"}</Td>
-                <Td muted>{variantCount[p.id] ?? 0}</Td>
+                <Td muted>
+                  {p.schools.length === 0 ? (
+                    <span className="text-[12px] italic text-ink-400">None</span>
+                  ) : p.schools.length <= 2 ? (
+                    <span className="text-[12.5px]">{p.schools.join(", ")}</span>
+                  ) : (
+                    <span className="text-[12.5px]" title={p.schools.join("\n")}>{p.schools[0]} <span className="text-ink-400">+{p.schools.length - 1} more</span></span>
+                  )}
+                </Td>
+                <Td muted>
+                  <span className="text-[12.5px]" title={p.grades.join(", ")}>{compactGrades(p.grades)}</span>
+                </Td>
+                <Td right muted>{variantCount[p.id] ?? 0}</Td>
                 <Td>
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <div className="relative inline-flex items-center">
                       <Badge tone={statusTone(p.status)} dot size="sm">
-                        {p.status}
+                        {STATUS_LABEL[p.status]}
                       </Badge>
+                      {/* Publishing from the list is deliberately not offered
+                          for an unpublished row — it goes through the Review
+                          step, which is where the checklist lives. Draft and
+                          Hidden are always safe to set here. */}
                       <select
                         value={p.status}
                         disabled={isBusy}
@@ -246,13 +303,18 @@ export function ProductsTableClient({
                         title="Click to change status"
                         className="absolute inset-0 opacity-0 cursor-pointer"
                       >
-                        {STATUS_OPTIONS.map((s) => (
+                        {STATUS_OPTIONS.filter((s) => s !== "active" || p.status === "active").map((s) => (
                           <option key={s} value={s}>
-                            {s}
+                            {STATUS_LABEL[s]}
                           </option>
                         ))}
                       </select>
                     </div>
+                    {p.status !== "active" ? (
+                      <Link href={`/admin/products/${p.id}?step=publish`} className="text-[11px] font-semibold text-brand-700 hover:text-brand-800">
+                        Publish…
+                      </Link>
+                    ) : null}
                     {isBusy && (
                       <Loader2 className="h-3 w-3 animate-spin text-ink-400" />
                     )}

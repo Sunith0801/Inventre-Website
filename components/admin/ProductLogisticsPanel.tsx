@@ -1,14 +1,14 @@
 "use client";
 
 /**
- * Logistics + identifiers section for admin product page.
- * Shows HSN code, brand, country/customs, weight, dimensions, UOMs, barcodes.
- * UOMs and barcodes are presented as compact editable mini-tables.
+ * Logistics + identifiers for the product page: HSN, brand, origin, customs,
+ * weight, dimensions, MOQ, re-order TAT, plus the read-only UOM and barcode
+ * lists that come from the ERP item export.
  */
 
 import { useState } from "react";
-import { Plus, Trash2, Save, Package } from "lucide-react";
-import { Button } from "@/components/admin/ui/primitives";
+import { Save, Check } from "lucide-react";
+import { Button, Card, CardHeader, Field, Input, FormGrid, Th, Td, Tr, Badge } from "@/components/admin/ui/primitives";
 
 type Props = {
   productId: string;
@@ -39,9 +39,11 @@ export function ProductLogisticsPanel({ productId, initial }: Props) {
   const [tat, setTat] = useState<number | "">(initial.reorderTatDays ?? "");
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   async function save() {
     setSaving(true);
+    setError(null);
     try {
       const dimensions =
         dimL || dimW || dimH
@@ -51,7 +53,7 @@ export function ProductLogisticsPanel({ productId, initial }: Props) {
               ...(dimH ? { h: Number(dimH) } : {}),
             }
           : null;
-      await fetch(`/api/admin/products/${productId}`, {
+      const r = await fetch(`/api/admin/products/${productId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -65,208 +67,109 @@ export function ProductLogisticsPanel({ productId, initial }: Props) {
           reorderTatDays: tat === "" ? null : Number(tat),
         }),
       });
+      if (!r.ok) {
+        const d = (await r.json().catch(() => null)) as { error?: string } | null;
+        setError(d?.error ?? `Save failed (${r.status})`);
+        return;
+      }
       setSavedAt(Date.now());
     } finally {
       setSaving(false);
     }
   }
 
+  const num = (v: number | "", set: (n: number | "") => void) => ({
+    value: v,
+    onChange: (e: React.ChangeEvent<HTMLInputElement>) => set(e.target.value === "" ? "" : Number(e.target.value)),
+  });
+
   return (
-    <div className="rounded-2xl border border-ink-100 bg-white">
-      <div className="px-5 py-4 border-b border-ink-100 flex items-center gap-2">
-        <Package className="h-4 w-4 text-ink-500" />
-        <h3 className="font-display text-[15px] font-bold text-ink-900">
-          Logistics & identifiers
-        </h3>
-      </div>
+    <Card>
+      <CardHeader title="Logistics & identifiers" description="Codes and physical details used for invoices, customs and shipping." />
 
-      <div className="p-5 grid grid-cols-2 gap-4">
-        <Field label="HSN / SAC code">
-          <input
-            value={hsn}
-            onChange={(e) => setHsn(e.target.value)}
-            placeholder="e.g. 61012000"
-            className="form-input w-full font-mono text-[13px]"
-          />
+      <FormGrid cols={3}>
+        <Field label="HSN / SAC code" htmlFor="lg-hsn">
+          <Input id="lg-hsn" value={hsn} onChange={(e) => setHsn(e.target.value)} placeholder="61012000" className="font-mono" />
         </Field>
-        <Field label="Brand">
-          <input
-            value={brand}
-            onChange={(e) => setBrand(e.target.value)}
-            className="form-input w-full"
-          />
+        <Field label="Brand" htmlFor="lg-brand">
+          <Input id="lg-brand" value={brand} onChange={(e) => setBrand(e.target.value)} />
         </Field>
-        <Field label="Country of origin">
-          <input
-            value={country}
-            onChange={(e) => setCountry(e.target.value)}
-            placeholder="India"
-            className="form-input w-full"
-          />
+        <Field label="Country of origin" htmlFor="lg-country">
+          <Input id="lg-country" value={country} onChange={(e) => setCountry(e.target.value)} placeholder="India" />
         </Field>
-        <Field label="Customs tariff #">
-          <input
-            value={customs}
-            onChange={(e) => setCustoms(e.target.value)}
-            className="form-input w-full font-mono text-[13px]"
-          />
+        <Field label="Customs tariff #" htmlFor="lg-customs">
+          <Input id="lg-customs" value={customs} onChange={(e) => setCustoms(e.target.value)} className="font-mono" />
         </Field>
-        <Field label="Weight (grams)">
-          <input
-            type="number"
-            value={weight}
-            onChange={(e) =>
-              setWeight(e.target.value === "" ? "" : Number(e.target.value))
-            }
-            className="form-input w-full"
-          />
+        <Field label="Weight (grams)" htmlFor="lg-weight">
+          <Input id="lg-weight" type="number" min={0} {...num(weight, setWeight)} className="text-right tabular-nums" />
         </Field>
-        <Field label="Min order qty">
-          <input
-            type="number"
-            value={moq}
-            onChange={(e) => setMoq(Math.max(1, Number(e.target.value || 1)))}
-            min={1}
-            className="form-input w-full"
-          />
-        </Field>
-        <Field label="Re-order TAT (days)">
-          <input
-            type="number"
-            value={tat}
-            onChange={(e) =>
-              setTat(e.target.value === "" ? "" : Number(e.target.value))
-            }
-            className="form-input w-full"
-          />
-        </Field>
-        <Field label="Dimensions (cm: L × W × H)">
+        <Field label="Dimensions (cm)" htmlFor="lg-dim-l">
           <div className="flex items-center gap-1.5">
-            <input
-              type="number"
-              step="0.1"
-              value={dimL}
-              onChange={(e) => setDimL(e.target.value === "" ? "" : Number(e.target.value))}
-              placeholder="L"
-              className="form-input flex-1 text-[13px]"
-            />
-            <span className="text-ink-300 text-[12px]">×</span>
-            <input
-              type="number"
-              step="0.1"
-              value={dimW}
-              onChange={(e) => setDimW(e.target.value === "" ? "" : Number(e.target.value))}
-              placeholder="W"
-              className="form-input flex-1 text-[13px]"
-            />
-            <span className="text-ink-300 text-[12px]">×</span>
-            <input
-              type="number"
-              step="0.1"
-              value={dimH}
-              onChange={(e) => setDimH(e.target.value === "" ? "" : Number(e.target.value))}
-              placeholder="H"
-              className="form-input flex-1 text-[13px]"
-            />
+            <Input id="lg-dim-l" type="number" step="0.1" min={0} {...num(dimL, setDimL)} placeholder="L" aria-label="Length" className="text-right tabular-nums" />
+            <span className="text-[12px] text-ink-300">×</span>
+            <Input type="number" step="0.1" min={0} {...num(dimW, setDimW)} placeholder="W" aria-label="Width" className="text-right tabular-nums" />
+            <span className="text-[12px] text-ink-300">×</span>
+            <Input type="number" step="0.1" min={0} {...num(dimH, setDimH)} placeholder="H" aria-label="Height" className="text-right tabular-nums" />
           </div>
         </Field>
-      </div>
+        <Field label="Minimum order qty" htmlFor="lg-moq">
+          <Input id="lg-moq" type="number" min={1} value={moq} onChange={(e) => setMoq(Math.max(1, Number(e.target.value || 1)))} className="text-right tabular-nums" />
+        </Field>
+        <Field label="Re-order lead time (days)" htmlFor="lg-tat">
+          <Input id="lg-tat" type="number" min={0} {...num(tat, setTat)} className="text-right tabular-nums" />
+        </Field>
+      </FormGrid>
 
-      {initial.uoms.length > 0 && (
-        <div className="border-t border-ink-100 px-5 py-4">
-          <p className="text-[11px] font-semibold tracking-[0.14em] uppercase text-ink-500 mb-2">
-            Units of measure ({initial.uoms.length})
-          </p>
-          <div className="rounded-lg border border-ink-100 overflow-hidden">
-            <table className="w-full text-[13px]">
-              <thead className="bg-cream-50">
-                <tr>
-                  <th className="text-left px-3 py-2 font-semibold text-ink-700">UOM</th>
-                  <th className="text-right px-3 py-2 font-semibold text-ink-700">Conversion ×</th>
-                  <th className="text-center px-3 py-2 font-semibold text-ink-700">Default</th>
-                </tr>
-              </thead>
-              <tbody>
-                {initial.uoms.map((u) => (
-                  <tr key={u.id} className="border-t border-ink-100/60">
-                    <td className="px-3 py-2 font-medium text-ink-900">{u.uom}</td>
-                    <td className="px-3 py-2 text-right font-mono tabular-nums text-ink-700">
-                      {u.conversionFactor}
-                    </td>
-                    <td className="px-3 py-2 text-center text-ink-500">
-                      {u.isDefault ? "✓" : ""}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+      {initial.uoms.length > 0 || initial.barcodes.length > 0 ? (
+        <div className="mt-6 grid gap-5 border-t border-ink-100/70 pt-5 lg:grid-cols-2">
+          {initial.uoms.length > 0 ? (
+            <div>
+              <h4 className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-500">Units of measure</h4>
+              <div className="overflow-hidden rounded-xl border border-ink-100/70">
+                <table className="w-full">
+                  <thead><tr><Th>Unit</Th><Th right>Conversion</Th><Th>Default</Th></tr></thead>
+                  <tbody>
+                    {initial.uoms.map((u) => (
+                      <Tr key={u.id}>
+                        <Td>{u.uom}</Td>
+                        <Td right muted>× {u.conversionFactor}</Td>
+                        <Td>{u.isDefault ? <Badge tone="success" size="sm">Default</Badge> : <span className="text-ink-300">—</span>}</Td>
+                      </Tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : null}
+          {initial.barcodes.length > 0 ? (
+            <div>
+              <h4 className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-500">Barcodes</h4>
+              <div className="overflow-hidden rounded-xl border border-ink-100/70">
+                <table className="w-full">
+                  <thead><tr><Th>Barcode</Th><Th>Type</Th><Th>Unit</Th></tr></thead>
+                  <tbody>
+                    {initial.barcodes.map((b) => (
+                      <Tr key={b.id}>
+                        <Td><span className="font-mono">{b.barcode}</span></Td>
+                        <Td muted>{b.barcodeType ?? "—"}</Td>
+                        <Td muted>{b.uom ?? "—"}</Td>
+                      </Tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : null}
         </div>
-      )}
+      ) : null}
 
-      {initial.barcodes.length > 0 && (
-        <div className="border-t border-ink-100 px-5 py-4">
-          <p className="text-[11px] font-semibold tracking-[0.14em] uppercase text-ink-500 mb-2">
-            Barcodes ({initial.barcodes.length})
-          </p>
-          <div className="rounded-lg border border-ink-100 overflow-hidden">
-            <table className="w-full text-[13px]">
-              <thead className="bg-cream-50">
-                <tr>
-                  <th className="text-left px-3 py-2 font-semibold text-ink-700">Barcode</th>
-                  <th className="text-left px-3 py-2 font-semibold text-ink-700">Type</th>
-                  <th className="text-left px-3 py-2 font-semibold text-ink-700">UOM</th>
-                </tr>
-              </thead>
-              <tbody>
-                {initial.barcodes.map((b) => (
-                  <tr key={b.id} className="border-t border-ink-100/60">
-                    <td className="px-3 py-2 font-mono text-[12px] text-ink-900">{b.barcode}</td>
-                    <td className="px-3 py-2 text-ink-700">{b.barcodeType ?? "—"}</td>
-                    <td className="px-3 py-2 text-ink-700">{b.uom ?? "—"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      <div className="border-t border-ink-100 px-5 py-3 flex items-center justify-between">
-        <p className="text-[12px] text-ink-500">
-          {savedAt ? (
-            <span className="text-emerald-700">Saved.</span>
-          ) : (
-            "From Item.csv export — editable."
-          )}
-        </p>
-        <Button
-          variant="primary"
-          size="sm"
-          onClick={save}
-          disabled={saving}
-          icon={<Save className="h-3.5 w-3.5" />}
-        >
-          {saving ? "Saving…" : "Save logistics"}
+      <div className="mt-5 flex items-center justify-end gap-3 border-t border-ink-100/70 pt-4">
+        {error ? <span className="text-[12.5px] font-medium text-red-600">{error}</span> : null}
+        {savedAt && !error ? <span className="inline-flex items-center gap-1 text-[12.5px] font-medium text-emerald-700"><Check className="h-3.5 w-3.5" /> Saved</span> : null}
+        <Button variant="primary" onClick={save} busy={saving} icon={<Save className="h-3.5 w-3.5" />}>
+          Save logistics
         </Button>
       </div>
-    </div>
-  );
-}
-
-function Field({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div>
-      <label className="block text-[11px] font-semibold tracking-[0.14em] uppercase text-ink-500 mb-1.5">
-        {label}
-      </label>
-      {children}
-    </div>
+    </Card>
   );
 }

@@ -203,7 +203,7 @@ Session date: 2026-05-08. Type-check + production build both clean.
 | ✅ done | Stock Transfer form | `/admin/catalog/stock/transfer` + `/api/admin/stock/transfer` |
 | ✅ done | HSN-wise summary report | `/admin/reports/hsn` + `/api/admin/reports/hsn` (CSV export) |
 | ✅ done | Item-wise sales report | `/admin/reports/items` + `/api/admin/reports/items` (CSV export) |
-| ✅ done | Stock ageing report | `/admin/reports/stock-ageing` |
+| ❌ removed 2026-09-15 | Stock ageing report | was `/admin/reports/stock-ageing` — local bins never hold real stock (it lives in the audit ERP) |
 | ✅ done | Purchase Register report | `/admin/reports/purchase` (with top-supplier rollup) |
 | ✅ done | Purchase Receipt UI | `/admin/purchase-receipts` + `/api/admin/purchase-receipts` + Receive button on PO detail |
 | ✅ done | Purchase Invoice schema + UI | `purchase_invoices` + `purchase_invoice_items` tables (migration 0003) + `/admin/purchase-invoices` create/list |

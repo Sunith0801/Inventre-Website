@@ -4,6 +4,8 @@ import { Library, Plus } from "lucide-react";
 import { db } from "@/db/client";
 import { sql } from "drizzle-orm";
 import { requireAnyPermission, isResponse } from "@/server/admin-guard";
+import { AutoSubmitForm } from "@/components/admin/AutoSubmitForm";
+import { Pagination } from "@/components/admin/ui/pagination";
 import {
   PageHeader,
   Card,
@@ -14,6 +16,7 @@ import {
   Th,
   Td,
   Tr,
+  FilterSelect,
 } from "@/components/admin/ui/primitives";
 
 export const dynamic = "force-dynamic";
@@ -95,9 +98,9 @@ export default async function BomMasterPage({
   return (
     <div>
       <PageHeader
-        eyebrow="Catalog"
-        title="BOM Master"
-        description={`${total.toLocaleString("en-IN")} BOMs — what each Bookkit / Magic Box bundles.`}
+        eyebrow="Bundles"
+        title="Bills of Materials"
+        description={`${total.toLocaleString("en-IN")} bill${total === 1 ? "" : "s"} of materials — bookkits, sub-bundles and Magic Boxes with their components.`}
         actions={
           <Link href="/admin/boms/new">
             <Button icon={<Plus className="h-3.5 w-3.5" />} variant="primary">
@@ -107,28 +110,21 @@ export default async function BomMasterPage({
         }
       />
 
-      <form method="GET">
+      <AutoSubmitForm action="/admin/boms">
         <Toolbar>
-          <SearchInput defaultValue={term} placeholder="Search BOM item / code…" />
-          <select
-            name="schoolId"
-            defaultValue={schoolId ?? ""}
-            className="h-9 px-2.5 rounded-lg border border-ink-200 text-[13px] bg-white"
-          >
-            <option value="">All schools</option>
+          <SearchInput defaultValue={term} placeholder="Search by item name or code…" />
+          <FilterSelect label="School" name="schoolId" defaultValue={schoolId ?? ""}>
             {allSchools.map((s) => (
               <option key={s.id} value={s.id}>
                 {s.name}
               </option>
             ))}
-          </select>
-          <Button type="submit" variant="secondary">
-            Filter
-          </Button>
+          </FilterSelect>
+          {term || schoolId ? <Link href="/admin/boms" className="text-[12.5px] text-ink-500 hover:text-ink-900">Clear</Link> : null}
         </Toolbar>
-      </form>
+      </AutoSubmitForm>
 
-      <Card padded={false}>
+      <Card padded={false} className="overflow-hidden">
         {rows.length === 0 ? (
           <EmptyState
             icon={Library}
@@ -136,14 +132,16 @@ export default async function BomMasterPage({
             description="Create one with “New BOM”, scoped to a school and grade."
           />
         ) : (
+          <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
               <tr>
-                <Th>BOM item</Th>
+                <Th>Item</Th>
                 <Th>Type</Th>
-                <Th>School(s)</Th>
-                <Th>Grade(s)</Th>
+                <Th>Schools</Th>
+                <Th>Grades</Th>
                 <Th right>Components</Th>
+                <Th right><span className="sr-only">Visibility</span></Th>
               </tr>
             </thead>
             <tbody>
@@ -156,50 +154,36 @@ export default async function BomMasterPage({
                     >
                       {r.name}
                     </Link>
-                    <div className="text-[11px] font-mono text-ink-500">
-                      {r.item_code ?? "—"}
-                    </div>
-                    <Link
-                      href={`/admin/catalog/bundles/${r.bundle_id}`}
-                      className="mt-1 inline-flex items-center gap-1 text-[11px] text-brand-600 hover:underline"
-                    >
-                      Edit visibility ↗
+                    <span className="block font-mono text-[11.5px] font-normal text-ink-500">{r.item_code ?? "—"}</span>
+                  </Td>
+                  <Td muted>{r.kind ? r.kind.replace(/_/g, " ") : "—"}</Td>
+                  <Td muted>{r.schools ?? <span className="text-ink-300">—</span>}</Td>
+                  <Td muted>{r.grades ?? <span className="text-ink-300">—</span>}</Td>
+                  <Td right>{r.comps || <span className="text-ink-300">0</span>}</Td>
+                  <Td right>
+                    <Link href={`/admin/catalog/bundles/${r.bundle_id}`} className="whitespace-nowrap text-[12.5px] font-semibold text-brand-700 hover:text-brand-900">
+                      Visibility
                     </Link>
                   </Td>
-                  <Td muted>{r.kind ?? "—"}</Td>
-                  <Td muted>{r.schools ?? "—"}</Td>
-                  <Td muted>{r.grades ?? "—"}</Td>
-                  <Td right>{r.comps}</Td>
                 </Tr>
               ))}
             </tbody>
           </table>
+          </div>
         )}
+        {total > 0 ? (
+          <Pagination
+            page={page}
+            pages={Math.max(1, pages)}
+            from={(page - 1) * PAGE + 1}
+            to={Math.min(page * PAGE, total)}
+            total={total}
+            noun="BOM"
+            hrefFor={qp}
+          />
+        ) : null}
       </Card>
 
-      {pages > 1 ? (
-        <div className="flex items-center gap-2 mt-4 text-[13px]">
-          {page > 1 ? (
-            <Link
-              href={qp(page - 1)}
-              className="px-3 py-1.5 rounded-lg border border-ink-200 bg-white"
-            >
-              ‹ Prev
-            </Link>
-          ) : null}
-          <span className="text-ink-500">
-            Page {page} of {pages}
-          </span>
-          {page < pages ? (
-            <Link
-              href={qp(page + 1)}
-              className="px-3 py-1.5 rounded-lg border border-ink-200 bg-white"
-            >
-              Next ›
-            </Link>
-          ) : null}
-        </div>
-      ) : null}
     </div>
   );
 }

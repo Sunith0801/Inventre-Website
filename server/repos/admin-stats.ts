@@ -6,8 +6,8 @@ import {
   parents,
   schools,
   products,
-  productVariants,
   reviews,
+  contactSubmissions,
 } from "@/db/schema";
 
 /** Bucketed display status used on the orders dashboard. Kept in sync
@@ -42,7 +42,8 @@ export type AdminStats = {
     zeroValue: number;
   };
   pendingReviews: number;
-  lowStockSkus: number;
+  /** Contact-form inquiries nobody has picked up yet (status 'new'). */
+  newInquiries: number;
   recentOrders: {
     id: string;
     orderNumber: string;
@@ -135,7 +136,7 @@ export async function getAdminStats(
     [{ gmvTodayPaise }],
     breakdownRes,
     [{ pendingReviewsCount }],
-    [{ lowStockCount }],
+    [{ newInquiriesCount }],
     recent,
   ] = await Promise.all([
     db.select({ schoolsCount: sql<number>`COUNT(*)` }).from(schools),
@@ -216,10 +217,13 @@ export async function getAdminStats(
       .select({ pendingReviewsCount: sql<number>`COUNT(*)` })
       .from(reviews)
       .where(eq(reviews.status, "pending")),
+    // Replaces the old "low-stock SKUs" count: it read the legacy
+    // product_variants.stock_qty (made-to-order catalogue, not real stock —
+    // that lives in the audit ERP) and linked to a bins page that disagreed.
     db
-      .select({ lowStockCount: sql<number>`COUNT(*)` })
-      .from(productVariants)
-      .where(sql`${productVariants.stockQty} <= ${productVariants.lowStockThreshold}`),
+      .select({ newInquiriesCount: sql<number>`COUNT(*)` })
+      .from(contactSubmissions)
+      .where(eq(contactSubmissions.status, "new")),
     db.execute(sql`
       WITH first_payment AS (
         SELECT DISTINCT ON (order_id)
@@ -273,7 +277,7 @@ export async function getAdminStats(
       zeroValue: bucketCount("zeroValue"),
     },
     pendingReviews: Number(pendingReviewsCount),
-    lowStockSkus: Number(lowStockCount),
+    newInquiries: Number(newInquiriesCount),
     recentOrders: recentRows.map((r) => ({
       id: r.id,
       orderNumber: r.orderNumber,

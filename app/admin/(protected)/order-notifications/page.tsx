@@ -2,7 +2,9 @@ import { desc, and, eq, gte, ilike, or } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { db } from "@/db/client";
 import { orderNotifications } from "@/db/schema";
-import { PageHeader, Card, Th } from "@/components/admin/ui/primitives";
+import { PageHeader, Card, Th,
+  FilterSelect,
+} from "@/components/admin/ui/primitives";
 import {
   NotificationOrderRow,
   type ChannelRow,
@@ -147,9 +149,9 @@ export default async function OrderNotificationsPage({
     <div>
       <AutoRefresh seconds={15} />
       <PageHeader
-        eyebrow="Engagement"
+        eyebrow="System Configuration"
         title="Order Notifications"
-        description={`${Number(total).toLocaleString()} total send attempts · order-confirmation SMS & email (times in IST) · auto-refreshes every 15s`}
+        description={`${Number(total).toLocaleString()} total send attempts`}
       />
 
       {/* Filters */}
@@ -160,34 +162,19 @@ export default async function OrderNotificationsPage({
           placeholder="Order number / phone / email…"
           className="h-9 w-64 rounded-lg border border-ink-200 bg-white px-3 text-[13px] text-ink-900 placeholder:text-ink-400 focus:border-ink-900 focus:outline-none focus:ring-2 focus:ring-brand/20"
         />
-        <select
-          name="channel"
-          defaultValue={channel ?? ""}
-          className="h-9 rounded-lg border border-ink-200 bg-white px-3 text-[13px] text-ink-900 focus:border-ink-900 focus:outline-none"
-        >
-          <option value="">All channels</option>
+        <FilterSelect label="Channel" name="channel" defaultValue={channel ?? ""}>
           <option value="sms">SMS</option>
           <option value="email">Email</option>
-        </select>
-        <select
-          name="status"
-          defaultValue={status ?? ""}
-          className="h-9 rounded-lg border border-ink-200 bg-white px-3 text-[13px] text-ink-900 focus:border-ink-900 focus:outline-none"
-        >
-          <option value="">All statuses</option>
+        </FilterSelect>
+        <FilterSelect label="Status" name="status" defaultValue={status ?? ""}>
           <option value="sent">Sent</option>
           <option value="failed">Failed</option>
-        </select>
-        <select
-          name="since"
-          defaultValue={since ?? ""}
-          className="h-9 rounded-lg border border-ink-200 bg-white px-3 text-[13px] text-ink-900 focus:border-ink-900 focus:outline-none"
-        >
-          <option value="">All time</option>
+        </FilterSelect>
+        <FilterSelect label="Period" allLabel="All time" name="since" defaultValue={since ?? ""}>
           <option value="today">Today</option>
           <option value="7d">Last 7 days</option>
           <option value="30d">Last 30 days</option>
-        </select>
+        </FilterSelect>
         <input type="hidden" name="page" value="1" />
         <button
           type="submit"

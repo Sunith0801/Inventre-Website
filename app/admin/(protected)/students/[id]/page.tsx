@@ -1,17 +1,18 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db } from "@/db/client";
 import {
   students, studentAddresses, studentGuardianLinks,
-  schools, grades, schoolGradeMappings, parents,
+  schools, grades, schoolGradeMappings, parents, addresses,
 } from "@/db/schema";
-import { and, eq, asc, inArray, sql } from "drizzle-orm";
+import { eq, asc, desc, inArray, sql } from "drizzle-orm";
+import { BadgeCheck, MapPin } from "lucide-react";
 import { last10 } from "@/lib/phone";
 import {
-  PageHeader, Card, CardHeader, Badge, Th, Td, Tr, EmptyState,
+  PageHeader, Card, CardHeader, Badge, Th, Td, Tr, EmptyState, Stat,
 } from "@/components/admin/ui/primitives";
+import { Tabs } from "@/components/admin/ui/tabs";
 import { StudentEditor, GuardianLinkEditor } from "@/components/admin/StudentEditor";
-import { AddressEditor, SiblingStudentEditor } from "@/components/admin/ChildTableEditors";
+import { SiblingStudentEditor } from "@/components/admin/ChildTableEditors";
 import { RemoveFromFamilyButton } from "@/components/admin/RemoveFromFamilyButton";
 import { RecordHistory } from "@/components/admin/RecordHistory";
 import {
@@ -24,7 +25,14 @@ export const dynamic = "force-dynamic";
 
 type Tab = "details" | "addressContact" | "relations" | "salesOrders" | "dashboard";
 
-function tabHref(id: string, t: Tab) { return `/admin/students/${id}?tab=${t}`; }
+const IST_DATE = new Intl.DateTimeFormat("en-IN", {
+  timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric",
+});
+const IST_DATETIME = new Intl.DateTimeFormat("en-IN", {
+  timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false,
+});
+const fmtDate = (d: Date | string | null | undefined) => (d ? IST_DATE.format(new Date(d)) : "—");
+const fmtDateTime = (d: Date | string | null | undefined) => (d ? IST_DATETIME.format(new Date(d)) : "—");
 
 export default async function StudentDetailPage({
   params, searchParams,
@@ -38,7 +46,7 @@ export default async function StudentDetailPage({
   const [s] = await db.select().from(students).where(eq(students.id, id)).limit(1);
   if (!s) notFound();
 
-  const [addrs, guardianLinks, schoolsList, gradesList, school, mappingRows, linkedChildren] = await Promise.all([
+  const [addrs, guardianLinks, schoolsList, gradesList, school, mappingRows, linkedChildren, savedAddresses] = await Promise.all([
     db.select().from(studentAddresses).where(eq(studentAddresses.studentId, id)).orderBy(asc(studentAddresses.kind), asc(studentAddresses.rowIdx)),
     db.select().from(studentGuardianLinks).where(eq(studentGuardianLinks.studentId, id)).orderBy(asc(studentGuardianLinks.rowIdx)),
     db.select({ id: schools.id, code: schools.schoolCode, name: schools.schoolName }).from(schools).orderBy(asc(schools.schoolName)),
@@ -106,6 +114,11 @@ export default async function StudentDetailPage({
       dateOfBirth: string | null;
       isVerified: boolean;
     }>>,
+    // The addresses the parent saved on the storefront (checkout / My
+    // account). They arrive here automatically — nothing to type in.
+    s.parentId
+      ? db.select().from(addresses).where(eq(addresses.parentId, s.parentId)).orderBy(desc(addresses.isDefault), desc(addresses.createdAt))
+      : Promise.resolve([] as (typeof addresses.$inferSelect)[]),
   ]);
   // Drop self from linkedChildren — the SQL filter is "same parent_id",
   // which trivially includes the current student.
@@ -129,26 +142,19 @@ export default async function StudentDetailPage({
     });
   }
 
-  const billing = addrs.filter((a) => a.kind === "billing");
-  const shipping = addrs.filter((a) => a.kind === "shipping");
-
   // Parent row (when present) and MCB access metadata. These come from
   // separate tables that grantMcbAccess writes — parents via
   // students.parentId, mcb_students by enrolment_number.
   const parentRow = s.parentId
     ? (
         await db
-          .select({ id: parents.id, name: parents.name, phone: parents.phone, email: parents.email })
+          .select({ id: parents.id, name: parents.name, phone: parents.phone, email: parents.email, lastLoginAt: parents.lastLoginAt })
           .from(parents)
           .where(eq(parents.id, s.parentId))
           .limit(1)
       )[0] ?? null
     : null;
-  const parentPhoneStatus: "ready" | "pending" | "invalid" = (() => {
-    if (!parentRow?.phone) return "invalid";
-    const n = last10(parentRow.phone);
-    return n ? "ready" : "invalid";
-  })();
+  const parentPhoneStatus: "ready" | "invalid" = parentRow?.phone && last10(parentRow.phone) ? "ready" : "invalid";
   const mcbAccessRows = s.enrollmentNumber
     ? ((await db.execute(sql`
         SELECT website_access, website_access_at, website_access_by
@@ -199,165 +205,223 @@ export default async function StudentDetailPage({
     customerLink: s.customerLink,
   };
   const erpReady = await erpSchemaReady();
-  const salesOrderCount = erpReady
-    ? await countStudentSalesOrders(studentKey)
-    : 0;
+  const salesOrderCount = erpReady ? await countStudentSalesOrders(studentKey) : 0;
   const salesData: StudentSalesData | null =
-    erpReady && tab === "salesOrders"
-      ? await loadStudentSalesOrders(studentKey)
-      : null;
+    erpReady && tab === "salesOrders" ? await loadStudentSalesOrders(studentKey) : null;
+
+  const fullName = [s.firstName, s.lastName].filter(Boolean).join(" ") || s.erpName || "Student";
+  const displayGrade = gradesBySchool[s.schoolCode ?? ""]?.find((g) => g.grade === s.grade)?.displayName ?? s.grade;
+
+  const TABS = [
+    { key: "details", label: "Details" },
+    { key: "addressContact", label: `Addresses (${savedAddresses.length + addrs.length})` },
+    { key: "relations", label: `Family (${guardianLinks.length} guardian${guardianLinks.length === 1 ? "" : "s"} · ${otherChildren.length} sibling${otherChildren.length === 1 ? "" : "s"})` },
+    { key: "salesOrders", label: `Sales orders (${salesOrderCount})` },
+    { key: "dashboard", label: "Overview" },
+  ];
 
   return (
     <div className="max-w-6xl">
       <PageHeader
-        breadcrumb={[
-          { label: "Students", href: "/admin/students" },
-          { label: [s.firstName, s.lastName].filter(Boolean).join(" ") || s.erpName || "Student" },
-        ]}
-        eyebrow="Student"
-        title={[s.firstName, s.lastName].filter(Boolean).join(" ") || s.erpName || "Student"}
+        eyebrow="Customer Relationship (CRM)"
+        breadcrumb={[{ label: "Students", href: "/admin/students" }, { label: fullName }]}
+        title={fullName}
         description={
-          <span className="flex items-center gap-2 flex-wrap">
-            <Badge tone={s.enabled ? "success" : "default"} dot size="sm">{s.enabled ? "Enabled" : "Disabled"}</Badge>
-            {s.grade ? <Badge tone="brand" size="sm">{s.grade}</Badge> : null}
-            {s.isVerified ? <Badge tone="info" size="sm">Verified</Badge> : null}
-            {s.isNewStudent ? <Badge tone="warning" size="sm">New</Badge> : null}
-            {mcbAccessGranted ? (
-              <Badge tone="success" size="sm" title={
-                `Access granted${mcbAccess?.website_access_at ? ` on ${new Date(mcbAccess.website_access_at).toLocaleDateString("en-IN")}` : ""}${mcbAccess?.website_access_by ? ` by ${mcbAccess.website_access_by}` : ""}`
-              }>MCB Access</Badge>
-            ) : null}
+          <span className="flex flex-wrap items-center gap-1.5">
+            {s.enrollmentNumber ? <span className="font-mono text-[12.5px] text-ink-600">{s.enrollmentNumber}</span> : null}
             {school[0] ? (
-              <Link href={`/admin/schools/${school[0].id}`} className="text-[11px] text-brand-700 hover:underline">{school[0].schoolName ?? school[0].schoolCode}</Link>
+              <>
+                <span className="text-ink-300">·</span>
+                <span className="text-[12.5px] text-ink-600">{school[0].schoolName ?? school[0].schoolCode}</span>
+              </>
             ) : null}
+            {displayGrade ? (
+              <>
+                <span className="text-ink-300">·</span>
+                <span className="text-[12.5px] text-ink-600">{displayGrade}{s.section ? ` · ${s.section}` : ""}</span>
+              </>
+            ) : null}
+          </span>
+        }
+        actions={
+          <span className="flex flex-wrap items-center gap-1.5">
+            <Badge tone={s.enabled ? "success" : "default"} dot>{s.enabled ? "Website access on" : "Access off"}</Badge>
+            {s.isNewStudent ? <Badge tone="warning">New student</Badge> : null}
+            {s.isVerified ? (
+              <Badge tone="info" title={s.verifiedAt ? `Verified by the parent on ${fmtDateTime(s.verifiedAt)}` : "Verified by the parent"}>
+                <BadgeCheck className="h-3.5 w-3.5" /> Verified
+              </Badge>
+            ) : (
+              <Badge tone="subtle">Not verified</Badge>
+            )}
+            {mcbAccessGranted ? <Badge tone="success">MCB access</Badge> : null}
           </span>
         }
       />
 
-      <div className="flex items-center gap-1 mb-5 border-b border-ink-100/70 overflow-x-auto">
-        {[
-          { id: "details" as const, label: "Details" },
-          { id: "addressContact" as const, label: `Address & Contact (${addrs.length})` },
-          { id: "relations" as const, label: (() => {
-              // Spell out the breakdown so the count never reads as a
-              // single number that the admin has to mentally split into
-              // guardians + siblings (which caused the recurring
-              // "Relations (2) but only 1 row" confusion).
-              const g = guardianLinks.length;
-              const sib = otherChildren.length;
-              const parts: string[] = [];
-              parts.push(`${g} guardian${g === 1 ? "" : "s"}`);
-              parts.push(`${sib} sibling${sib === 1 ? "" : "s"}`);
-              return `Relations (${parts.join(" · ")})`;
-            })() },
-          { id: "salesOrders" as const, label: `Sales Orders (${salesOrderCount})` },
-          { id: "dashboard" as const, label: "Dashboard" },
-        ].map((t) => (
-          <Link key={t.id} href={tabHref(id, t.id)}
-            className={`px-3 py-2 text-[13px] -mb-px border-b-2 whitespace-nowrap ${tab === t.id ? "border-brand-600 text-ink-900 font-semibold" : "border-transparent text-ink-500 hover:text-ink-800"}`}>
-            {t.label}
-          </Link>
-        ))}
-      </div>
+      <Tabs tabs={TABS} active={tab} hrefFor={(key) => `/admin/students/${id}?tab=${key}`} className="mb-5" />
 
       {tab === "details" && (
         <div className="space-y-5">
-        {(parentRow || mcbAccessGranted) && (
           <Card>
             <CardHeader
-              title="Parent &amp; access"
+              title="Parent & sign-in"
               description={
                 mcbAccessGranted
-                  ? `Granted via MCB${mcbAccess?.website_access_at ? ` on ${new Date(mcbAccess.website_access_at).toLocaleDateString("en-IN")}` : ""}${mcbAccess?.website_access_by ? ` by ${mcbAccess.website_access_by}` : ""}.`
-                  : "Linked parent — created at student grant time."
+                  ? `Access granted via MCB${mcbAccess?.website_access_at ? ` on ${fmtDate(mcbAccess.website_access_at)}` : ""}${mcbAccess?.website_access_by ? ` by ${mcbAccess.website_access_by}` : ""}.`
+                  : parentRow
+                    ? "The parent account this student is attached to."
+                    : "No parent account is linked yet — add a guardian under Family."
               }
             />
-            <div className="px-5 pb-5 grid sm:grid-cols-2 gap-x-6 gap-y-2 text-[13px]">
-              <div>
-                <p className="text-[11px] uppercase tracking-wider text-ink-400">Parent name</p>
-                <p className="text-ink-900">{parentRow?.name ?? "—"}</p>
+            {parentRow ? (
+              <div className="grid gap-x-8 gap-y-4 sm:grid-cols-2 lg:grid-cols-4">
+                <Fact label="Parent">{parentRow.name ?? "—"}</Fact>
+                <Fact label="Mobile">
+                  <span className="inline-flex items-center gap-2">
+                    <span className="font-mono">{parentRow.phone ?? "—"}</span>
+                    {parentRow.phone ? (
+                      parentPhoneStatus === "ready" ? <Badge tone="success" size="sm">Login ready</Badge> : <Badge tone="warning" size="sm">Invalid</Badge>
+                    ) : null}
+                  </span>
+                </Fact>
+                <Fact label="Email">{parentRow.email ?? "—"}</Fact>
+                <Fact label="Last sign-in">{parentRow.lastLoginAt ? fmtDateTime(parentRow.lastLoginAt) : "Never"}</Fact>
+                <Fact label="Verified">
+                  {s.isVerified ? (
+                    <span className="inline-flex items-center gap-1.5 text-sky-700">
+                      <BadgeCheck className="h-4 w-4" /> {s.verifiedAt ? fmtDateTime(s.verifiedAt) : "Yes"}
+                    </span>
+                  ) : (
+                    <span className="text-ink-500">Not yet — the parent confirms this on their first sign-in</span>
+                  )}
+                </Fact>
               </div>
-              <div>
-                <p className="text-[11px] uppercase tracking-wider text-ink-400">Parent phone</p>
-                <p className="text-ink-900 flex items-center gap-2">
-                  {parentRow?.phone ?? "—"}
-                  {parentRow?.phone ? (
-                    parentPhoneStatus === "ready" ? (
-                      <Badge tone="success" size="sm">Login ready</Badge>
-                    ) : (
-                      <Badge tone="warning" size="sm">Invalid</Badge>
-                    )
-                  ) : null}
-                </p>
-              </div>
-              <div>
-                <p className="text-[11px] uppercase tracking-wider text-ink-400">Parent email</p>
-                <p className="text-ink-900">{parentRow?.email ?? "—"}</p>
-              </div>
-            </div>
+            ) : null}
           </Card>
-        )}
-        <Card>
-          <CardHeader title="Student details" description="All fields are editable. Guardians & siblings live on the Relations tab; addresses on Address & Contact." />
-          <StudentEditor
-            mode="edit"
-            studentId={id}
-            schoolCodes={schoolsList.filter((x) => x.code).map((x) => ({ code: x.code!, name: x.name }))}
-            gradeOptions={gradesList.map((g) => g.erpName ?? g.gradeName ?? "").filter(Boolean)}
-            gradesBySchool={gradesBySchool}
-            initial={{
-              enabled: s.enabled, isNewStudent: s.isNewStudent, isVerified: s.isVerified,
-              schoolCode: s.schoolCode ?? "",
-              enrollmentNumber: s.enrollmentNumber ?? "",
-              firstName: s.firstName ?? "",
-              middleName: s.middleName ?? "",
-              lastName: s.lastName ?? "",
-              grade: s.grade ?? "",
-              section: s.section ?? "",
-              joiningDate: s.joiningDate ?? "",
-              houseColor: s.houseColor ?? "",
-              medium: s.medium ?? "",
-              curriculum: s.curriculum ?? "",
-              shoeSize: s.shoeSize ?? "",
-              shirtSize: s.shirtSize ?? "",
-              trouserSize: s.trouserSize ?? "",
-              studentEmailId: s.studentEmailId ?? "",
-              studentMobileNumber: s.studentMobileNumber ?? "",
-              dateOfBirth: s.dateOfBirth ?? "",
-              bloodGroup: s.bloodGroup ?? "",
-              gender: s.gender ?? "Male",
-              nationality: s.nationality ?? "Indian",
-            }}
-          />
-        </Card>
+
+          <Card>
+            <CardHeader title="Student details" description="Identity, class and personal details. Website access and the new-student flag are here too." />
+            <StudentEditor
+              mode="edit"
+              studentId={id}
+              schoolCodes={schoolsList.filter((x) => x.code).map((x) => ({ code: x.code!, name: x.name }))}
+              gradeOptions={gradesList.map((g) => g.erpName ?? g.gradeName ?? "").filter(Boolean)}
+              gradesBySchool={gradesBySchool}
+              initial={{
+                enabled: s.enabled, isNewStudent: s.isNewStudent,
+                schoolCode: s.schoolCode ?? "",
+                enrollmentNumber: s.enrollmentNumber ?? "",
+                firstName: s.firstName ?? "",
+                middleName: s.middleName ?? "",
+                lastName: s.lastName ?? "",
+                grade: s.grade ?? "",
+                section: s.section ?? "",
+                joiningDate: s.joiningDate ?? "",
+                houseColor: s.houseColor ?? "",
+                medium: s.medium ?? "",
+                curriculum: s.curriculum ?? "",
+                studentEmailId: s.studentEmailId ?? "",
+                studentMobileNumber: s.studentMobileNumber ?? "",
+                dateOfBirth: s.dateOfBirth ?? "",
+                bloodGroup: s.bloodGroup ?? "",
+                gender: s.gender ?? "Male",
+                nationality: s.nationality ?? "Indian",
+              }}
+            />
+          </Card>
         </div>
       )}
 
       {tab === "addressContact" && (
-        <div className="space-y-5">
-          <Card>
-            <CardHeader title={`Billing addresses (${billing.length})`} description="Add or remove billing addresses. Used for invoices and tax compliance." />
-            <AddressEditor studentId={id} kind="billing" initial={billing.map((a) => ({ id: a.id, rowIdx: a.rowIdx, kind: "billing" as const, addressType: a.addressType, addressTitle: a.addressTitle, addressLine1: a.addressLine1, addressLine2: a.addressLine2, city: a.city, state: a.state, country: a.country, pincode: a.pincode, preferred: a.preferred, disabled: a.disabled }))} />
-          </Card>
-          <Card>
-            <CardHeader title={`Shipping addresses (${shipping.length})`} description="Used for delivery. The Magic Box is shipped here." />
-            <AddressEditor studentId={id} kind="shipping" initial={shipping.map((a) => ({ id: a.id, rowIdx: a.rowIdx, kind: "shipping" as const, addressType: a.addressType, addressTitle: a.addressTitle, addressLine1: a.addressLine1, addressLine2: a.addressLine2, city: a.city, state: a.state, country: a.country, pincode: a.pincode, preferred: a.preferred, disabled: a.disabled }))} />
-          </Card>
-        </div>
+        <Card padded={false}>
+          <div className="px-5 lg:px-6 pt-5 lg:pt-6 pb-3">
+            <CardHeader
+              title={`Addresses (${savedAddresses.length + addrs.length})`}
+              description={
+                parentRow
+                  ? "Filled in automatically from what the parent saved on the website at checkout or under My account. Rows from ERPNext are marked."
+                  : "No parent account is linked yet, so nothing has come in from the website."
+              }
+            />
+          </div>
+          {savedAddresses.length + addrs.length === 0 ? (
+            <EmptyState icon={MapPin} title="No addresses yet" description="They appear here as soon as the parent saves a delivery address on the website." />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr>
+                    <Th>Type</Th>
+                    <Th>Receiver</Th>
+                    <Th>Phone</Th>
+                    <Th>Address</Th>
+                    <Th>City</Th>
+                    <Th>State</Th>
+                    <Th>Pincode</Th>
+                    <Th>Source</Th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {savedAddresses.map((a) => (
+                    <Tr key={a.id}>
+                      <Td>
+                        <span className="inline-flex flex-wrap items-center gap-1.5">
+                          <span className="capitalize">{a.label || a.addressTitle || a.addressType}</span>
+                          {a.isDefault ? <Badge tone="brand" size="sm">Default</Badge> : null}
+                        </span>
+                      </Td>
+                      <Td>{a.receiverName}</Td>
+                      <Td muted><span className="font-mono">{a.receiverPhone}</span></Td>
+                      <Td muted>
+                        <span className="block max-w-[360px] whitespace-normal leading-snug">
+                          {[a.line1, a.line2, a.landmark ? `Near ${a.landmark}` : null].filter(Boolean).join(", ")}
+                        </span>
+                      </Td>
+                      <Td muted>{a.city}</Td>
+                      <Td muted>{a.state}</Td>
+                      <Td muted><span className="font-mono">{a.pincode}</span></Td>
+                      <Td><Badge tone="success" size="sm">Website</Badge></Td>
+                    </Tr>
+                  ))}
+                  {addrs.map((a) => (
+                    <Tr key={a.id}>
+                      <Td>
+                        <span className="inline-flex flex-wrap items-center gap-1.5">
+                          <span className="capitalize">{a.addressTitle || a.addressType || a.kind}</span>
+                          {a.preferred ? <Badge tone="brand" size="sm">Preferred</Badge> : null}
+                          {a.disabled ? <Badge tone="default" size="sm">Disabled</Badge> : null}
+                        </span>
+                      </Td>
+                      <Td muted><span className="text-ink-300">—</span></Td>
+                      <Td muted><span className="text-ink-300">—</span></Td>
+                      <Td muted>
+                        <span className="block max-w-[360px] whitespace-normal leading-snug">
+                          {[a.addressLine1, a.addressLine2].filter(Boolean).join(", ") || "—"}
+                        </span>
+                      </Td>
+                      <Td muted>{a.city ?? "—"}</Td>
+                      <Td muted>{a.state ?? "—"}</Td>
+                      <Td muted><span className="font-mono">{a.pincode ?? "—"}</span></Td>
+                      <Td><Badge tone="subtle" size="sm">ERPNext · {a.kind}</Badge></Td>
+                    </Tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
       )}
 
       {tab === "relations" && (
         <div className="space-y-5">
           <Card>
-            <CardHeader title={`Guardians (${guardianLinks.length})`} description="Add a guardian row to link this student to a parent or guardian. Click the trash icon to remove a link." />
+            <CardHeader title={`Guardians (${guardianLinks.length})`} description="Each 10-digit mobile here can sign in for this student." />
             <GuardianLinkEditor studentId={id} initial={guardianLinks.map((g) => ({ id: g.id, rowIdx: g.rowIdx, guardianErpName: g.guardianErpName, guardianName: g.guardianName, relation: g.relation, email: g.email, phoneNo: g.phoneNo, knownErpNames: g.knownErpNames, loginStatus: guardianLoginStatus.get(g.id) ?? "invalid" }))} />
           </Card>
 
           <Card>
-            <CardHeader
-              title={`Siblings (${otherChildren.length})`}
-              description="Other students sharing this family. Adding a sibling here creates a new student under the same parent account and copies the guardian list across — both students sign in via the same guardian phones."
-            />
+            <CardHeader title={`Siblings (${otherChildren.length})`} description="Other students who share a guardian mobile with this one." />
             <SiblingStudentEditor
               studentId={id}
               defaultSchoolCode={s.schoolCode ?? null}
@@ -369,19 +433,20 @@ export default async function StudentDetailPage({
 
           {/* Destructive: detach this student from the family entirely.
               Hidden when the student already has no parent_id (nothing
-              to unlink). Used when phone-based dedup correctly resolved
-              the student to a family but the student doesn't actually
-              belong (e.g. legacy MCB row pulled in by the phone
-              backfill). Order/cart history is preserved. */}
+              to unlink). Order/cart history is preserved. */}
           {s.parentId ? (
-            <Card>
+            <Card className="border-red-200/80">
               <CardHeader
-                title="Remove from family"
-                description="Disables this student and detaches it from the parent. Use when the dedup wrongly attached this record to a family. Order history is preserved."
+                title={<span className="text-red-800">Remove from family</span>}
+                description="For a student that was pulled into the wrong family by a shared mobile number. The parent loses access to this student; orders and history are kept."
+                actions={
+                  <RemoveFromFamilyButton
+                    studentId={id}
+                    studentName={fullName}
+                    parentLabel={parentRow ? [parentRow.name, parentRow.phone].filter(Boolean).join(" · ") : null}
+                  />
+                }
               />
-              <div className="px-5 pb-5">
-                <RemoveFromFamilyButton studentId={id} />
-              </div>
             </Card>
           ) : null}
         </div>
@@ -404,12 +469,11 @@ export default async function StudentDetailPage({
             </Card>
           ) : (
             <>
-              <Card>
-                <CardHeader
-                  title={`Sales orders (${salesData.totals.orderCount})`}
-                  description={`ERP customer: ${salesData.customerNames.join(", ")} · Lifetime order value ₹${salesData.totals.lifetimeValue.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`}
-                />
-              </Card>
+              <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+                <Stat label="Orders" value={salesData.totals.orderCount.toLocaleString("en-IN")} iconTone="brand" />
+                <Stat label="Lifetime value" value={`₹${salesData.totals.lifetimeValue.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`} iconTone="success" />
+                <Stat label="ERP customer" value={<span className="text-[15px] font-semibold leading-snug">{salesData.customerNames.join(", ")}</span>} iconTone="info" />
+              </div>
               {salesData.orders.map((o) => (
                 <SalesOrderCard
                   key={o.order_no}
@@ -425,15 +489,12 @@ export default async function StudentDetailPage({
       )}
 
       {tab === "dashboard" && (
-        <Card>
-          <CardHeader title="Student dashboard" />
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-[13px]">
-            <Stat label="Guardians" value={guardianLinks.length} />
-            <Stat label="Siblings" value={otherChildren.length} />
-            <Stat label="Addresses" value={addrs.length} />
-            <Stat label="Last updated" value={s.syncedAt ? new Date(s.syncedAt).toLocaleString() : "—"} />
-          </div>
-        </Card>
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <Stat label="Guardians" value={guardianLinks.length} iconTone="brand" />
+          <Stat label="Siblings" value={otherChildren.length} iconTone="info" />
+          <Stat label="Addresses" value={savedAddresses.length + addrs.length} iconTone="success" hint={`${savedAddresses.length} from the storefront`} />
+          <Stat label="Last updated" value={<span className="text-[16px] font-semibold">{s.syncedAt ? fmtDateTime(s.syncedAt) : "—"}</span>} iconTone="subtle" />
+        </div>
       )}
 
       <div className="mt-5">
@@ -443,25 +504,12 @@ export default async function StudentDetailPage({
   );
 }
 
-function AddressTable({ addrs }: { addrs: Array<{ id: string; rowIdx: number; addressType: string | null; addressTitle: string | null; addressLine1: string | null; addressLine2: string | null; city: string | null; state: string | null; country: string | null; pincode: string | null; preferred: boolean; disabled: boolean }> }) {
-  if (addrs.length === 0) return <EmptyState title="No addresses" description="No address rows yet." />;
+function Fact({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <table className="w-full text-[13px]">
-      <thead><tr><Th>No.</Th><Th>Type</Th><Th>Title</Th><Th>Line 1</Th><Th>City</Th><Th>State</Th><Th>Country</Th><Th>Pincode</Th><Th>Flags</Th></tr></thead>
-      <tbody>{addrs.map((a) => (
-        <Tr key={a.id}>
-          <Td muted>{a.rowIdx}</Td>
-          <Td>{a.addressType ?? "—"}</Td>
-          <Td muted>{a.addressTitle ?? "—"}</Td>
-          <Td>{[a.addressLine1, a.addressLine2].filter(Boolean).join(", ") || "—"}</Td>
-          <Td muted>{a.city ?? "—"}</Td>
-          <Td muted>{a.state ?? "—"}</Td>
-          <Td muted>{a.country ?? "—"}</Td>
-          <Td muted><span className="font-mono text-[12px]">{a.pincode ?? "—"}</span></Td>
-          <Td>{a.preferred ? <Badge tone="info" size="sm">Preferred</Badge> : null}{a.disabled ? <Badge tone="default" size="sm">Disabled</Badge> : null}</Td>
-        </Tr>
-      ))}</tbody>
-    </table>
+    <div className="min-w-0">
+      <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-400">{label}</div>
+      <div className="mt-1 text-[13px] text-ink-900">{children}</div>
+    </div>
   );
 }
 
@@ -507,70 +555,67 @@ function SalesOrderCard({
         }
       />
 
-      <div className="text-[12px] font-semibold text-ink-500 mb-1.5 mt-1">Items</div>
+      <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-500 mb-1.5 mt-1">Items</div>
       {items.length === 0 ? (
         <EmptyState title="No line items" description="No items recorded for this order." />
       ) : (
-        <table className="w-full text-[13px] mb-4">
-          <thead><tr><Th>Item</Th><Th>Code</Th><Th>Qty</Th><Th>Rate</Th><Th>Amount</Th><Th>Delivered</Th><Th>Returned</Th></tr></thead>
-          <tbody>{items.map((it, i) => (
-            <Tr key={order.order_no + "-i-" + i}>
-              <Td>{it.item_name ?? "—"}</Td>
-              <Td muted><span className="font-mono text-[12px]">{it.item_code ?? "—"}</span></Td>
-              <Td muted>{it.qty ?? "—"}</Td>
-              <Td muted>{money(it.rate)}</Td>
-              <Td>{money(it.amount)}</Td>
-              <Td muted>{it.delivered_qty ?? 0}</Td>
-              <Td muted>{it.returned_qty ? <Badge tone="warning" size="sm">{it.returned_qty}</Badge> : "0"}</Td>
-            </Tr>
-          ))}</tbody>
-        </table>
+        <div className="overflow-x-auto rounded-xl border border-ink-100/70 mb-4">
+          <table className="w-full">
+            <thead><tr><Th>Item</Th><Th>Code</Th><Th right>Qty</Th><Th right>Rate</Th><Th right>Amount</Th><Th right>Delivered</Th><Th right>Returned</Th></tr></thead>
+            <tbody>{items.map((it, i) => (
+              <Tr key={order.order_no + "-i-" + i}>
+                <Td>{it.item_name ?? "—"}</Td>
+                <Td muted><span className="font-mono text-[12px]">{it.item_code ?? "—"}</span></Td>
+                <Td right muted>{it.qty ?? "—"}</Td>
+                <Td right muted>{money(it.rate)}</Td>
+                <Td right>{money(it.amount)}</Td>
+                <Td right muted>{it.delivered_qty ?? 0}</Td>
+                <Td right muted>{it.returned_qty ? <Badge tone="warning" size="sm">{it.returned_qty}</Badge> : "0"}</Td>
+              </Tr>
+            ))}</tbody>
+          </table>
+        </div>
       )}
 
-      <div className="text-[12px] font-semibold text-ink-500 mb-1.5">Tracking / shipments</div>
+      <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-500 mb-1.5">Tracking / shipments</div>
       {shipments.length === 0 ? (
         <p className="text-[13px] text-ink-500 mb-4">No shipment records.</p>
       ) : (
-        <table className="w-full text-[13px] mb-4">
-          <thead><tr><Th>Courier</Th><Th>Tracking #</Th><Th>Status</Th><Th>Dispatched</Th><Th>Delivered</Th><Th>To</Th></tr></thead>
-          <tbody>{shipments.map((sh, i) => (
-            <Tr key={order.order_no + "-s-" + i}>
-              <Td>{sh.partner ?? "—"}</Td>
-              <Td muted><span className="font-mono text-[12px]">{sh.tracking_number ?? "—"}</span></Td>
-              <Td><Badge tone={sh.status === "delivered" ? "success" : "info"} size="sm">{sh.status ?? "—"}</Badge></Td>
-              <Td muted>{sh.dispatched_at ?? "—"}</Td>
-              <Td muted>{sh.delivered_at ?? "—"}</Td>
-              <Td muted>{[sh.city, sh.pincode].filter(Boolean).join(" ") || "—"}</Td>
-            </Tr>
-          ))}</tbody>
-        </table>
+        <div className="overflow-x-auto rounded-xl border border-ink-100/70 mb-4">
+          <table className="w-full">
+            <thead><tr><Th>Courier</Th><Th>Tracking #</Th><Th>Status</Th><Th>Dispatched</Th><Th>Delivered</Th><Th>To</Th></tr></thead>
+            <tbody>{shipments.map((sh, i) => (
+              <Tr key={order.order_no + "-s-" + i}>
+                <Td>{sh.partner ?? "—"}</Td>
+                <Td muted><span className="font-mono text-[12px]">{sh.tracking_number ?? "—"}</span></Td>
+                <Td><Badge tone={sh.status === "delivered" ? "success" : "info"} size="sm">{sh.status ?? "—"}</Badge></Td>
+                <Td muted>{sh.dispatched_at ?? "—"}</Td>
+                <Td muted>{sh.delivered_at ?? "—"}</Td>
+                <Td muted>{[sh.city, sh.pincode].filter(Boolean).join(" ") || "—"}</Td>
+              </Tr>
+            ))}</tbody>
+          </table>
+        </div>
       )}
 
-      <div className="text-[12px] font-semibold text-ink-500 mb-1.5">Payment schedule</div>
+      <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-500 mb-1.5">Payment schedule</div>
       {payments.length === 0 ? (
         <p className="text-[13px] text-ink-500">No payment schedule.</p>
       ) : (
-        <table className="w-full text-[13px]">
-          <thead><tr><Th>Due date</Th><Th>Amount</Th><Th>Paid</Th><Th>Outstanding</Th></tr></thead>
-          <tbody>{payments.map((p, i) => (
-            <Tr key={order.order_no + "-p-" + i}>
-              <Td muted>{p.due_date ?? "—"}</Td>
-              <Td>{money(p.payment_amount)}</Td>
-              <Td muted>{money(p.paid_amount)}</Td>
-              <Td>{(p.outstanding ?? 0) > 0 ? <Badge tone="danger" size="sm">{money(p.outstanding)}</Badge> : money(p.outstanding)}</Td>
-            </Tr>
-          ))}</tbody>
-        </table>
+        <div className="overflow-x-auto rounded-xl border border-ink-100/70">
+          <table className="w-full">
+            <thead><tr><Th>Due date</Th><Th right>Amount</Th><Th right>Paid</Th><Th right>Outstanding</Th></tr></thead>
+            <tbody>{payments.map((p, i) => (
+              <Tr key={order.order_no + "-p-" + i}>
+                <Td muted>{p.due_date ?? "—"}</Td>
+                <Td right>{money(p.payment_amount)}</Td>
+                <Td right muted>{money(p.paid_amount)}</Td>
+                <Td right>{(p.outstanding ?? 0) > 0 ? <Badge tone="danger" size="sm">{money(p.outstanding)}</Badge> : money(p.outstanding)}</Td>
+              </Tr>
+            ))}</tbody>
+          </table>
+        </div>
       )}
     </Card>
-  );
-}
-
-function Stat({ label, value }: { label: string; value: number | string }) {
-  return (
-    <div className="p-4 rounded-xl bg-cream-50/50 border border-ink-100/70">
-      <div className="text-[11px] uppercase tracking-wide text-ink-500 mb-1">{label}</div>
-      <div className="text-2xl font-semibold tabular-nums text-ink-900">{value}</div>
-    </div>
   );
 }

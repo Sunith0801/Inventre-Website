@@ -994,7 +994,7 @@ UI pages:
 | Page | What it does |
 |---|---|
 | `/admin/reports/sales` | Sales by school × category × period; CSV export. |
-| `/admin/reports/stock` | Stock valuation + slow-moving items. |
+| ~~`/admin/reports/stock`~~ | Removed 2026-09-15 — stock lives in the audit ERP, local bins were empty. |
 | `/admin/reports/customers` | LTV distribution; top 100; new vs returning. |
 | `/admin/reports/gst` | GST-summary report (for accountant): in-state vs out-state vs nil-rated sums. |
 | `/admin/reports/fulfillment` | Cycle time, status distribution, late shipments. |

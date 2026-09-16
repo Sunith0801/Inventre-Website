@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { RefreshCw, Check, AlertTriangle, X } from "lucide-react";
-import { Badge, Td, Tr } from "@/components/admin/ui/primitives";
+import { Badge, Checkbox, Td, Th, Tr } from "@/components/admin/ui/primitives";
 
 export type OrdersRow = {
   erp_name: string;
@@ -38,8 +38,6 @@ function extractCcaStatus(msg: string | null): string | null {
 
 const inr = (n: number) =>
   "₹" + Number(n || 0).toLocaleString("en-IN", { maximumFractionDigits: 0 });
-const fmt = (d: string | null) =>
-  d ? new Date(d).toLocaleDateString("en-IN") : "—";
 const fmtIst = (ts: string | null) => {
   if (!ts) return "—";
   const d = new Date(ts);
@@ -52,7 +50,7 @@ const fmtIst = (ts: string | null) => {
     hour: "2-digit",
     minute: "2-digit",
     hour12: true,
-  });
+  }).replace(",", "");
 };
 
 function statusTone(status: string | null): "success" | "info" | "warning" | "danger" | "default" {
@@ -215,7 +213,7 @@ export function OrdersBulkRefresh({
   return (
     <>
       {someSelected ? (
-        <div className="sticky top-0 z-20 -mx-px mb-2 rounded-lg border border-brand-200 bg-brand-50/95 backdrop-blur px-4 py-2.5 shadow-sm flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3 border-b border-ink-100 bg-cream-50/60 px-5 py-2.5 text-[13px]">
           <span className="text-[13px] font-semibold text-brand-800">
             {selected.size} order{selected.size === 1 ? "" : "s"} selected
           </span>
@@ -224,10 +222,8 @@ export function OrdersBulkRefresh({
             onClick={refreshSelected}
             disabled={busy}
             className={
-              "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12.5px] font-semibold " +
-              (busy
-                ? "bg-ink-200 text-ink-500 cursor-wait"
-                : "bg-brand-600 text-white hover:bg-brand-700")
+              "inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-[12.5px] font-semibold " +
+              (busy ? "cursor-wait bg-ink-200 text-ink-500" : "bg-ink-900 text-white hover:bg-ink-800")
             }
           >
             <RefreshCw className={"h-3.5 w-3.5 " + (busy ? "animate-spin" : "")} />
@@ -237,7 +233,7 @@ export function OrdersBulkRefresh({
             type="button"
             onClick={() => setSelected(new Set())}
             disabled={busy}
-            className="inline-flex items-center gap-1 rounded-md border border-ink-200 bg-white px-2.5 py-1 text-[12px] text-ink-700 hover:bg-cream-50"
+            className="inline-flex h-8 items-center gap-1 rounded-lg border border-ink-200 bg-white px-2.5 text-[12px] text-ink-700 hover:bg-cream-50"
           >
             <X className="h-3 w-3" /> Clear
           </button>
@@ -262,134 +258,97 @@ export function OrdersBulkRefresh({
         </div>
       ) : null}
 
-      <table className="w-full border-collapse">
-        <thead className="bg-gradient-to-r from-brand-50 via-cream-50 to-brand-50 border-b border-ink-200">
+      <div className="overflow-x-auto">
+      <table className="w-full">
+        <thead>
           <tr>
-            <th className="px-3 py-3 w-8 text-left">
-              <input
-                type="checkbox"
+            <Th className="w-10">
+              <Checkbox
                 checked={allOnPageSelected}
                 onChange={togglePageAll}
                 aria-label="Select all rows on this page"
-                className="h-4 w-4 rounded border-ink-300 text-brand-600 focus:ring-brand-500"
               />
-            </th>
-            <th className="px-3 py-3 text-left text-[12px] font-bold uppercase tracking-wider text-ink-800">Order #</th>
-            <th className="px-3 py-3 text-left text-[12px] font-bold uppercase tracking-wider text-ink-800">CCAvenue Ref</th>
-            <th className="px-3 py-3 text-left text-[12px] font-bold uppercase tracking-wider text-ink-800">Customer</th>
-            <th className="px-3 py-3 text-left text-[12px] font-bold uppercase tracking-wider text-ink-800">School</th>
-            <th className="px-3 py-3 text-left text-[12px] font-bold uppercase tracking-wider text-ink-800">Enrolment</th>
-            <th className="px-3 py-3 text-left text-[12px] font-bold uppercase tracking-wider text-ink-800">Grade</th>
-            <th className="px-3 py-3 text-left text-[12px] font-bold uppercase tracking-wider text-ink-800">Ordered (IST)</th>
-            <th className="px-3 py-3 text-left text-[12px] font-bold uppercase tracking-wider text-ink-800">Delivery</th>
-            <th className="px-3 py-3 text-left text-[12px] font-bold uppercase tracking-wider text-ink-800">Status</th>
-            <th className="px-3 py-3 text-left text-[12px] font-bold uppercase tracking-wider text-ink-800">Payment</th>
-            <th className="px-3 py-3 text-right text-[12px] font-bold uppercase tracking-wider text-ink-800">Delivered %</th>
-            <th className="px-3 py-3 text-right text-[12px] font-bold uppercase tracking-wider text-ink-800">Grand total</th>
+            </Th>
+            <Th>Order</Th>
+            <Th>Customer</Th>
+            <Th>School</Th>
+            <Th>Ordered</Th>
+            <Th>Status</Th>
+            <Th>Payment</Th>
+            <Th right>Delivered</Th>
+            <Th right>Total</Th>
           </tr>
         </thead>
         <tbody>
           {rows.map((r) => {
             const result = results?.find((res) => res.orderNumber === r.erp_name);
             const newTracking = result?.ok ? result.trackingId : null;
+            // Status = bucketed label (Confirmed / Pending / Aborted / Failed),
+            // falling back to the raw ERP status for mirror + legacy rows.
+            const statusLabel = bucketLabel(r.status_bucket) ?? r.status ?? "—";
+            // Payment = raw CCAvenue status the reconcile cron persists; for
+            // finalised orders fall back to the local payment_status.
+            const payLabel = extractCcaStatus(r.gateway_response_message) ?? r.payment_status;
             return (
               <Tr key={r.erp_name}>
                 <Td>
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     checked={selected.has(r.erp_name)}
                     onChange={() => toggleOne(r.erp_name)}
                     aria-label={`Select ${r.erp_name}`}
-                    className="h-4 w-4 rounded border-ink-300 text-brand-600 focus:ring-brand-500"
                   />
                 </Td>
                 <Td>
                   <Link
                     href={`/admin/orders/${encodeURIComponent(r.erp_name)}`}
-                    className="font-mono text-[13px] font-bold text-ink-900 hover:text-brand-700 hover:underline"
+                    className="block whitespace-nowrap font-mono font-semibold text-ink-900 hover:text-brand-700"
                   >
                     {r.erp_name}
                   </Link>
+                  <span className="block font-mono text-[11.5px] font-normal text-ink-500">
+                    {newTracking ? (
+                      <span className="inline-flex items-center gap-1 font-semibold text-emerald-700"><Check className="h-3 w-3" /> {newTracking}</span>
+                    ) : result && !result.ok ? (
+                      <span className="inline-flex items-center gap-1 text-red-600" title={result.error}><AlertTriangle className="h-3 w-3" /> refresh failed</span>
+                    ) : r.cca_tracking_id ? (
+                      <span title="CCAvenue tracking ID">{r.cca_tracking_id}</span>
+                    ) : (
+                      <span className="text-ink-300">No gateway ref</span>
+                    )}
+                  </span>
                 </Td>
-                <Td muted>
-                  {newTracking ? (
-                    <span className="inline-flex items-center gap-1 font-mono text-[11.5px] text-emerald-700 font-semibold">
-                      <Check className="h-3 w-3" /> {newTracking}
+                <Td>
+                  <span className="block font-medium text-ink-900">{r.customer ?? "—"}</span>
+                  {r.enrollment_number || r.grade ? (
+                    <span className="block text-[12px] font-normal text-ink-500">
+                      {r.enrollment_number ? <span className="font-mono">{r.enrollment_number}</span> : null}
+                      {r.enrollment_number && r.grade ? " · " : ""}
+                      {r.grade ?? ""}
                     </span>
-                  ) : result && !result.ok ? (
-                    <span className="inline-flex items-center gap-1 text-[11px] text-red-600" title={result.error}>
-                      <AlertTriangle className="h-3 w-3" /> error
-                    </span>
-                  ) : r.cca_tracking_id ? (
-                    <span className="font-mono text-[11.5px] text-ink-800">{r.cca_tracking_id}</span>
-                  ) : r.cca_order_id ? (
-                    <span
-                      className="font-mono text-[11px] text-ink-400"
-                      title="Tracking ID not yet populated — showing gateway order ID"
-                    >
-                      {r.cca_order_id}
-                    </span>
+                  ) : null}
+                </Td>
+                <Td muted>{r.school_name ?? "—"}</Td>
+                <Td muted className="whitespace-nowrap">{fmtIst(r.ordered_at)}</Td>
+                <Td><Badge size="sm" dot tone={statusTone(statusLabel)}>{statusLabel}</Badge></Td>
+                <Td>
+                  {payLabel ? <Badge size="sm" tone={paymentStatusTone(payLabel)}>{payLabel}</Badge> : <span className="text-ink-300">—</span>}
+                </Td>
+                <Td right>
+                  {Math.round(Number(r.per_delivered)) === 100 ? (
+                    <span className="font-semibold text-emerald-700">100%</span>
+                  ) : Number(r.per_delivered) > 0 ? (
+                    `${Math.round(Number(r.per_delivered))}%`
                   ) : (
-                    <span className="text-ink-300">—</span>
+                    <span className="text-ink-300">0%</span>
                   )}
                 </Td>
-                <Td>
-                  <span className="font-semibold text-ink-900">{r.customer ?? "—"}</span>
-                </Td>
-                <Td muted>
-                  <span className="text-[12px]">{r.school_name ?? "—"}</span>
-                </Td>
-                <Td muted>
-                  <span className="font-mono text-[11.5px]">{r.enrollment_number ?? "—"}</span>
-                </Td>
-                <Td muted>{r.grade ?? "—"}</Td>
-                <Td muted>
-                  <span className="text-[12px] tabular-nums whitespace-nowrap">{fmtIst(r.ordered_at)}</span>
-                </Td>
-                <Td muted>{fmt(r.delivery_date)}</Td>
-                <Td>
-                  {(() => {
-                    // Status column shows the bucketed display label
-                    // (Confirmed / Pending / Aborted by Customer /
-                    // Failed). Falls back to the raw ERP status for
-                    // mirror + legacy rows that have no local payment.
-                    const label = bucketLabel(r.status_bucket) ?? r.status ?? "—";
-                    return (
-                      <Badge size="sm" tone={statusTone(label)}>
-                        {label}
-                      </Badge>
-                    );
-                  })()}
-                </Td>
-                <Td>
-                  {(() => {
-                    // Payment column shows the raw CCAvenue status text
-                    // (Initiated / Awaited / Aborted / Successful / No
-                    // Record Found / …) that the reconcile cron + the
-                    // Refresh button persist. For finalised orders (paid
-                    // / failed / refunded) — where no further CCAvenue
-                    // poll happens — fall back to the local payment_status.
-                    const raw = extractCcaStatus(r.gateway_response_message);
-                    const label = raw ?? r.payment_status;
-                    if (!label) return <span className="text-ink-300 text-[11px]">—</span>;
-                    return (
-                      <Badge size="sm" tone={paymentStatusTone(label)}>
-                        {label}
-                      </Badge>
-                    );
-                  })()}
-                </Td>
-                <Td right>
-                  <span className="tabular-nums">{Math.round(Number(r.per_delivered))}%</span>
-                </Td>
-                <Td right>
-                  <span className="font-semibold tabular-nums">{inr(r.grand_total)}</span>
-                </Td>
+                <Td right><span className="font-semibold">{inr(r.grand_total)}</span></Td>
               </Tr>
             );
           })}
         </tbody>
       </table>
+      </div>
     </>
   );
 }

@@ -10,13 +10,13 @@ import {
   productSchool,
   productGrades,
 } from "@/db/schema";
-import { isResponse, requirePermission } from "@/server/admin-guard";
+import { isResponse, requirePermission, requireAnyPermission } from "@/server/admin-guard";
 import { invalidateCatalog } from "@/server/cache";
 import { logAdminActivity } from "@/server/activity";
 
 /** Existing BOM components for a product — for prefilling the BOM form. */
 export async function GET(req: Request) {
-  const guard = await requirePermission("catalog.read");
+  const guard = await requireAnyPermission("boms.read", "catalog.read");
   if (isResponse(guard)) return guard;
   const productId = new URL(req.url).searchParams.get("productId");
   if (!productId) return NextResponse.json({ components: [] });
@@ -53,7 +53,7 @@ const Body = z.object({
  * product is mapped to the chosen school + grade.
  */
 export async function POST(req: Request) {
-  const guard = await requirePermission("catalog.write");
+  const guard = await requireAnyPermission("boms.write", "catalog.write");
   if (isResponse(guard)) return guard;
 
   let body;

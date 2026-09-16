@@ -3,7 +3,7 @@ import { parseBody } from "@/server/parse-body";
 import { z } from "zod";
 import { db } from "@/db/client";
 import { warehouses } from "@/db/schema";
-import { isResponse, requirePermission } from "@/server/admin-guard";
+import { isResponse, requirePermission, requireAnyPermission } from "@/server/admin-guard";
 import { logAdminActivity } from "@/server/activity";
 import { eq } from "drizzle-orm";
 
@@ -15,13 +15,13 @@ const Body = z.object({
 });
 
 export async function GET() {
-  const guard = await requirePermission("catalog.read");
+  const guard = await requireAnyPermission("catalog-stock.read", "catalog.read");
   if (isResponse(guard)) return guard;
   return NextResponse.json({ warehouses: await db.select().from(warehouses) });
 }
 
 export async function POST(req: Request) {
-  const guard = await requirePermission("catalog.write");
+  const guard = await requireAnyPermission("catalog-stock.write", "catalog.write");
   if (isResponse(guard)) return guard;
   const parsed = await parseBody(req, Body);
   if (parsed instanceof NextResponse) return parsed;

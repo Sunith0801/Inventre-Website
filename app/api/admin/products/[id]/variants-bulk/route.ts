@@ -9,7 +9,7 @@ import {
   productAttributeValues,
 } from "@/db/schema";
 import { eq, inArray } from "drizzle-orm";
-import { isResponse, requirePermission } from "@/server/admin-guard";
+import { isResponse, requirePermission, requireAnyPermission } from "@/server/admin-guard";
 import { getDefaultWarehouseId, applyStockChange } from "@/server/repos/inventory";
 import { logAdminActivity } from "@/server/activity";
 
@@ -54,7 +54,7 @@ export async function POST(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const guard = await requirePermission("catalog.write");
+  const guard = await requireAnyPermission("products.write", "catalog.write");
   if (isResponse(guard)) return guard;
   const { id: productId } = await params;
   const parsed = await parseBody(req, Body);

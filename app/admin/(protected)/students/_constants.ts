@@ -7,4 +7,4 @@
  * collapses LIMIT in the SSR query and ships 20,930 rows to the
  * browser (incident 2026-05-29).
  */
-export const STUDENTS_PAGE_SIZE = 150;
+export const STUDENTS_PAGE_SIZE = 50;

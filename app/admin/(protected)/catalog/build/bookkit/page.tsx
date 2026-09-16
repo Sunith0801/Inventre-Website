@@ -17,7 +17,7 @@ import { BookkitWizard, type AttributeOption } from "./_wizard";
 export const dynamic = "force-dynamic";
 
 export default async function BookkitBuildPage() {
-  const guard = await requireAnyPermission("catalog.read", "catalog.write");
+  const guard = await requireAnyPermission("catalog-build.read", "catalog-build.write", "catalog.read", "catalog.write");
   if (isResponse(guard)) redirect("/admin/dashboard");
 
   const [catRows, schoolRows, gradeRows, attrRows, valueRows] = await Promise.all([
@@ -67,9 +67,8 @@ export default async function BookkitBuildPage() {
         <ChevronLeft className="h-3.5 w-3.5" /> Back to type chooser
       </Link>
       <PageHeader
-        eyebrow="Catalog · Create new"
+        eyebrow="Products"
         title="New Bookkit"
-        description="Books + sub-bundles + optional 2nd/3rd language axes. Writes only NEW rows; existing items aren't touched."
       />
       <BookkitWizard
         categories={catRows.map((c) => ({ id: c.id, label: c.path, name: c.name }))}

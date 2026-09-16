@@ -13,19 +13,13 @@ export default function PaymentsSettingsPage() {
   return (
     <div className="max-w-3xl">
       <PageHeader
-        breadcrumb={[
-          { label: "Settings", href: "/admin/settings" },
-          { label: "Payments" },
-        ]}
         title="Payments"
-        eyebrow="Settings"
-        description="Gateway configuration is sourced from environment variables. Rotate keys via the deployment pipeline."
+        eyebrow="System Configuration"
       />
 
       <Card className="mb-4">
         <CardHeader
           title="CCAvenue"
-          description="Online payment gateway used for parent checkout."
         />
         <Row
           label="API keys"
@@ -41,7 +35,6 @@ export default function PaymentsSettingsPage() {
       <Card>
         <CardHeader
           title="Offline methods"
-          description="Available on the admin walk-in order screen."
         />
         <div className="flex flex-wrap gap-2">
           {["cash", "upi", "card", "netbanking", "bank_transfer", "cheque", "other"].map(

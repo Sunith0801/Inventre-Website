@@ -16,7 +16,7 @@ export const dynamic = "force-dynamic";
  * Row-building lives in lib/product-price-list.ts.
  */
 export async function GET(req: NextRequest) {
-  const guard = await requireAnyPermission("catalog.read", "catalog.write");
+  const guard = await requireAnyPermission("catalog-pricing.read", "catalog-pricing.write", "catalog.read", "catalog.write");
   if (isResponse(guard)) return guard;
 
   const sp = req.nextUrl.searchParams;

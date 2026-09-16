@@ -84,7 +84,7 @@ export async function PATCH(
     diff: { name: name ?? null, description: description ?? null, permissions: permissions ?? null },
   });
 
-  return NextResponse.json({ ok: true, redirectTo: `/admin/roles/${id}` });
+  return NextResponse.json({ ok: true, redirectTo: `/admin/roles/${role.slug}` });
 }
 
 export async function DELETE(

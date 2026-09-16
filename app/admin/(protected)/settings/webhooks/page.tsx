@@ -15,13 +15,8 @@ export default async function WebhooksPage() {
   return (
     <div className="max-w-5xl">
       <PageHeader
-        breadcrumb={[
-          { label: "Settings", href: "/admin/settings" },
-          { label: "Webhooks" },
-        ]}
-        eyebrow="Settings"
+        eyebrow="System Configuration"
         title="Outbound webhooks"
-        description="Receive POST callbacks for domain events. Each delivery is signed with HMAC-SHA256 over the body using the endpoint's secret. Failed deliveries auto-retry with exponential backoff (2/4/8/16/32/64 minutes)."
       />
       <WebhooksEditor
         initial={rows.map((r) => ({

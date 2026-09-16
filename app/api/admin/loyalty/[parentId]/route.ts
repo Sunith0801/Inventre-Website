@@ -9,7 +9,7 @@ export async function GET(
   _: Request,
   { params }: { params: Promise<{ parentId: string }> }
 ) {
-  const guard = await requirePermission("gift-cards.read");
+  const guard = await requirePermission("customers.read");
   if (isResponse(guard)) return guard;
   const { parentId } = await params;
   const [balance, ledger] = await Promise.all([
@@ -28,7 +28,7 @@ export async function POST(
   req: Request,
   { params }: { params: Promise<{ parentId: string }> }
 ) {
-  const guard = await requirePermission("gift-cards.write");
+  const guard = await requirePermission("customers.write");
   if (isResponse(guard)) return guard;
   const { parentId } = await params;
   const parsed = await parseBody(req, Body);

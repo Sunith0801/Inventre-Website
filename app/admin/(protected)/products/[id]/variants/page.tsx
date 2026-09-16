@@ -97,11 +97,7 @@ export default async function ProductVariantsPage({
   return (
     <div>
       <PageHeader
-        breadcrumb={[
-          { label: "Catalog", href: "/admin/products" },
-          { label: product.name, href: `/admin/products/${product.id}` },
-          { label: "Variants" },
-        ]}
+        breadcrumb={[{ label: "Products", href: "/admin/products" }, { label: product.name, href: `/admin/products/${product.id}` }, { label: "Variants" }]}
         title={`${product.name} — variants`}
         description={`${activeCount} shown${
           variants.length > activeCount

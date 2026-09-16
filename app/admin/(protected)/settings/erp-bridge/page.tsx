@@ -103,19 +103,14 @@ export default async function ErpBridgePage() {
   return (
     <div className="max-w-5xl space-y-8">
       <PageHeader
-        breadcrumb={[
-          { label: "Settings", href: "/admin/settings" },
-          { label: "ERP bridge (live)" },
-        ]}
-        eyebrow="Settings"
+        eyebrow="System Configuration"
         title="ERP bridge"
-        description="Bidirectional integration with the ERP ops app. ECOM → ERP sends signed events on order create / payment confirm / cancel. ERP → ECOM mirrors warehouse state into erp.* in real time."
       />
 
       {/* Health summary */}
       <section>
         <Card>
-          <CardHeader title="Health" description="Right now, this minute." />
+          <CardHeader title="Health" />
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <Metric
               label="ECOM → ERP"
@@ -250,7 +245,6 @@ export default async function ErpBridgePage() {
         <Card>
           <CardHeader
             title="ERP → ECOM mirror (erp.* schema)"
-            description="Counts under the erp.* schema in this database. The ERP publisher upserts these every ~5 seconds; reconciler tops up nightly. -1 = table missing on ecom side."
           />
           <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-[12px]">
             {mirror.map((m) => (
@@ -273,7 +267,6 @@ export default async function ErpBridgePage() {
         <Card>
           <CardHeader
             title="Delta-sync watermarks"
-            description="One watermark per resource pulled from ERP. The poller fetches rows modified after the watermark, upserts mirrors, then advances. Lag = now − last_modified_seen."
           />
           {syncState.length === 0 ? (
             <p className="text-[13px] text-ink-600">
@@ -347,7 +340,6 @@ export default async function ErpBridgePage() {
         <Card>
           <CardHeader
             title="Recent webhook deliveries"
-            description="Latest 50 events the ecom app POSTed at the ERP ingest endpoint. Click Resend to replay the same envelope."
           />
           {deliveries.length === 0 ? (
             <p className="text-[13px] text-ink-600">

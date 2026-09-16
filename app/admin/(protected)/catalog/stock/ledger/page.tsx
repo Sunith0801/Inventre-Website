@@ -18,6 +18,7 @@ import {
   Tr,
   Badge,
   EmptyState,
+  FilterSelect,
 } from "@/components/admin/ui/primitives";
 
 export const dynamic = "force-dynamic";
@@ -68,12 +69,8 @@ export default async function StockLedgerPage({
   return (
     <div>
       <PageHeader
-        breadcrumb={[
-          { label: "Stock", href: "/admin/catalog/stock" },
-          { label: "Ledger" },
-        ]}
+        breadcrumb={[{ label: "Stock", href: "/admin/catalog/stock" }, { label: "Ledger" }]}
         title="Stock ledger"
-        description="Every stock movement — manual adjustments, reservations, ships, returns. Audit trail of inventory."
       />
 
       <form method="GET">
@@ -82,12 +79,7 @@ export default async function StockLedgerPage({
             defaultValue={q ?? ""}
             placeholder="Search by SKU or product name…"
           />
-          <select
-            name="reason"
-            defaultValue={reason ?? ""}
-            className="h-9 px-3 text-[13px] rounded-lg bg-white border border-ink-200"
-          >
-            <option value="">All reasons</option>
+          <FilterSelect label="Reason" name="reason" defaultValue={reason ?? ""}>
             <option value="receipt">Receipt</option>
             <option value="manual_adjust">Manual adjust</option>
             <option value="reserve">Reserve</option>
@@ -95,7 +87,7 @@ export default async function StockLedgerPage({
             <option value="ship">Ship</option>
             <option value="return">Return</option>
             <option value="audit">Audit</option>
-          </select>
+          </FilterSelect>
           <Button type="submit" variant="secondary">
             Filter
           </Button>

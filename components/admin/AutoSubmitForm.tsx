@@ -32,10 +32,12 @@ export function AutoSubmitForm({
   action,
   children,
   debounceMs = 350,
+  className,
 }: {
   action: string;
   children: React.ReactNode;
   debounceMs?: number;
+  className?: string;
 }) {
   const router = useRouter();
   const formRef = useRef<HTMLFormElement | null>(null);
@@ -58,7 +60,12 @@ export function AutoSubmitForm({
       if (s.trim() !== "") params.append(key, s);
     }
     const qs = params.toString();
-    router.push(qs ? `${action}?${qs}` : action, { scroll: false });
+    const href = qs ? `${action}?${qs}` : action;
+    // A select fires `input` AND `change`; skip the second call when the
+    // page is already at that URL (compared against the live location, so a
+    // "Clear" link or the back button never leaves a stale memo behind).
+    if (typeof window !== "undefined" && window.location.pathname + window.location.search === href) return;
+    router.push(href, { scroll: false });
   };
   const submitDebounced = (ms: number) => {
     if (timerRef.current) clearTimeout(timerRef.current);
@@ -117,7 +124,9 @@ export function AutoSubmitForm({
       ref={formRef}
       method="GET"
       action={action}
+      className={className}
       onInput={handleInput}
+      onChange={handleInput}
       onFocus={handleFocus}
       onBlur={handleBlur}
       onSubmit={(e) => {

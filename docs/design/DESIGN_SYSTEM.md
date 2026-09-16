@@ -4,6 +4,59 @@ Reverse-engineered from the hand-designed homepage, shop, cart and login. Use th
 
 ---
 
+## 0. Two densities, one system  *(added 2026-09-11)*
+
+The spec below describes the **airy** density — the outward face. There is a
+second, **compact** density for the admin panel. They are not two design
+systems: both read the same `brand` / `ink` / `cream` tokens out of
+`tailwind.config.ts` and the same Plus Jakarta typeface. A density is a
+spacing-and-radius decision, nothing more.
+
+| | Airy (storefront) | Compact (admin) |
+|---|---|---|
+| Module | `@/components/ui/primitives` | `@/components/admin/ui/primitives` |
+| Body type | 14–16px | 12–13px |
+| Control height | 44–56px | 32–36px (`h-8`/`h-9`) |
+| Corners | `rounded-full` pills, `rounded-2xl` cards | `rounded-lg` controls, `rounded-2xl` cards |
+| Primary action | orange `brand` pill | `ink-900` solid |
+
+**Use the primitives. Do not retype the recipes below.** Every class string in
+this document exists as a component. The recipes are kept as the rationale for
+what the components do — read them to understand a choice, not to copy one.
+
+Before this layer existed the panel carried 414 hand-typed `<input>` elements,
+145 `<select>`, and 411 `<button>`; one input recipe appeared verbatim 14 times
+and one table-header recipe 28 times. That is why a control's focus ring
+differed from screen to screen.
+
+### What exists
+
+Both modules export `Field`, `Input`, `Select`, `Textarea`, `FormError`,
+`Button`, `Card`, `Badge` and `EmptyState` with matching prop names, so a
+component moving between surfaces changes its import, not its markup.
+
+- **Compact only** — `PageHeader`, `Stat`, `Toolbar`, `FilterChips`,
+  `SearchInput`, `DataTable`, `Th`/`Td`/`Tr`, `Checkbox`, `Radio`,
+  `FormGrid`, `FormActions`, `Skeleton`, `Money`.
+- **Airy only** — `Container`, `Section`, `Eyebrow`, `SectionHeading`,
+  `IconTile`, `Ordinal`, `CircleButton`.
+
+### Rules
+
+1. **Wide tables scroll inside their card, never on the page.** `DataTable`
+   supplies the rail; a bare `<table>` must be wrapped in `overflow-x-auto`
+   by hand. A 13-column table that overflows its card drags the whole layout
+   sideways and takes the admin drawer with it.
+2. **Every route group carries `loading.tsx` and `error.tsx`.** A segment that
+   has neither shows a dead click and then Next's unstyled error page.
+   `app/error.tsx`, `app/not-found.tsx` and `app/global-error.tsx` cover the
+   storefront; `app/admin/(protected)/` carries its own pair.
+3. **Light mode only.** Dark `ink-900` panels are design punctuation, not a
+   theme. There is no `dark:` variant anywhere and adding one is a project,
+   not a patch.
+
+---
+
 ## 1. Color palette
 
 All colors live in `tailwind.config.ts`. There are exactly **three** color families — keep it that way. No teal, no purple, no slate. Sustainability sections may use a single emerald accent but should not introduce a fourth equal palette.

@@ -8,7 +8,7 @@ import {
   products,
   schools,
 } from "@/db/schema";
-import { eq, sql } from "drizzle-orm";
+import { asc, count, eq, sql } from "drizzle-orm";
 import { IndianRupee, Plus } from "lucide-react";
 import {
   PageHeader,
@@ -22,40 +22,66 @@ import {
   EmptyState,
   Button,
 } from "@/components/admin/ui/primitives";
+import { Pagination, PerPagePicker } from "@/components/admin/ui/pagination";
 import { requireAnyPermission, isResponse } from "@/server/admin-guard";
+import { PER_PAGE_OPTIONS, pageMeta, readPaging, withPaging } from "@/lib/admin-paging";
 
 export const dynamic = "force-dynamic";
 
-export default async function PricingPage() {
-  const guard = await requireAnyPermission("catalog.read", "catalog.write");
+const BASE = "/admin/catalog/pricing";
+
+export default async function PricingPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ page?: string; perPage?: string }>;
+}) {
+  const guard = await requireAnyPermission("catalog-pricing.read", "catalog-pricing.write", "catalog.read", "catalog.write");
   if (isResponse(guard)) redirect("/admin/dashboard");
 
-  const lists = await db.select().from(priceLists).orderBy(priceLists.name);
+  const paging = readPaging(await searchParams);
 
-  const rows = await db
-    .select({
-      productName: products.name,
-      size: productVariants.size,
-      sku: productVariants.sku,
-      price: itemPrices.price,
-      priceListName: priceLists.name,
-      isDefault: priceLists.isDefault,
-      schoolName: schools.name,
-    })
-    .from(itemPrices)
-    .innerJoin(productVariants, eq(productVariants.id, itemPrices.variantId))
-    .innerJoin(products, eq(products.id, productVariants.productId))
-    .innerJoin(priceLists, eq(priceLists.id, itemPrices.priceListId))
-    .leftJoin(schools, eq(schools.id, itemPrices.schoolId))
-    .orderBy(sql`${products.name} ASC, ${productVariants.size} ASC`)
-    .limit(500);
+  // One page of prices plus the true total. This used to stop at 500 of the
+  // 4,177 prices with no way to reach the rest, while its header announced
+  // "500 prices".
+  const [lists, rows, totalRows] = await Promise.all([
+    db.select().from(priceLists).orderBy(priceLists.name),
+    db
+      .select({
+        id: itemPrices.id,
+        productName: products.name,
+        size: productVariants.size,
+        sku: productVariants.sku,
+        price: itemPrices.price,
+        priceListName: priceLists.name,
+        isDefault: priceLists.isDefault,
+        schoolName: schools.name,
+      })
+      .from(itemPrices)
+      .innerJoin(productVariants, eq(productVariants.id, itemPrices.variantId))
+      .innerJoin(products, eq(products.id, productVariants.productId))
+      .innerJoin(priceLists, eq(priceLists.id, itemPrices.priceListId))
+      .leftJoin(schools, eq(schools.id, itemPrices.schoolId))
+      // id breaks name/size ties so a price cannot appear on two pages.
+      .orderBy(sql`${products.name} ASC, ${productVariants.size} ASC`, asc(itemPrices.id))
+      .limit(paging.perPage)
+      .offset(paging.offset),
+    db
+      .select({ total: count() })
+      .from(itemPrices)
+      .innerJoin(productVariants, eq(productVariants.id, itemPrices.variantId))
+      .innerJoin(products, eq(products.id, productVariants.productId))
+      .innerJoin(priceLists, eq(priceLists.id, itemPrices.priceListId)),
+  ]);
+  const total = totalRows[0]?.total ?? 0;
+  const { pages, from, to } = pageMeta(total, paging);
+  if (paging.page > pages) redirect(withPaging(BASE, pages, paging.perPage));
 
   return (
     <div>
       <PageHeader
-        eyebrow="Catalog"
-        title="Pricing"
-        description={`${rows.length.toLocaleString("en-IN")} prices across ${lists.length} price lists. School-specific overrides take priority over global prices.`}
+        eyebrow="Pricing & Tax"
+        title="Price Lists"
+        description={`${total.toLocaleString("en-IN")} prices across ${lists.length} price lists`}
         actions={
           <Link href="/admin/catalog/pricing/bulk">
             <Button icon={<Plus className="h-3.5 w-3.5" />} variant="primary">
@@ -86,7 +112,7 @@ export default async function PricingPage() {
       </Card>
 
       <Card padded={false}>
-        {rows.length === 0 ? (
+        {total === 0 ? (
           <EmptyState
             icon={IndianRupee}
             title="No prices yet"
@@ -105,8 +131,8 @@ export default async function PricingPage() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((r, i) => (
-                <Tr key={i}>
+              {rows.map((r) => (
+                <Tr key={r.id}>
                   <Td>
                     <span className="font-medium">{r.productName}</span>
                   </Td>
@@ -140,6 +166,23 @@ export default async function PricingPage() {
             </tbody>
           </table>
         )}
+        {total > 0 ? (
+          <Pagination
+            page={paging.page}
+            pages={pages}
+            from={from}
+            to={to}
+            total={total}
+            noun="price"
+            hrefFor={(p) => withPaging(BASE, p, paging.perPage)}
+          >
+            <PerPagePicker
+              value={paging.perPage}
+              options={PER_PAGE_OPTIONS}
+              hrefFor={(pp) => withPaging(BASE, 1, pp)}
+            />
+          </Pagination>
+        ) : null}
       </Card>
     </div>
   );

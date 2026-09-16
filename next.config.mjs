@@ -135,11 +135,30 @@ const nextConfig = {
         ],
       },
       {
+        /**
+         * Immutable caching is only safe when the FILENAME changes with the
+         * contents. `next build` content-hashes every chunk, so a year-long
+         * `immutable` is correct there.
+         *
+         * `next dev` does NOT: it emits stable names — `webpack.js`,
+         * `main-app.js`, `app/.../page.js` — and rewrites them in place on
+         * every recompile. Telling a browser those are immutable for a year
+         * means it keeps replaying an old webpack runtime whose module ids no
+         * longer match the freshly compiled page, and the app dies with
+         * "Cannot read properties of undefined (reading 'call')" that no
+         * amount of restarting or clearing .next can fix, because the stale
+         * copy is in the browser.
+         *
+         * So: immutable in production, never in development.
+         */
         source: "/_next/static/:path*",
         headers: [
           {
             key: "Cache-Control",
-            value: "public, max-age=31536000, immutable",
+            value:
+              process.env.NODE_ENV === "production"
+                ? "public, max-age=31536000, immutable"
+                : "no-store, must-revalidate",
           },
         ],
       },

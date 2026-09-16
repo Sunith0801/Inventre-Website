@@ -81,6 +81,7 @@ const BRANCH_NAMES: Record<string, string> = {
   "226": "Winmore Academy, Whitefield",
   "102": "Crimson Anisha Global School, Marunji",
   "103": "Crimson Anisha Global School, Undri",
+  "236": "Crimson World School, Agra",
 };
 
 export default async function ReceiptPage({
