@@ -7,7 +7,7 @@ import {
   purchaseOrderItems,
   purchaseOrders,
 } from "@/db/schema";
-import { eq, sql, inArray } from "drizzle-orm";
+import { and, eq, sql, inArray } from "drizzle-orm";
 import { Boxes, AlertTriangle, Sliders, ClipboardCheck, Shuffle } from "lucide-react";
 import Link from "next/link";
 import {
@@ -93,8 +93,15 @@ export default async function StockPage({
           purchaseOrders,
           eq(purchaseOrders.id, purchaseOrderItems.poId)
         )
+        // inArray, not `= ANY(${variantIds}::uuid[])`: Drizzle binds a JS array
+        // as a record and Postgres refuses the cast (42846). This query only
+        // ran once bins existed — the Ground Stock bridge filled them on
+        // 2026-09-16 and the page 500'd on first open.
         .where(
-          sql`${purchaseOrders.status} IN ('submitted', 'partially_received') AND ${purchaseOrderItems.variantId} = ANY(${variantIds}::uuid[])`
+          and(
+            sql`${purchaseOrders.status} IN ('submitted', 'partially_received')`,
+            inArray(purchaseOrderItems.variantId, variantIds)
+          )
         )
         .groupBy(purchaseOrderItems.variantId)
     : [];
