@@ -94,7 +94,7 @@ export type MatchableVariant = {
   erpName: string | null;
 };
 
-export type MatchKind = "sku" | "erp_name" | "normalized";
+export type MatchKind = "sku" | "erp_name" | "normalized" | "description";
 
 export type VariantMatch = {
   variantId: string;
@@ -367,6 +367,99 @@ export function keeperRowsToFigures(
         snapshotAt: r.gs_snapshot_at ?? r.snapshot_at ?? null,
       });
     }
+  }
+  return out;
+}
+
+// ─── Shared merchandise by NAME ──────────────────────────────────────────
+//
+// The storefront also sells bags and bottles as all-school products
+// ("INVENTRE BAGS · RACING REX NAVY M", "WATER BOTTLES · Cloud stiper Brown")
+// whose SKUs exist nowhere in the audit's keeper map — the map only knows
+// the per-school codes ("SAMYU PP BAGSRRNBM$$$"). The audit's description
+// carries the same words ("Primary Racing Rex Navy Blue Bag- M Size"), so a
+// normalised name is the join: brand and category words dropped, sizes
+// folded to S/M/L, the audit's and the storefront's spellings folded to
+// one, spaces removed. Exact key first; then a key with colour qualifiers
+// (navy, dark, light, sky) dropped, accepted only when it is unique on the
+// audit side. Many storefront sizes may share one pile (CRIMSON BAGS and
+// INVENTRE BAGS both sell Dino Charm S); that is one shelf, so both take it.
+
+const MERCH_STOP = new Set([
+  "pre", "primary", "preprimary", "secondary", "higher", "sec", "pri", "pp",
+  "bag", "bags", "size", "water", "bottle", "bottles", "waterbottle", "waterbottles",
+  "crimson", "schools", "school", "all", "inventre", "and", "samyu",
+]);
+const MERCH_FIX: [RegExp, string][] = [
+  [/stiper/g, "sipper"],
+  [/sippers/g, "sipper"],
+  [/adevnture/g, "adventure"],
+  [/turq[a-z]*/g, "turquoise"],
+  [/megenta/g, "magenta"],
+  [/staniless/g, "stainless"],
+  [/vac+um/g, "vacuum"],
+  [/\bnavy\s*blue\b/g, "navy"],
+  [/\bsmall\b/g, "s"],
+  [/\bmedium\b/g, "m"],
+  [/\blarge\b/g, "l"],
+];
+const MERCH_QUALIFIERS = /\b(navy|dark|light|sky)\b/g;
+
+/** Normalised name key; `loose` also drops colour qualifiers. */
+export function merchNameKey(text: string, loose = false): string {
+  let t = text.toLowerCase().replace(/[()\-:_,./]/g, " ");
+  for (const [re, to] of MERCH_FIX) t = t.replace(re, to);
+  if (loose) t = t.replace(MERCH_QUALIFIERS, " ");
+  const words = t.split(/\s+/).filter((w) => w && !MERCH_STOP.has(w));
+  return words.join("");
+}
+
+export type NamedVariant = { id: string; productName: string; size: string };
+
+/**
+ * Map storefront merchandise variants onto audit merchandise figures by
+ * name. Returns variantId → the figure's key (its keeper SKU). Only
+ * variants whose product name says bag or bottle are considered — shoes
+ * carry a colour on the audit ("Black 10S") that the storefront-only shoe
+ * products do not, so a name match there would be a guess.
+ */
+export function matchMerchandiseByName(
+  figures: Iterable<KeeperFigure>,
+  variants: NamedVariant[]
+): Map<string, string> {
+  const exact = new Map<string, string>();
+  const loose = new Map<string, string[]>();
+  for (const f of figures) {
+    if (!f.keeperSku || !f.keeperDescription) continue;
+    if (!/bag|bottle/i.test(f.keeperCategory ?? f.keeperDescription)) continue;
+    const k = merchNameKey(f.keeperDescription);
+    if (k && !exact.has(k)) exact.set(k, f.keeperSku);
+    const lk = merchNameKey(f.keeperDescription, true);
+    if (lk) {
+      const list = loose.get(lk) ?? [];
+      if (!list.includes(f.keeperSku)) list.push(f.keeperSku);
+      loose.set(lk, list);
+    }
+  }
+  const out = new Map<string, string>();
+  for (const v of variants) {
+    if (!/bag|bottle/i.test(v.productName)) continue;
+    // The size label carries the whole name for these products; the product
+    // name is only the brand line. Fall back to both joined when size is bare.
+    const label = /[a-z]{3,}/i.test(v.size) ? v.size : `${v.productName} ${v.size}`;
+    const k = merchNameKey(label);
+    if (!k) continue;
+    const hit = exact.get(k);
+    if (hit) {
+      out.set(v.id, hit);
+      continue;
+    }
+    // A bare "blue" on the storefront ("Space adventure(Blue) M") could be
+    // the audit's navy, sky, dark or light blue — a guess, so no loose pass.
+    if (/\bblue\b/i.test(label) && !MERCH_QUALIFIERS.test(label)) continue;
+    MERCH_QUALIFIERS.lastIndex = 0;
+    const cands = loose.get(merchNameKey(label, true));
+    if (cands && cands.length === 1) out.set(v.id, cands[0]);
   }
   return out;
 }

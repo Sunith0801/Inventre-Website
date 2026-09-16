@@ -17,8 +17,10 @@ import {
   indexKeeperMap,
   keeperRowsToFigures,
   matchItemCodes,
+  matchMerchandiseByName,
   type KeeperMapEntry,
   type KeeperStockRow,
+  type VariantMatch,
 } from "@/features/stock/domain/ground-stock-match";
 import { isCountedKind } from "@/features/stock/domain/availability";
 
@@ -208,6 +210,8 @@ export async function runGroundStockSync(
         sku: productVariants.sku,
         erpName: productVariants.erpName,
         kind: sql<string>`${products.kind}::text`,
+        productName: products.name,
+        size: productVariants.size,
       })
       .from(productVariants)
       .innerJoin(products, eq(products.id, productVariants.productId));
@@ -216,8 +220,25 @@ export async function runGroundStockSync(
 
     // Only counted kinds get a bin. A kit or magic box that happens to share
     // a name with a sheet row must not be gated by it.
-    const gated = matches.filter((m) => isCountedKind(kindById.get(m.variantId)));
+    const gated: VariantMatch[] = matches.filter((m) => isCountedKind(kindById.get(m.variantId)));
     const skippedKinds = matches.length - gated.length;
+
+    // All-school bags and bottles ("INVENTRE BAGS · RACING REX NAVY M") have
+    // no code in the keeper map; they take their pile by NAME. The figure is
+    // filed under the keeper SKU so the sync row and ledger name the pile.
+    const taken = new Set(gated.map((m) => m.variantId));
+    const byKeeper = new Map<string, (typeof figures extends Map<string, infer F> ? F : never)>();
+    for (const f of figures.values()) if (f.keeperSku && !byKeeper.has(f.keeperSku)) byKeeper.set(f.keeperSku, f);
+    const named = matchMerchandiseByName(
+      figures.values(),
+      variantRows.filter((v) => !taken.has(v.id) && isCountedKind(v.kind))
+    );
+    for (const [variantId, keeperSku] of named) {
+      const f = byKeeper.get(keeperSku);
+      if (!f) continue;
+      if (!figures.has(keeperSku)) figures.set(keeperSku, { ...f, itemCode: keeperSku });
+      gated.push({ variantId, itemCode: keeperSku, matchKind: "description" });
+    }
 
     // 4. Write bins + bookkeeping.
     const wh = await getDefaultWarehouseId();

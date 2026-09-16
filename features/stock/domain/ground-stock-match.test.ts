@@ -4,6 +4,7 @@ import {
   indexKeeperMap,
   keeperRowsToFigures,
   matchItemCodes,
+  matchMerchandiseByName,
   normalizeItemCode,
 } from "./ground-stock-match";
 
@@ -178,6 +179,65 @@ describe("keeperRowsToFigures — shared General Merchandise via the keeper map"
   it("works without a map (old_skus only) and ignores blank map entries", () => {
     expect(keeperMap.has("X")).toBe(false);
     const m = keeperRowsToFigures([{ keeper_sku: "BLSHOE-10S", all_schools: true, gs_linked: true, gs_available: 5, old_skus: [] }]);
+    expect(m.size).toBe(0);
+  });
+});
+
+describe("matchMerchandiseByName — all-school bags and bottles", () => {
+  const fig = (keeperSku: string, keeperDescription: string, keeperCategory: string) => ({
+    itemCode: keeperSku, keeperSku, keeperDescription, keeperCategory, keeperGroup: "General Merchandise",
+    schoolCode: null, schoolName: "All schools", available: 1, rawAvailable: 1, counted: 1, packedOut: 0, snapshotAt: null,
+  });
+  const figures = [
+    fig("PPRDCHARMBAG-S", "Pre-Primary Dino Charm Bag-Small Size", "Bags"),
+    fig("PRDRUNICORNBLACKBAG-M", "Primary Dreamy Unicorn Black Bag- M Size", "Bags"),
+    fig("PRDRUNICORNNBLUEBAG-M", "Primary Dreamy Unicorn Navy Blue Bag- M Size", "Bags"),
+    fig("PRIDRUNICORNTURQBAG-M", "Primary Dreamy Unicorn Turquiose Bag- M Size", "Bags"),
+    fig("PRIRAREXNBLUEBAG-M", "Primary Racing Rex Navy Blue Bag- M Size", "Bags"),
+    fig("PRIRAREXSBLUEBAG-M", "Primary Racing Rex Sky Blue Bag- M Size", "Bags"),
+    fig("PRPIPARADISEPURPLEBAG-M", "Primary Pink Paradise Navy Purple Bag- M Size", "Bags"),
+    fig("PRISPADVENTUREBLACKBAG-M", "Primary Space Adevnture Black Bag- M Size", "Bags"),
+    fig("PRISPADVENTURENBLUEBAG-M", "Primary Space Adevnture Navy Blue Bag- M Size", "Bags"),
+    fig("PRISPAADVENTURESBLUEBAG-M", "Primary Space Adventure Sky Blue Bag- M Size", "Bags"),
+    fig("SCCLASSICBAGCRI-L", "Secondary Crimson Classic Bag-L: Crimson Schools", "Bags"),
+    fig("SCCOSNGTRBAG-L", "Secondary Cosmic Navigator Bag-L: All Schools", "Bags"),
+    fig("WBCLSPBROWN", "Water Bottle- Cloud Sipper Brown", "Bottle"),
+    fig("WBDSPBEAR", "Water Bottle- Dual Sipper Bear", "Bottle"),
+    fig("WBUMSTSTDPINK", "Water Bottle- Urban Matt Stainless Steel Dark Pink", "Bottle"),
+    fig("WMSVBLUEPINK", "Water Bottle- Smart Vaccum Blue And Pink", "Bottle"),
+    fig("BLSHOE-10S", "Black 10S Shoes", "Shoes"),
+  ];
+  const v = (id: string, productName: string, size: string) => ({ id, productName, size });
+
+  it("matches the storefront's all-school bag and bottle names to the audit description", () => {
+    const m = matchMerchandiseByName(figures, [
+      v("a", "INVENTRE BAGS", "DINO CHARM S"),
+      v("b", "CRIMSON BAGS", "DinoCharm S"),
+      v("c", "CRIMSON BAGS", "Dreamy unicorn (Black) M"),
+      v("d", "INVENTRE BAGS", "DREAMY UNICORN NAVY BLUE M"),
+      v("e", "CRIMSON BAGS", "Dreamy unicorn (turqoise) M"),
+      v("f", "INVENTRE BAGS", "RACING REX NAVY M"),
+      v("g", "INVENTRE BAGS", "PINK PARADISE PURPLE M"),
+      v("h", "CRIMSON BAGS", "Space adventure (Black) M"),
+      v("i", "INVENTRE BAGS", "INVENTRE CLASSIC L"),
+      v("j", "CRIMSON BAGS", "Cosmic Navigator L"),
+      v("k", "WATER BOTTLES", "Cloud stiper Brown"),
+      v("l", "WATER BOTTLES", "Dual Sippers Bear"),
+      v("m", "WATER BOTTLES", "Urban Matt staniless steel Dark Pink"),
+      v("n", "WATER BOTTLES", "Smart Vaccum Blue and Pink"),
+    ]);
+    expect(Object.fromEntries(m)).toEqual({
+      a: "PPRDCHARMBAG-S", b: "PPRDCHARMBAG-S", c: "PRDRUNICORNBLACKBAG-M", d: "PRDRUNICORNNBLUEBAG-M",
+      e: "PRIDRUNICORNTURQBAG-M", f: "PRIRAREXNBLUEBAG-M", g: "PRPIPARADISEPURPLEBAG-M", h: "PRISPADVENTUREBLACKBAG-M",
+      i: "SCCLASSICBAGCRI-L", j: "SCCOSNGTRBAG-L", k: "WBCLSPBROWN", l: "WBDSPBEAR", m: "WBUMSTSTDPINK", n: "WMSVBLUEPINK",
+    });
+  });
+
+  it("never guesses: an ambiguous colour is left alone, and shoes are not name-matched", () => {
+    const m = matchMerchandiseByName(figures, [
+      v("x", "CRIMSON BAGS", "Space adventure(Blue) M"), // navy blue or sky blue? unknown
+      v("y", "NIVIA SHOES", "UK 10"),
+    ]);
     expect(m.size).toBe(0);
   });
 });
