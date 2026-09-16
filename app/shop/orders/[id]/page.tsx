@@ -9,6 +9,7 @@ import { Nav } from "@/components/Nav";
 import { Footer } from "@/components/Footer";
 import { ExchangeStatusBanner } from "@/components/shop/orders/exchange/ExchangeStatusBanner";
 import { MissingStatusBanner } from "@/components/shop/orders/missing/MissingStatusBanner";
+import { RETURNS_WINDOW_DAYS, formatWindowDate, windowLastDay } from "@/lib/exchange-shared";
 import {
   ShipmentHistory,
   ShipmentCard,
@@ -207,6 +208,13 @@ export default function OrderDetailPage() {
   // so the banner and button render nothing for them.
   const [canExchange, setCanExchange] = useState(false);
   const [canMissing, setCanMissing] = useState(false);
+  // 7-day post-delivery request window (from the day the LAST item arrived).
+  // `expiresAt` = exclusive cut-off; null while items are still on the way.
+  const [returnsWindow, setReturnsWindow] = useState<{
+    expiresAt: string | null;
+    expired: boolean;
+    allDelivered: boolean;
+  } | null>(null);
   const [activeExchange, setActiveExchange] = useState<{
     id: string;
     returnNumber: string | null;
@@ -234,6 +242,7 @@ export default function OrderDetailPage() {
           setOrder(d?.order ?? null);
           setCanExchange(Boolean(d?.canExchange));
           setCanMissing(Boolean(d?.canMissing));
+          setReturnsWindow(d?.returnsWindow ?? null);
           setActiveExchange(d?.activeExchange ?? null);
           setActiveMissing(d?.activeMissing ?? null);
         }),
@@ -647,6 +656,13 @@ export default function OrderDetailPage() {
               </div>
             )}
           </div>
+          {returnsWindow?.expiresAt && (
+            <p className="mt-2 text-[12.5px] text-ink-500">
+              {returnsWindow.expired
+                ? `Exchange / missing-item requests closed on ${formatWindowDate(windowLastDay(returnsWindow.expiresAt))} (${RETURNS_WINDOW_DAYS} days from delivery).`
+                : `Exchange / missing-item requests can be raised until ${formatWindowDate(windowLastDay(returnsWindow.expiresAt))} (${RETURNS_WINDOW_DAYS} days from delivery).`}
+            </p>
+          )}
           <ul className="mt-4 space-y-3">
             {order.items.map((it) => (
               <li

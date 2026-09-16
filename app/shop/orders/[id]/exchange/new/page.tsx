@@ -20,9 +20,11 @@ import {
   getLockedComponentSignatures,
   lockStateForUnit,
   classifyReturnItems,
+  computeReturnsWindow,
   getBookkitParcelDelivered,
   getPendingComponentVariantIds,
 } from "@/server/return-line-eligibility";
+import { RequestWindowClosedNotice } from "@/components/shop/orders/RequestWindowClosedNotice";
 import {
   fallbackBundleComponents,
   loadBookkitCategoryTreeUnion,
@@ -171,8 +173,7 @@ export default async function NewExchangePage({
     for (const c of comps) fallbackProductIds.add(c.productId);
 
   // Item-wise eligibility (2026-07-08): which order_items are delivered (and
-  // therefore exchangeable). There is no time window — a delivered item stays
-  // eligible forever.
+  // therefore exchangeable).
   const itemElig = await classifyReturnItems(
     orderId,
     order.orderNumber,
@@ -182,6 +183,19 @@ export default async function NewExchangePage({
   // Nothing physically delivered yet → nothing to exchange (a fully-pending
   // order). Delivered items in a partially-shipped order still pass.
   if (![...itemElig.values()].some((e) => e.delivered)) notFound();
+  // 7-day window from the day the LAST item arrived (2026-09-16): past the
+  // cut-off the form is replaced by a popup, same as the button gate hides
+  // the entry point.
+  const returnsWindow = computeReturnsWindow(itemElig);
+  if (returnsWindow.expired && returnsWindow.expiresAt) {
+    return (
+      <RequestWindowClosedNotice
+        flow="exchange"
+        expiresAt={returnsWindow.expiresAt.toISOString()}
+        orderHref={`/shop/orders/${id}`}
+      />
+    );
+  }
 
   // Cross-flow per-ITEM lock: order_items already in a NON-rejected exchange
   // OR missing request (freed only on rejection). Same Map shape the unit

@@ -2,6 +2,7 @@ import "server-only";
 import { sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { fallbackBundleComponents, loadBookkitCategoryTree } from "@/server/bundle-fallback";
+import { RETURNS_WINDOW_DAYS } from "@/lib/exchange-shared";
 
 function rows<T>(r: unknown): T[] {
   return r as unknown as T[];
@@ -325,12 +326,70 @@ export async function getHeldBackOrderItemIds(
  * active-request lock (item already in a non-rejected request) is layered on
  * top by the callers.
  *
- * NOTE (2026-07-23): the post-delivery time window was removed — a delivered
- * item stays eligible forever, so there is no `expired` state.
+ * The post-delivery time window is ORDER-level, not per item — see
+ * computeReturnsWindow below (7 days from the day the last item arrived).
  */
 export interface ItemEligibility {
   delivered: boolean;
   deliveredAt: Date | null;
+}
+
+/**
+ * Order-level request window (2026-09-16). The parent has RETURNS_WINDOW_DAYS
+ * calendar days, counted from the day the LAST item of the order was
+ * delivered, to raise an Exchange / Missing request.
+ *
+ *   • Not every item delivered yet → window OPEN (no expiry): the clock only
+ *     starts once the whole order has arrived, so the pieces still on the way
+ *     can never time out before they land.
+ *   • All delivered but some delivery date unknown → OPEN (never block on a
+ *     date we don't have — same rule the original 06-26 window used).
+ *   • Otherwise expiresAt = IST midnight at the end of the 7th calendar day
+ *     after the latest delivery date; expired once `now` reaches it.
+ */
+export interface ReturnsWindow {
+  allDelivered: boolean;
+  lastDeliveredAt: Date | null;
+  /** Exclusive cut-off instant; null = no expiry (yet). */
+  expiresAt: Date | null;
+  expired: boolean;
+}
+
+const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+
+export function computeReturnsWindow(
+  cls: Map<string, ItemEligibility>,
+  now: Date = new Date(),
+): ReturnsWindow {
+  const items = [...cls.values()];
+  const open: ReturnsWindow = {
+    allDelivered: false,
+    lastDeliveredAt: null,
+    expiresAt: null,
+    expired: false,
+  };
+  if (items.length === 0) return open;
+  if (!items.every((e) => e.delivered)) return open;
+  if (items.some((e) => !e.deliveredAt)) return { ...open, allDelivered: true };
+  const last = items.reduce<Date>(
+    (m, e) => (e.deliveredAt! > m ? e.deliveredAt! : m),
+    items[0].deliveredAt!,
+  );
+  // Calendar day of delivery in IST, then +N days +1 → exclusive midnight.
+  const ist = new Date(last.getTime() + IST_OFFSET_MS);
+  const expiresAt = new Date(
+    Date.UTC(
+      ist.getUTCFullYear(),
+      ist.getUTCMonth(),
+      ist.getUTCDate() + RETURNS_WINDOW_DAYS + 1,
+    ) - IST_OFFSET_MS,
+  );
+  return {
+    allDelivered: true,
+    lastDeliveredAt: last,
+    expiresAt,
+    expired: now.getTime() >= expiresAt.getTime(),
+  };
 }
 
 export async function classifyReturnItems(

@@ -14,7 +14,7 @@ import { firstPickupSaturday, toDbDate } from "@/lib/date";
 import { emitExchangeEvent } from "@/server/erp-bridge";
 import { notifyExchangeStatus } from "@/server/notify/notifications";
 import { isExchangeScopeRelaxed, isExchangeOwnershipRelaxed } from "@/server/exchange-gate";
-import { isOrderDeliveredForReturns } from "@/server/return-eligibility";
+import { isOrderDeliveredForReturns, getReturnsWindowForOrder } from "@/server/return-eligibility";
 import {
   getHeldBackOrderItemIds,
   getLockedComponentSignatures,
@@ -30,6 +30,7 @@ import {
   canTransition,
   isExchangeStatus,
   toCancelledReason,
+  windowClosedMessage,
   type ExchangeStatus,
 } from "@/lib/exchange-shared";
 
@@ -219,7 +220,6 @@ export async function createExchange(
   if (!order) return { ok: false, status: 404, error: "Order not found" };
   // Delivered gate matches the button + form page: local status OR the
   // audit/ERP shipment-mirror-derived status. See isOrderDeliveredForReturns.
-  // There is no time window — a delivered item is eligible forever.
   const delivered = await isOrderDeliveredForReturns(
     input.parentId,
     order.orderNumber,
@@ -232,6 +232,24 @@ export async function createExchange(
       status: 400,
       error:
         "Exchange is only available for delivered orders.",
+    };
+  }
+  // 7-day window from the day the LAST item arrived (2026-09-16). Same
+  // computation the button gate + form page use, so a stale open tab that
+  // submits after the cut-off is refused here too.
+  const window = await getReturnsWindowForOrder(
+    input.parentId,
+    order.id,
+    order.orderNumber,
+    order.status,
+    order.deliveredAt ?? null,
+  );
+  if (window?.expired && window.expiresAt) {
+    return {
+      ok: false,
+      status: 400,
+      error: windowClosedMessage("exchange", window.expiresAt),
+      details: { windowExpiresAt: window.expiresAt.toISOString() },
     };
   }
 
@@ -385,8 +403,7 @@ export async function createExchange(
   //    LOCKED: an item already in a non-rejected request (exchange OR
   //    missing) can't be re-requested until that request is rejected.
   //    Dev-relaxed (isExchangeScopeRelaxed) so testers on the prod snapshot
-  //    can still file. (There is no time window — a delivered item is
-  //    eligible forever.)
+  //    can still file.
   if (!isExchangeScopeRelaxed()) {
     // COMPONENT-level lock (2026-07-09): a Magic Box is one order_item, so the
     // lock must key on the specific component (requestedComponentPath), not the

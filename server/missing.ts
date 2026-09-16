@@ -5,7 +5,7 @@ import { missingItemClaims, missingItemClaimItems, orders, orderItems } from "@/
 import { allocClaimNumber } from "@/server/numbering";
 import { firstPickupSaturday, toDbDate } from "@/lib/date";
 import { isExchangeScopeRelaxed, isExchangeOwnershipRelaxed } from "@/server/exchange-gate";
-import { isOrderDeliveredForReturns } from "@/server/return-eligibility";
+import { isOrderDeliveredForReturns, getReturnsWindowForOrder } from "@/server/return-eligibility";
 import {
   getHeldBackOrderItemIds,
   getLockedComponentSignatures,
@@ -16,7 +16,7 @@ import {
   normalizeComponentName,
 } from "@/server/return-line-eligibility";
 import { findQtyOverages, formatQtyOverageError } from "@/server/return-qty-cap";
-import { toCancelledReason } from "@/lib/exchange-shared";
+import { toCancelledReason, windowClosedMessage } from "@/lib/exchange-shared";
 
 /**
  * Customer-raised "missing-item" claim service.
@@ -81,7 +81,6 @@ export async function createMissingClaim(
   if (!order) return { ok: false, status: 404, error: "Order not found" };
   // Delivered gate matches the button + form page: local status OR the
   // audit/ERP shipment-mirror-derived status. See isOrderDeliveredForReturns.
-  // There is no time window — a delivered item is eligible forever.
   const delivered = await isOrderDeliveredForReturns(
     input.parentId,
     order.orderNumber,
@@ -94,6 +93,23 @@ export async function createMissingClaim(
       status: 400,
       error:
         "Missing-item claims are only available for delivered orders.",
+    };
+  }
+  // 7-day window from the day the LAST item arrived (2026-09-16) — mirror of
+  // createExchange.
+  const window = await getReturnsWindowForOrder(
+    input.parentId,
+    order.id,
+    order.orderNumber,
+    order.status,
+    order.deliveredAt ?? null,
+  );
+  if (window?.expired && window.expiresAt) {
+    return {
+      ok: false,
+      status: 400,
+      error: windowClosedMessage("missing", window.expiresAt),
+      details: { windowExpiresAt: window.expiresAt.toISOString() },
     };
   }
 
@@ -228,8 +244,7 @@ export async function createMissingClaim(
   // 2. Per-ITEM guards (item-wise model, 2026-07-08 — replaces the old
   //    per-sale-order lock). LOCKED: item already in a non-rejected request
   //    (exchange OR missing) → blocked until that request is rejected.
-  //    Dev-relaxed so testers on the prod snapshot can still file. (There is
-  //    no time window — a delivered item is eligible forever.)
+  //    Dev-relaxed so testers on the prod snapshot can still file.
   if (!isExchangeScopeRelaxed()) {
     // COMPONENT-level lock (2026-07-09) — mirror of createExchange. Keys on the
     // specific component (missingComponentPath) so a Magic Box stays reportable
