@@ -765,7 +765,14 @@ export function BuyBox({
           type="button"
           onClick={handleAdd}
           disabled={!canAdd || addBusy || !activePriced}
-          className="flex-1 inline-flex items-center justify-center gap-2 rounded-full bg-brand text-white px-6 h-12 text-[14px] font-bold hover:bg-brand-600 active:scale-[0.99] transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-[inset_0_1px_0_rgba(255,255,255,0.25)]"
+          className={
+            "flex-1 inline-flex items-center justify-center gap-2 rounded-full px-6 h-12 text-[14px] font-bold active:scale-[0.99] transition-all disabled:cursor-not-allowed " +
+            // Sold out is a message, not a dimmed button: keep it fully
+            // legible in the warning colour rather than fading it to 40%.
+            (selectedOutOfStock && !added
+              ? "bg-red-50 text-red-700 border-2 border-red-300 disabled:opacity-100 tracking-wide uppercase"
+              : "bg-brand text-white hover:bg-brand-600 disabled:opacity-40 shadow-[inset_0_1px_0_rgba(255,255,255,0.25)]")
+          }
         >
           <AnimatePresence mode="wait">
             {added ? (
