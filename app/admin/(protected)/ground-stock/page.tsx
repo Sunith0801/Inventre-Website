@@ -46,7 +46,7 @@ type Row = {
 export default async function GroundStockPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; show?: string; page?: string; school?: string; stock?: string }>;
+  searchParams: Promise<{ q?: string; show?: string; page?: string; school?: string; stock?: string; cat?: string }>;
 }) {
   const sp = await searchParams;
   const q = (sp.q ?? "").trim();
@@ -58,6 +58,9 @@ export default async function GroundStockPage({
   // the audit's per-school bag/bottle rows), and the books shelf has no
   // school either — the dropdown applies to school stock only.
   const school = stock === "books" || stock === "merch" ? "" : (sp.school ?? "").trim();
+  // On the Merchandise tab the dropdown picks a category (Bags / Bottle /
+  // Shoes) instead of a school — the shelf is shared, the kind is what varies.
+  const cat = stock === "merch" ? (sp.cat ?? "").trim() : "";
 
   // Shelf per size: the audit's school for school stock, "All schools" for
   // the merged General Merchandise line, "Books shelf" for the books sheet.
@@ -73,6 +76,7 @@ export default async function GroundStockPage({
   const conds: ReturnType<typeof sql>[] = [];
   if (stock !== "all") conds.push(sql`${groupCase} = ${stock}`);
   if (school) conds.push(sql`g.school_name = ${school}`);
+  if (cat) conds.push(sql`g.keeper_category = ${cat}`);
   if (q) {
     const like = `%${q}%`;
     conds.push(
@@ -101,7 +105,7 @@ export default async function GroundStockPage({
      group by 1, 5
      ${having}`;
 
-  const [rowsRaw, countRaw, totalsRaw, schoolsRaw] = await Promise.all([
+  const [rowsRaw, countRaw, totalsRaw, schoolsRaw, catsRaw] = await Promise.all([
     db.execute(sql`${grouped} order by 5, 3, 1 limit ${PAGE} offset ${(page - 1) * PAGE}`),
     db.execute(sql`select count(*)::int as n from (${grouped}) t`),
     db.execute(sql`
@@ -123,7 +127,13 @@ export default async function GroundStockPage({
          and not (g.keeper_group = 'Books' or p.kind = 'book')
          and coalesce(g.keeper_group, '') <> 'General Merchandise'
        order by 1`),
+    db.execute(sql`
+      select distinct g.keeper_category as name
+        from ground_stock_sync g
+       where g.keeper_group = 'General Merchandise' and g.keeper_category is not null
+       order by 1`),
   ]);
+  const catOptions = (catsRaw as unknown as { name: string }[]).map((c) => c.name);
   const rows = (rowsRaw as unknown as Array<Record<string, unknown>>).map<Row>((r) => ({
     keeperSku: String(r.keeper_sku),
     description: (r.description as string | null) ?? null,
@@ -143,7 +153,7 @@ export default async function GroundStockPage({
   const pages = Math.max(1, Math.ceil(count / PAGE));
   const link = (patch: Record<string, string | number | undefined>) => {
     const u = new URLSearchParams();
-    const merged = { q, show, school, stock, page, ...patch };
+    const merged = { q, show, school, stock, cat, page, ...patch };
     for (const [k, v] of Object.entries(merged)) {
       if (v === undefined || v === "" || (k === "show" && v === "all") || (k === "stock" && v === "all") || (k === "page" && v === 1)) continue;
       u.set(k, String(v));
@@ -188,12 +198,12 @@ export default async function GroundStockPage({
                   ["all", "All stock"],
                   ["school", "School stock"],
                   ["books", "Books shelf"],
-                  ["merch", "Shoes · bags · bottles"],
+                  ["merch", "Merchandise"],
                 ] as const
               ).map(([k, label]) => (
                 <a
                   key={k}
-                  href={link({ stock: k, page: 1, school: k === "books" || k === "merch" ? "" : school })}
+                  href={link({ stock: k, page: 1, school: k === "books" || k === "merch" ? "" : school, cat: k === "merch" ? cat : "" })}
                   className={
                     "px-3 h-9 inline-flex items-center " +
                     (stock === k ? "bg-ink-900 text-white" : "text-ink-700 hover:bg-ink-50")
@@ -203,21 +213,37 @@ export default async function GroundStockPage({
                 </a>
               ))}
             </div>
-            <select
-              id="ground-stock-school"
-              name="school"
-              defaultValue={school}
-              disabled={stock === "books" || stock === "merch"}
-              title={stock === "books" || stock === "merch" ? "Shared shelf — not held per school" : undefined}
-              className="h-9 rounded-md border border-ink-200 px-2 text-[13px] bg-white disabled:opacity-40"
-            >
-              <option value="">All schools</option>
-              {schoolOptions.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
+            {stock === "merch" ? (
+              <select
+                id="ground-stock-cat"
+                name="cat"
+                defaultValue={cat}
+                className="h-9 rounded-md border border-ink-200 px-2 text-[13px] bg-white"
+              >
+                <option value="">All merchandise</option>
+                {catOptions.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <select
+                id="ground-stock-school"
+                name="school"
+                defaultValue={school}
+                disabled={stock === "books"}
+                title={stock === "books" ? "The books shelf is not held per school" : undefined}
+                className="h-9 rounded-md border border-ink-200 px-2 text-[13px] bg-white disabled:opacity-40"
+              >
+                <option value="">All schools</option>
+                {schoolOptions.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+            )}
             <input
               id="ground-stock-q"
               name="q"
