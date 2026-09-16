@@ -911,6 +911,58 @@ export const stockLedger = pgTable(
   })
 );
 
+// ─── Ground Stock bridge bookkeeping (migration 0076) ────────────────
+// The audit ERP's Ground Stock page is the source of truth for storefront
+// availability. The bridge writes the figure itself into `bins`; these two
+// tables record where each bin's number came from and how each tick went.
+
+export const groundStockSync = pgTable(
+  "ground_stock_sync",
+  {
+    variantId: uuid("variant_id")
+      .primaryKey()
+      .references(() => productVariants.id, { onDelete: "cascade" }),
+    itemCode: text("item_code").notNull(),
+    schoolCode: text("school_code"),
+    schoolName: text("school_name"),
+    available: integer("available").notNull().default(0),
+    counted: numeric("counted", { precision: 12, scale: 2 }),
+    packedOut: numeric("packed_out", { precision: 12, scale: 2 }),
+    snapshotAt: timestamp("snapshot_at", { withTimezone: true }),
+    matchKind: text("match_kind").notNull().default("sku"),
+    syncedAt: timestamp("synced_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    itemCodeIdx: index("ground_stock_sync_item_code_idx").on(t.itemCode),
+  })
+);
+
+export const groundStockSyncRuns = pgTable(
+  "ground_stock_sync_runs",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    startedAt: timestamp("started_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+    ok: boolean("ok").notNull().default(false),
+    trigger: text("trigger").notNull().default("cron"),
+    rowsFetched: integer("rows_fetched").notNull().default(0),
+    itemCodes: integer("item_codes").notNull().default(0),
+    matched: integer("matched").notNull().default(0),
+    unmatched: integer("unmatched").notNull().default(0),
+    changed: integer("changed").notNull().default(0),
+    cleared: integer("cleared").notNull().default(0),
+    error: text("error"),
+    unmatchedSample: jsonb("unmatched_sample"),
+  },
+  (t) => ({
+    startedIdx: index("ground_stock_sync_runs_started_idx").on(t.startedAt),
+  })
+);
+
 // ─── Phase 1 NEW: Tax / GST ─────────────────────────────────────────
 
 export const taxRates = pgTable(

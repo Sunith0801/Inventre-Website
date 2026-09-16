@@ -1,0 +1,13 @@
+# Ground Stock bridge — audit ERP Ground Stock → admin Stock module bins →
+# storefront availability. Every 5 minutes. Added 2026-09-16.
+#
+# Install on the prod host as /etc/cron.d/inventre-ground-stock (root-owned,
+# mode 0644) AFTER the build carrying app/api/cron/ground-stock-sync is live;
+# until then every tick logs a 404. CRON_TOKEN is the same value the
+# erp-poll/erp-drain lines in /etc/cron.d/inventre-erp use. `-m 240` matches
+# the route's maxDuration so two ticks never overlap; the route also holds a
+# Redis lock. Log: /var/log/inventre-ground-stock.log
+SHELL=/bin/sh
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+*/5 * * * * root  . /root/Inventre/.env.deploy && curl -fsS -m 240 -X POST -H "Authorization: Bearer $CRON_TOKEN" http://127.0.0.1:3010/api/cron/ground-stock-sync >> /var/log/inventre-ground-stock.log 2>&1

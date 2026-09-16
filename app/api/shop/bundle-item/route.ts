@@ -100,7 +100,8 @@ export async function GET(req: Request) {
       sku: v.sku,
       pricePaise: r?.pricePaise ?? null,
       mrpPaise: r?.mrpPaise ?? null,
-      available: r?.available ?? v.stockQty,
+      // Resolver figure only (Ground Stock bins) — never the legacy column.
+      available: r?.available ?? 0,
     };
   });
 

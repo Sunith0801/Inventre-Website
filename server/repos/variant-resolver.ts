@@ -10,13 +10,20 @@ import {
   products,
   productSchool,
 } from "@/db/schema";
+import { availabilityFor } from "@/features/stock/domain/availability";
+import { getGroundStockGate } from "@/server/ground-stock-gate";
 
 /**
  * Single source of truth for variant price + stock at read time.
  *
- * Reads from the NEW system (bins for stock, itemPrices for pricing) with
- * graceful fallback to the LEGACY columns (productVariants.stockQty,
- * products.basePrice + productSchool.overridePrice).
+ * Stock comes from `bins` only — the figure the Ground Stock bridge writes
+ * there every 5 minutes from the audit ERP (server/ground-stock-sync.ts).
+ * The legacy `productVariants.stockQty` column is deliberately NOT consulted:
+ * it was set once at import and never moved, and the 2026-09-16 rule is that
+ * no separate or outdated quantity may decide availability. The rule itself
+ * (which kinds are gated, what "no bin" means) lives in
+ * features/stock/domain/availability.ts; pricing still falls back to the
+ * legacy columns (products.basePrice + productSchool.overridePrice).
  *
  * Used by: shop product list/detail, cart read, checkout.
  *
@@ -31,7 +38,7 @@ export type VariantInfo = {
   pricePaise: number;
   /** mrp in paise; null if not set. */
   mrpPaise: number | null;
-  /** Total available stock = actualQty - reservedQty (or legacy stockQty). */
+  /** Units the storefront may sell — the Ground Stock bin read through the availability rule. */
   available: number;
   inStock: boolean;
   /** True when an itemPrices row explicitly priced this variant — even at
@@ -69,7 +76,7 @@ export async function resolveVariants(
     );
   const productIds = Array.from(new Set(variantRows.map((v) => v.productId)));
 
-  const [binRows, defaultPriceList, priceRows, productRows, psRows] =
+  const [binRows, defaultPriceList, priceRows, productRows, psRows, gate] =
     await Promise.all([
       db.select().from(bins).where(inArray(bins.variantId, variantIds)),
       db.select().from(priceLists).where(eq(priceLists.isDefault, true)).limit(1),
@@ -94,6 +101,7 @@ export async function resolveVariants(
               )
             )
         : Promise.resolve([] as (typeof productSchool.$inferSelect)[]),
+      getGroundStockGate(),
     ]);
 
   const productById = new Map(productRows.map((p) => [p.id, p]));
@@ -134,14 +142,14 @@ export async function resolveVariants(
     if (!product) continue;
     const ps = psByProduct.get(v.productId);
 
-    // Stock: prefer bins, fallback to legacy stockQty. This is a made-to-order
-    // uniform/book catalogue with no stock tracking — every variant carries
-    // stock_qty = 0 and there is no bin data. Treat "untracked" (no bin row,
-    // legacy 0) as freely available so nothing shows as out of stock.
-    const newStock = stockByVariant.get(v.id);
-    const legacyStock = v.stockQty;
-    const available =
-      newStock != null ? newStock : legacyStock > 0 ? legacyStock : 99999;
+    // Stock: the bin the Ground Stock bridge maintains, interpreted by the
+    // one availability rule. No bin = never counted by the audit; what that
+    // means depends on the product kind and the admin gate.
+    const available = availabilityFor({
+      kind: product.kind,
+      binAvailable: stockByVariant.get(v.id) ?? null,
+      gate,
+    });
 
     // Price: prefer itemPrices, fallback to productSchool.overridePrice, then product.basePrice
     const newPrice = priceByVariant.get(v.id);

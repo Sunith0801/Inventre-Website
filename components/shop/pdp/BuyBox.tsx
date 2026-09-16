@@ -167,14 +167,19 @@ export function BuyBox({
   }, []);
 
   const noSizesAvailable = product.sizes.length === 0;
-  // Per ops directive (2026-05-26): never block add-to-cart on stock. Stock
-  // is no longer synced from ERP — keep variantStock around for admin
-  // diagnostics but always treat the variant as available to the customer.
+  // Stock is synced from the audit's Ground Stock every 5 minutes
+  // (2026-09-16), so a size with nothing counted cannot be added. For the
+  // single-axis picker the size keys `variantStocks`; for the multi-axis
+  // picker the resolved Colour × Size variant carries its own figure.
   const variantStock = size ? product.variantStocks?.[size] : undefined;
-  void variantStock;
-  const sizeOutOfStock = false;
+  const sizeOutOfStock = variantStock !== undefined && variantStock <= 0;
+  const resolvedVariantStock = resolvedVariantId
+    ? product.variants?.find((v) => v.id === resolvedVariantId)?.stockQty
+    : undefined;
+  const resolvedVariantOutOfStock =
+    resolvedVariantStock !== undefined && resolvedVariantStock <= 0;
   const canAdd = useMultiAxisPicker
-    ? Boolean(resolvedVariantId) && product.inStock
+    ? Boolean(resolvedVariantId) && product.inStock && !resolvedVariantOutOfStock
     : !noSizesAvailable && size && product.inStock && !sizeOutOfStock;
 
   // When the product has a non-size attribute (Colour, House, …), resolve

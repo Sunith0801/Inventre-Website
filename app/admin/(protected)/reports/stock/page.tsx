@@ -14,6 +14,7 @@ import {
   EmptyState,
 } from "@/components/admin/ui/primitives";
 import { Boxes, AlertTriangle } from "lucide-react";
+import { GroundStockSyncCard } from "@/components/admin/GroundStockSyncCard";
 
 export const dynamic = "force-dynamic";
 
@@ -60,6 +61,10 @@ export default async function StockReport() {
         <Stat label="Units on hand" value={Number(totals?.totalActual ?? 0).toLocaleString("en-IN")} iconTone="success" />
         <Stat label="Units reserved" value={Number(totals?.totalReserved ?? 0).toLocaleString("en-IN")} iconTone="info" />
         <Stat label="Inventory value" value={<Money paise={Number(totals?.totalValue ?? 0)} />} iconTone="brand" />
+      </div>
+
+      <div className="mb-6">
+        <GroundStockSyncCard />
       </div>
 
       <Card padded={false}>

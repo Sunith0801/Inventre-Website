@@ -579,9 +579,11 @@ export async function listSchoolProducts(schoolId: string): Promise<ProductCardD
         .sort((a, b) => a.sortOrder - b.sortOrder);
       const productVariantsList = vars.filter((v) => v.productId === product.id);
       // Use resolved (bins/itemPrices) with legacy fallback.
+      // Availability comes from the resolver only (Ground Stock bins via the
+      // one rule); a variant the resolver dropped (inactive) counts as none.
       const totalStock = productVariantsList.reduce((s, v) => {
         const r = resolved.get(v.id);
-        return s + (r?.available ?? v.stockQty);
+        return s + (r?.available ?? 0);
       }, 0);
       // Use price from first variant's resolved info; falls back to product.basePrice
       const firstVariant = productVariantsList[0];
@@ -598,10 +600,10 @@ export async function listSchoolProducts(schoolId: string): Promise<ProductCardD
         price: rupeesFromPaise(pricePaise),
         mrp: mrpPaise != null ? rupeesFromPaise(mrpPaise) : null,
         sizes: cleanSizeLabels(productVariantsList.map((v) => v.size)),
-        // Per ops directive (2026-05-26): never surface "out of stock" to
-        // customers. We don't sync bins from ERP anymore, so totalStock is
-        // always 0 here — always report inStock=true.
-        inStock: true,
+        // In stock when any size can be bought. Since 2026-09-16 the figure
+        // behind this is the audit's Ground Stock count (see variant-resolver);
+        // a product with no variant rows at all has nothing to gate on.
+        inStock: productVariantsList.length === 0 || totalStock > 0,
         badge: productBadge?.badge ?? null,
         img: safeImgUrl(ps.customImageUrl ?? productImagesList[0]?.url ?? null),
         required: ps.isRequired,
@@ -779,7 +781,7 @@ export async function listProductsForStudent(args: {
     const productVariantsList = vars.filter((v) => v.productId === product.id);
     const totalStock = productVariantsList.reduce((s, v) => {
       const r = resolved.get(v.id);
-      return s + (r?.available ?? v.stockQty);
+      return s + (r?.available ?? 0);
     }, 0);
     const firstVariant = productVariantsList[0];
     const firstResolved = firstVariant ? resolved.get(firstVariant.id) : null;
@@ -836,8 +838,8 @@ export async function listProductsForStudent(args: {
       sizes: isMultiAxisKit
         ? []
         : cleanSizeLabels(productVariantsList.map((v) => v.size)),
-      // Per ops directive (2026-05-26): never out-of-stock. See note above.
-      inStock: true,
+      // Ground Stock decides (see the catalog list above).
+      inStock: productVariantsList.length === 0 || totalStock > 0,
       badge: productBadge?.badge ?? null,
       img: safeImgUrl(ps.customImageUrl ?? productImagesList[0]?.url ?? null),
       required: ps.isRequired,
@@ -963,7 +965,7 @@ export async function getProductBySlug(
       : [];
     const totalStock = variants.reduce((s, v) => {
       const r = resolved.get(v.id);
-      return s + (r?.available ?? v.stockQty);
+      return s + (r?.available ?? 0);
     }, 0);
     const firstVariant = variants[0];
     const firstResolved = firstVariant ? resolved.get(firstVariant.id) : null;
@@ -1009,8 +1011,8 @@ export async function getProductBySlug(
       // If we empty them here that detection fails and the user sees
       // "This product currently has no available sizes."
       sizes: cleanSizeLabels(variants.map((v) => v.size)),
-      // Per ops directive (2026-05-26): never out-of-stock. See note above.
-      inStock: true,
+      // Ground Stock decides: in stock while any size can be bought.
+      inStock: variants.length === 0 || totalStock > 0,
       badge: badges[0]?.badge ?? null,
       img: safeImgUrl(psRow?.customImageUrl ?? images[0]?.url ?? null),
       required: psRow?.isRequired ?? false,
@@ -1031,7 +1033,8 @@ export async function getProductBySlug(
           id: v.id,
           size: v.size,
           sku: v.sku,
-          stockQty: r?.available ?? v.stockQty,
+          // Resolver figure only — never the legacy column.
+          stockQty: r?.available ?? 0,
           pricePaise,
           mrpPaise: r?.mrpPaise ?? resolvedMrpPaise,
           // Explicit ₹0 item_prices rows are real prices (school-included
