@@ -90,32 +90,34 @@ describe("matchItemCodes", () => {
 });
 
 describe("keeperRowsToFigures — Ground Stock (New)", () => {
-  it("fans a keeper row out to every legacy code it replaced or covers", () => {
+  it("takes the page's Avail. (gs_available) for every legacy code on a linked row, never the keeper qty", () => {
+    // SMS Grade 6 Girls Pant M22 on 2026-09-16: keeper qty 113 (shared pile),
+    // page Avail. 2 for St Michaels and 117 for Winmore Jakkur.
     const m = keeperRowsToFigures([
-      {
-        keeper_sku: "RUPPRPRSCDGNSOCKKL-2XL",
-        school_name: "KLINK-Kidlink School",
-        school_code: "KLINK",
-        qty: 42,
-        old_skus: ["KLS SocksC2XL$"],
-        covers_codes: ["KLS Sports SocksC2XL$"],
-        snapshot_at: "2026-09-10T11:54:42",
-      },
+      { keeper_sku: "RUSCHSGBLUFP-22", school_code: "SMSAW", school_name: "SMSAW-St. Michaels School", qty: 113, gs_linked: true, gs_stock: 2, gs_packed: 0, gs_available: 2, gs_snapshot_at: null, snapshot_at: "2026-08-18T17:23:32", old_skus: ["SMS Grade 6 Girls PantM22$$"], covers_codes: ["SMSAW", "WMAJK"] },
+      { keeper_sku: "RUSCHSGBLUFP-22", school_code: "WMAJK", school_name: "WMAJK-Winmore Academy Jakkur", qty: 113, gs_linked: true, gs_stock: 117, gs_packed: 0, gs_available: 117, gs_snapshot_at: "2026-07-21T10:30:30", old_skus: ["WM JK Girls PantM22$$"], covers_codes: ["WMAJK", "SMSAW"] },
     ]);
-    expect([...m.keys()].sort()).toEqual(["KLS SocksC2XL$", "KLS Sports SocksC2XL$"]);
-    const f = m.get("KLS SocksC2XL$")!;
-    expect(f.available).toBe(42);
-    expect(f.keeperSku).toBe("RUPPRPRSCDGNSOCKKL-2XL");
-    expect(f.schoolCode).toBe("KLINK");
-    expect(f.snapshotAt).toBe("2026-09-10T11:54:42");
+    expect(m.get("SMS Grade 6 Girls PantM22$$")!.available).toBe(2);
+    expect(m.get("SMS Grade 6 Girls PantM22$$")!.snapshotAt).toBe("2026-08-18T17:23:32");
+    expect(m.get("WM JK Girls PantM22$$")!.available).toBe(117);
+    expect(m.get("WM JK Girls PantM22$$")!.counted).toBe(117);
+    expect(m.get("WM JK Girls PantM22$$")!.snapshotAt).toBe("2026-07-21T10:30:30");
+    expect(m.get("SMS Grade 6 Girls PantM22$$")!.keeperSku).toBe("RUSCHSGBLUFP-22");
   });
 
-  it("a zero or negative pile is sold out; a duplicated code keeps the larger pile", () => {
+  it("an unlinked row (the page prints a dash) yields no figure at all", () => {
     const m = keeperRowsToFigures([
-      { keeper_sku: "A", qty: -3, old_skus: ["X"] },
-      { keeper_sku: "B", qty: 5, old_skus: ["Y"] },
-      { keeper_sku: "C", qty: 2, old_skus: ["Y"] },
-      { keeper_sku: "D", qty: "7.9", old_skus: [" ", null as unknown as string, "Z"] },
+      { keeper_sku: "A", qty: 50, gs_linked: false, gs_available: null, old_skus: ["X"] },
+    ]);
+    expect(m.size).toBe(0);
+  });
+
+  it("a zero or negative Avail. is sold out; a duplicated code keeps the larger figure", () => {
+    const m = keeperRowsToFigures([
+      { keeper_sku: "A", gs_linked: true, gs_available: -3, old_skus: ["X"] },
+      { keeper_sku: "B", gs_linked: true, gs_available: 5, old_skus: ["Y"] },
+      { keeper_sku: "C", gs_linked: true, gs_available: 2, old_skus: ["Y"] },
+      { keeper_sku: "D", gs_linked: true, gs_available: "7.9", old_skus: [" ", null as unknown as string, "Z"] },
     ]);
     expect(m.get("X")!.available).toBe(0);
     expect(m.get("X")!.rawAvailable).toBe(-3);

@@ -205,7 +205,7 @@ export async function runGroundStockSync(
               reservedDelta: 0,
               reason: "adjustment",
               refType: "ground_stock",
-              notes: `ground_stock_sync ${m.itemCode}: keeper=${fig.keeperSku ?? "-"} qty=${fig.rawAvailable}`,
+              notes: `ground_stock_sync ${m.itemCode}: keeper=${fig.keeperSku ?? "-"} stock=${fig.counted} packed=${fig.packedOut} avail=${fig.rawAvailable}`,
             },
             { allowNegative: false }
           );

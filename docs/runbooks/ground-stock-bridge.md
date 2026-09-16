@@ -44,8 +44,14 @@ The legacy `product_variants.stock_qty` column is no longer read anywhere.
 | Legacy codes with no storefront SKU | 832 (retired codes the keeper rows still list) |
 | Active garments with no keeper row at all | 327, of which 125 are test/junk variants with no school |
 
-A keeper SKU is one shelf; a "shared" SKU is sold by several schools, so two
-legacy codes of one row read the same quantity on purpose.
+**Which number.** Each keeper row carries two: `qty`, the keeper count (one
+shared pile, repeated on every school's row, seeded 2026-08-18 and rarely
+recounted), and `gs_available`, the per-school mirror the page's table shows
+as **Avail.** ("Stock − Packed, per Ground Stock"). The storefront takes
+`gs_available`, so a size reads exactly what a person sees on the page for
+that school. Rows the mirror has no figure for (`gs_linked` false, the page
+prints a dash) yield nothing and the size counts as never counted.
+Discovered 2026-09-16 on SMS Grade 6 Girls Pant M22: qty 113, Avail. 2.
 
 The per-school Ground Stock dashboard is still available at
 `/api/ground-stock/dashboard` (its aggregator `aggregateGroundStock` stays in

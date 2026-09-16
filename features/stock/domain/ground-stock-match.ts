@@ -183,26 +183,40 @@ export function matchItemCodes(
 
 // ─── Ground Stock (New) — keeper-SKU rows ────────────────────────────────
 //
-// The audit's "Ground Stock (New)" page (/api/keeper-stock/dashboard) counts
-// stock per KEEPER SKU — the re-branded warehouse code — one physical pile
-// per SKU, fanned out into one row per school that sells it. The storefront
-// still names variants by the LEGACY ERP item code, and every keeper row
-// lists the legacy codes it replaced (`old_skus`) plus any it covers
-// (`covers_codes`). That list is the join: each legacy code becomes a figure
-// carrying the row's `qty`. Measured 2026-09-16: 4,292 rows, 4,638 legacy
-// codes, 3,801 of them storefront SKUs, no code in more than one row.
+// The audit's "Ground Stock (New)" page (/api/keeper-stock/dashboard) shows
+// one row per (school, keeper SKU). Two quantities live on each row and they
+// are NOT the same thing:
 //
-// `qty` is the shelf. A "shared" keeper SKU is one pile several schools sell
-// from, so two legacy codes of the same row deliberately read the same
-// quantity — either school can sell while the pile lasts. Should a code ever
-// appear under two rows, the larger figure wins rather than the sum: a pile
-// counted twice is still one pile.
+//   qty            the keeper count — one physical pile per keeper SKU, the
+//                  same number repeated on every school's row (seeded from
+//                  the old sheets on 2026-08-18 and rarely recounted). The
+//                  page shows it only inside the count-entry sheet.
+//   gs_available   what the page's table calls "Avail." — the per-school
+//                  Ground Stock mirror, "Stock − Packed" for THAT school's
+//                  legacy item codes. This is the number a person reading
+//                  the page for a school sees, and the number the storefront
+//                  must agree with (2026-09-16: SMS Grade 6 Girls Pant M22
+//                  read qty 113 but Avail. 2; 1,935 of 4,292 rows differ).
+//
+// So a legacy code takes its row's gs_available. Rows the mirror has no
+// figure for (`gs_linked` false — the page prints a dash) yield nothing:
+// the storefront then treats the size as never counted. Each keeper row
+// lists the legacy codes it replaced (`old_skus`) or covers; those are the
+// storefront SKUs. Measured 2026-09-16: 4,292 rows, 4,638 legacy codes,
+// 3,801 of them storefront SKUs, no code on more than one row. Should one
+// ever be, the larger figure wins rather than the sum.
 
 export type KeeperStockRow = {
   keeper_sku?: string | null;
   school_code?: string | null;
   school_name?: string | null;
+  /** Keeper count (shared pile). Not the storefront figure — see above. */
   qty?: number | string | null;
+  gs_linked?: boolean | null;
+  gs_stock?: number | string | null;
+  gs_packed?: number | string | null;
+  gs_available?: number | string | null;
+  gs_snapshot_at?: string | null;
   old_skus?: string[] | null;
   covers_codes?: string[] | null;
   snapshot_at?: string | null;
@@ -213,7 +227,8 @@ export type KeeperFigure = GroundStockFigure & { keeperSku: string | null };
 export function keeperRowsToFigures(rows: KeeperStockRow[]): Map<string, KeeperFigure> {
   const out = new Map<string, KeeperFigure>();
   for (const r of rows) {
-    const qty = num(r.qty);
+    if (!r.gs_linked) continue;
+    const avail = num(r.gs_available);
     const codes = new Set<string>();
     for (const c of [...(r.old_skus ?? []), ...(r.covers_codes ?? [])]) {
       const code = (c ?? "").trim();
@@ -221,17 +236,17 @@ export function keeperRowsToFigures(rows: KeeperStockRow[]): Map<string, KeeperF
     }
     for (const code of codes) {
       const cur = out.get(code);
-      if (cur && cur.rawAvailable >= qty) continue;
+      if (cur && cur.rawAvailable >= avail) continue;
       out.set(code, {
         itemCode: code,
         keeperSku: r.keeper_sku ?? null,
         schoolCode: r.school_code ?? null,
         schoolName: r.school_name ?? null,
-        available: Math.max(0, Math.trunc(qty)),
-        rawAvailable: qty,
-        counted: qty,
-        packedOut: 0,
-        snapshotAt: r.snapshot_at ?? null,
+        available: Math.max(0, Math.trunc(avail)),
+        rawAvailable: avail,
+        counted: num(r.gs_stock),
+        packedOut: num(r.gs_packed),
+        snapshotAt: r.gs_snapshot_at ?? r.snapshot_at ?? null,
       });
     }
   }
