@@ -99,6 +99,7 @@ const groups: NavGroup[] = [
     kicker: "Catalog",
     items: [
       { href: "/admin/catalog", label: "Catalog", icon: Eye, perm: "nav:catalog" },
+      { href: "/admin/ground-stock", label: "Ground Stock", icon: Boxes, perm: "nav:catalog" },
     ],
   },
   {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   aggregateGroundStock,
+  keeperRowsToFigures,
   matchItemCodes,
   normalizeItemCode,
 } from "./ground-stock-match";
@@ -85,5 +86,42 @@ describe("matchItemCodes", () => {
     const r = matchItemCodes(["SAS BP Belt", ""], variants);
     expect(r.matches).toEqual([]);
     expect(r.unmatched).toEqual(["SAS BP Belt"]);
+  });
+});
+
+describe("keeperRowsToFigures — Ground Stock (New)", () => {
+  it("fans a keeper row out to every legacy code it replaced or covers", () => {
+    const m = keeperRowsToFigures([
+      {
+        keeper_sku: "RUPPRPRSCDGNSOCKKL-2XL",
+        school_name: "KLINK-Kidlink School",
+        school_code: "KLINK",
+        qty: 42,
+        old_skus: ["KLS SocksC2XL$"],
+        covers_codes: ["KLS Sports SocksC2XL$"],
+        snapshot_at: "2026-09-10T11:54:42",
+      },
+    ]);
+    expect([...m.keys()].sort()).toEqual(["KLS SocksC2XL$", "KLS Sports SocksC2XL$"]);
+    const f = m.get("KLS SocksC2XL$")!;
+    expect(f.available).toBe(42);
+    expect(f.keeperSku).toBe("RUPPRPRSCDGNSOCKKL-2XL");
+    expect(f.schoolCode).toBe("KLINK");
+    expect(f.snapshotAt).toBe("2026-09-10T11:54:42");
+  });
+
+  it("a zero or negative pile is sold out; a duplicated code keeps the larger pile", () => {
+    const m = keeperRowsToFigures([
+      { keeper_sku: "A", qty: -3, old_skus: ["X"] },
+      { keeper_sku: "B", qty: 5, old_skus: ["Y"] },
+      { keeper_sku: "C", qty: 2, old_skus: ["Y"] },
+      { keeper_sku: "D", qty: "7.9", old_skus: [" ", null as unknown as string, "Z"] },
+    ]);
+    expect(m.get("X")!.available).toBe(0);
+    expect(m.get("X")!.rawAvailable).toBe(-3);
+    expect(m.get("Y")!.available).toBe(5);
+    expect(m.get("Y")!.keeperSku).toBe("B");
+    expect(m.get("Z")!.available).toBe(7);
+    expect(m.size).toBe(3);
   });
 });

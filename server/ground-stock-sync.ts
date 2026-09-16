@@ -14,19 +14,28 @@ import { redis } from "@/server/redis";
 import { invalidateCatalog } from "@/server/cache";
 import { applyStockChange, getDefaultWarehouseId } from "@/server/repos/inventory";
 import {
-  aggregateGroundStock,
+  keeperRowsToFigures,
   matchItemCodes,
-  type GroundStockRow,
+  type KeeperStockRow,
 } from "@/features/stock/domain/ground-stock-match";
 import { isCountedKind } from "@/features/stock/domain/availability";
 
 /**
  * Ground Stock bridge — audit ERP → admin Stock module, every 5 minutes.
  *
+ * Source (since 2026-09-16 afternoon, user's call): the audit's
+ * "Ground Stock (New)" page — /api/keeper-stock/dashboard — the keeper-SKU
+ * count of what is physically in the warehouse. Its rows list the legacy
+ * ERP item codes each keeper SKU replaced, which is how a pile lands on a
+ * storefront variant (features/stock/domain/ground-stock-match.ts,
+ * `keeperRowsToFigures`). The earlier source, the per-school Ground Stock
+ * dashboard, is no longer read; variants only it reported are cleared to
+ * zero on the first tick after the switch.
+ *
  * One tick:
- *   1. GET the audit's /api/ground-stock/dashboard with the poll account
- *      (the same login the ERP status poller uses; see server/erp-jwt.ts).
- *   2. Fold the rows into one available figure per ERP item code.
+ *   1. GET the keeper dashboard with the poll account (the same login the
+ *      ERP status poller uses; see server/erp-jwt.ts).
+ *   2. Fan every row out to its legacy item codes, one figure per code.
  *   3. Map item codes onto storefront variants (features/stock/domain).
  *   4. For every matched variant of a counted kind, set its bin in the
  *      default warehouse to the audit figure — through applyStockChange so
@@ -51,7 +60,8 @@ import { isCountedKind } from "@/features/stock/domain/availability";
 
 const LOCK_KEY = "ground-stock-sync:lock";
 const LOCK_TTL_SECONDS = 240;
-const DASHBOARD_PATH = "/api/ground-stock/dashboard";
+const DASHBOARD_PATH = "/api/keeper-stock/dashboard";
+const SOURCE = "keeper";
 const UNMATCHED_SAMPLE = 60;
 
 export type GroundStockSyncResult = {
@@ -70,7 +80,7 @@ export type GroundStockSyncResult = {
   skipped?: "locked" | "not_configured";
 };
 
-type DashboardPayload = { rows?: GroundStockRow[] };
+type DashboardPayload = { rows?: KeeperStockRow[] };
 
 async function acquireLock(): Promise<boolean> {
   try {
@@ -137,12 +147,12 @@ export async function runGroundStockSync(
     if (!rows) throw new Error("dashboard payload has no rows[]");
     if (rows.length === 0) {
       // An empty dashboard is not "everything sold out" — it is a broken
-      // feed (the audit has 12 scopes and thousands of rows). Refuse to act.
+      // feed (the audit has 12 schools and ~4,300 rows). Refuse to act.
       throw new Error("dashboard returned 0 rows; leaving stock untouched");
     }
 
-    // 2. Aggregate.
-    const figures = aggregateGroundStock(rows);
+    // 2. Fan out to legacy item codes.
+    const figures = keeperRowsToFigures(rows);
 
     // 3. Match.
     const variantRows = await db
@@ -195,7 +205,7 @@ export async function runGroundStockSync(
               reservedDelta: 0,
               reason: "adjustment",
               refType: "ground_stock",
-              notes: `ground_stock_sync ${m.itemCode}: counted=${fig.counted} packed_out=${fig.packedOut} available=${fig.rawAvailable}`,
+              notes: `ground_stock_sync ${m.itemCode}: keeper=${fig.keeperSku ?? "-"} qty=${fig.rawAvailable}`,
             },
             { allowNegative: false }
           );
@@ -223,6 +233,8 @@ export async function runGroundStockSync(
           packedOut: String(fig.packedOut),
           snapshotAt: fig.snapshotAt ? new Date(fig.snapshotAt) : null,
           matchKind: m.matchKind,
+          keeperSku: fig.keeperSku,
+          source: SOURCE,
           syncedAt: now,
         })
         .onConflictDoUpdate({
@@ -236,6 +248,8 @@ export async function runGroundStockSync(
             packedOut: String(fig.packedOut),
             snapshotAt: fig.snapshotAt ? new Date(fig.snapshotAt) : null,
             matchKind: m.matchKind,
+            keeperSku: fig.keeperSku,
+            source: SOURCE,
             syncedAt: now,
           },
         });
@@ -267,7 +281,7 @@ export async function runGroundStockSync(
             reservedDelta: 0,
             reason: "adjustment",
             refType: "ground_stock",
-            notes: `ground_stock_sync ${s.itemCode}: no longer reported by Ground Stock`,
+            notes: `ground_stock_sync ${s.itemCode}: no longer reported by Ground Stock (New)`,
           },
           { allowNegative: true }
         );

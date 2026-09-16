@@ -86,7 +86,7 @@ export function GroundStockSyncCard() {
       <div className="px-5 lg:px-6 pt-5 lg:pt-6 pb-3 flex flex-wrap items-start justify-between gap-3">
         <CardHeader
           title="Ground Stock bridge"
-          description="Audit ERP Ground Stock → these bins → storefront availability. Runs every 5 minutes."
+          description="Audit ERP “Ground Stock (New)” (keeper-SKU shelf count) → the Stock module bins → storefront availability. Runs every 5 minutes."
         />
         <Button
           size="sm"
@@ -105,7 +105,7 @@ export function GroundStockSyncCard() {
           <div className="font-medium">{fmt(status?.lastOkAt ?? null)}</div>
         </div>
         <div>
-          <div className="text-ink-500">SKUs tracked by the audit</div>
+          <div className="text-ink-500">Sizes tracked by the audit</div>
           <div className="font-medium">
             {status?.tracked ?? "—"}{" "}
             <span className="text-ink-500 font-normal">

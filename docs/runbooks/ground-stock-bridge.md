@@ -2,15 +2,18 @@
 
 **Added 2026-09-16 · branch `feat/ground-stock-availability`**
 
-The audit ERP's **Ground Stock** page (per-school physical counts, netted
-against packing-seal deductions) is the source of truth for whether a size can
-be bought on inventre.in. Every 5 minutes the bridge copies its figures into the
+The audit ERP's **Ground Stock (New)** page (keeper-SKU shelf count, the
+"Ground Stock (New)" tab under Warehouse → Inventory → Stock) is the source of
+truth for whether a size can be bought on inventre.in. (The first cut, the
+same morning, read the per-school Ground Stock dashboard; the user switched it
+to Ground Stock (New) the same afternoon, and the sizes only the old page knew
+were zeroed on the first tick.) Every 5 minutes the bridge copies its figures into the
 admin **Stock module** (`bins`), and every storefront surface reads those bins
 through one rule.
 
 ```
-audit /api/ground-stock/dashboard  ──(poll login, every 5 min)──▶  server/ground-stock-sync.ts
-        3,704 rows, 12 scopes                                        │ match item_code → product_variants.sku / erp_name
+audit /api/keeper-stock/dashboard  ──(poll login, every 5 min)──▶  server/ground-stock-sync.ts
+   4,292 keeper rows × old_skus[]                                    │ legacy item code → product_variants.sku / erp_name
                                                                      ▼
                                               bins (admin Stock module) + stock_ledger "adjustment" rows
                                                                      │
@@ -30,23 +33,29 @@ audit /api/ground-stock/dashboard  ──(poll login, every 5 min)──▶  ser
 Gate off (admin switch) ⇒ everything available, the pre-bridge behaviour.
 The legacy `product_variants.stock_qty` column is no longer read anywhere.
 
-## Coverage measured 2026-09-16 (dev clone vs live audit)
+## Coverage measured 2026-09-16 afternoon (dev clone vs live Ground Stock (New))
 
 | | |
 |---|---|
-| Audit item codes | 3,520 (from 3,704 scope rows) |
-| Matched to a storefront variant | 3,358 (3,354 exact SKU, 4 normalised) |
-| Written to bins (counted kinds only) | 3,327 |
-| Of which in stock / sold out | 2,155 / 1,172 |
-| Audit codes with no storefront SKU | 162 (size-encoding differences, un-sized templates such as `SAS BP Belt`) |
-| Active garments with no audit row at all | 516 (Keesara 145, Winmore Whitefield 78, St Michaels 37 …) — sold out under the default policy |
+| Keeper rows (school × keeper SKU) | 4,292 |
+| Legacy item codes listed on those rows | 4,638 |
+| Matched to a storefront variant | 3,806 (3,799 counted kinds written to bins) |
+| Of which in stock / sold out | 2,248 / 1,551 |
+| Legacy codes with no storefront SKU | 832 (retired codes the keeper rows still list) |
+| Active garments with no keeper row at all | 327, of which 125 are test/junk variants with no school |
 
-1,104 audit codes read **below zero** on the dashboard (deductions past the last
-count). The audit's own page shows them as "out"; the storefront agrees.
+A keeper SKU is one shelf; a "shared" SKU is sold by several schools, so two
+legacy codes of one row read the same quantity on purpose.
+
+The per-school Ground Stock dashboard is still available at
+`/api/ground-stock/dashboard` (its aggregator `aggregateGroundStock` stays in
+the domain module) but is not read by the bridge.
 
 ## Operating it
 
-* **Admin** → Reports → Stock: the *Ground Stock bridge* card shows the last
+* **Admin** → Catalog → **Ground Stock** (left menu): per-size table with
+  keeper SKU, school, shelf count and count date, searchable, filter in/out.
+  The same *Ground Stock bridge* card also sits on Reports → Stock. It shows the last
   runs, tracked/in-stock/sold-out counts, unmatched codes, a **Sync now**
   button, and the two switches (gate on/off; uncounted garments sold out / sellable).
 * **API**: `GET/POST /api/admin/stock/ground-sync` (catalog.read / catalog.write).
@@ -56,7 +65,7 @@ count). The audit's own page shows them as "out"; the storefront agrees.
 * **Credentials**: the audit login the ERP status poller already uses
   (`STAGING_ERP_API_BASE_URL` / `STAGING_ERP_POLL_USER` / `STAGING_ERP_POLL_PASS`
   in `.env.deploy`, selected by `ERP_TARGET`). That account must hold the
-  audit's `ground_stock` module; verified 2026-09-16.
+  audit's `ws_ground_stock_new` module; verified 2026-09-16.
 * **Failure mode**: if the audit is unreachable or returns 0 rows, nothing is
   written — the last figures stand and the run is recorded with its error.
   Overlapping ticks are prevented by a 4-minute Redis lock.

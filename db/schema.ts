@@ -930,6 +930,10 @@ export const groundStockSync = pgTable(
     packedOut: numeric("packed_out", { precision: 12, scale: 2 }),
     snapshotAt: timestamp("snapshot_at", { withTimezone: true }),
     matchKind: text("match_kind").notNull().default("sku"),
+    /** Keeper SKU (Ground Stock (New) code) whose pile this figure is. Migration 0077. */
+    keeperSku: text("keeper_sku"),
+    /** Which audit page supplied the figure: "keeper" (Ground Stock (New)) or the legacy "ground_stock". */
+    source: text("source").notNull().default("ground_stock"),
     syncedAt: timestamp("synced_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
