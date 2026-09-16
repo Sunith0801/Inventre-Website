@@ -1,6 +1,5 @@
-import { and, eq, exists, ilike, isNull, ne, or, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import { db } from "@/db/client";
-import { groundStockSync, productVariants, products, productSchool, schools } from "@/db/schema";
 import {
   PageHeader,
   Card,
@@ -17,14 +16,32 @@ import { GroundStockSyncCard } from "@/components/admin/GroundStockSyncCard";
 
 export const dynamic = "force-dynamic";
 
-const PAGE = 200;
+const PAGE = 150;
 /** The audit's label on its merged General Merchandise line. */
 const ALL_SCHOOLS = "All schools";
 
+type Row = {
+  keeperSku: string;
+  description: string | null;
+  category: string | null;
+  group: string | null;
+  shelf: string;
+  available: number;
+  linked: number;
+  skus: string[];
+  products: string[];
+  snapshotAt: string | null;
+};
+
 /**
- * Ground Stock — what the audit's "Ground Stock (New)" page says is on the
- * shelf, per storefront size, as the bridge last copied it into the bins.
- * This is the figure the storefront sells against.
+ * Ground Stock — the audit's "Ground Stock (New)" shelf, by STANDARD SKU.
+ *
+ * One row per (keeper SKU, shelf), exactly as the audit consolidates it:
+ * Black 10S Shoes is one pile on one shelf however many schools sell it, so
+ * it is one row here with the eleven school SKUs it feeds folded beneath.
+ * School stock (uniforms) is counted per school, so the same keeper SKU can
+ * appear once per school with that school's own figure. Books are one
+ * shared shelf. The storefront sells against the figure on each row.
  */
 export default async function GroundStockPage({
   searchParams,
@@ -35,106 +52,89 @@ export default async function GroundStockPage({
   const q = (sp.q ?? "").trim();
   const show = sp.show === "out" ? "out" : sp.show === "in" ? "in" : "all";
   const page = Math.max(1, parseInt(sp.page ?? "1", 10) || 1);
-  // Three kinds of shelf on the audit, and they must not be read alike:
-  //   school  uniforms and accessories counted per school (one row per
-  //           school, its own legacy code, its own figure);
-  //   books   ONE shared books shelf — a title sold to five schools is one
-  //           pile, and the audit's book rows carry no school;
-  //   merch   shoes, bags and bottles: one shelf for every school, which
-  //           the audit reports as a single "All schools" line.
-  // The school dropdown therefore applies to school stock only.
-  const stock = sp.stock === "books" ? "books" : sp.stock === "merch" ? "merch" : sp.stock === "school" ? "school" : "all";
+  const stock =
+    sp.stock === "books" ? "books" : sp.stock === "merch" ? "merch" : sp.stock === "school" ? "school" : "all";
   const school = stock === "books" || stock === "merch" ? "" : (sp.school ?? "").trim();
 
-  // Schools that have at least one tracked size — the dropdown's options.
-  // School comes from the storefront's own product ↔ school link, not the
-  // audit's label, so a product sold to two schools appears under both.
-  const schoolOptions = await db
-    .selectDistinct({ id: schools.id, name: schools.name })
-    .from(groundStockSync)
-    .innerJoin(productVariants, eq(productVariants.id, groundStockSync.variantId))
-    .innerJoin(productSchool, eq(productSchool.productId, productVariants.productId))
-    .innerJoin(schools, eq(schools.id, productSchool.schoolId))
-    .orderBy(schools.name);
-  const schoolPicked = schoolOptions.find((s) => s.id === school) ?? null;
+  // Shelf per size: the audit's school for school stock, "All schools" for
+  // the merged General Merchandise line, "Books shelf" for the books sheet.
+  const shelfExpr = sql<string>`case
+      when g.keeper_group = 'Books' or p.kind = 'book' then 'Books shelf · all schools'
+      when g.school_name = ${ALL_SCHOOLS} then 'Shared · all schools'
+      else coalesce(g.school_name, '—') end`;
+  const groupCase = sql`case
+      when g.keeper_group = 'Books' or p.kind = 'book' then 'books'
+      when g.keeper_group = 'General Merchandise' then 'merch'
+      else 'school' end`;
 
-  const where = and(
-    q
-      ? or(
-          ilike(productVariants.sku, `%${q}%`),
-          ilike(products.name, `%${q}%`),
-          ilike(groundStockSync.keeperSku, `%${q}%`),
-          ilike(groundStockSync.keeperDescription, `%${q}%`),
-          ilike(groundStockSync.itemCode, `%${q}%`)
-        )
-      : undefined,
-    show === "out"
-      ? sql`${groundStockSync.available} <= 0`
-      : show === "in"
-        ? sql`${groundStockSync.available} > 0`
-        : undefined,
-    stock === "books"
-      ? eq(products.kind, "book")
-      : stock === "merch"
-        ? eq(groundStockSync.schoolName, ALL_SCHOOLS)
-        : stock === "school"
-          ? and(ne(products.kind, "book"), or(isNull(groundStockSync.schoolName), ne(groundStockSync.schoolName, ALL_SCHOOLS)))
-          : undefined,
-    schoolPicked
-      ? exists(
-          db
-            .select({ one: sql`1` })
-            .from(productSchool)
-            .where(
-              and(
-                eq(productSchool.productId, products.id),
-                eq(productSchool.schoolId, schoolPicked.id)
-              )
-            )
-        )
-      : undefined
-  );
+  const conds: ReturnType<typeof sql>[] = [];
+  if (stock !== "all") conds.push(sql`${groupCase} = ${stock}`);
+  if (school) conds.push(sql`g.school_name = ${school}`);
+  if (q) {
+    const like = `%${q}%`;
+    conds.push(
+      sql`(g.keeper_sku ilike ${like} or g.keeper_description ilike ${like} or g.keeper_category ilike ${like} or v.sku ilike ${like} or p.name ilike ${like})`
+    );
+  }
+  const where = conds.length ? sql`where ${sql.join(conds, sql` and `)}` : sql``;
+  const having =
+    show === "out" ? sql`having max(g.available) <= 0` : show === "in" ? sql`having max(g.available) > 0` : sql``;
 
-  const [[totals], rows, [{ count }]] = await Promise.all([
-    db
-      .select({
-        tracked: sql<number>`count(*)::int`,
-        inStock: sql<number>`count(*) filter (where ${groundStockSync.available} > 0)::int`,
-        soldOut: sql<number>`count(*) filter (where ${groundStockSync.available} <= 0)::int`,
-        units: sql<number>`coalesce(sum(${groundStockSync.available}), 0)::bigint`,
-      })
-      .from(groundStockSync),
-    db
-      .select({
-        variantId: groundStockSync.variantId,
-        kind: sql<string>`${products.kind}::text`,
-        sku: productVariants.sku,
-        size: productVariants.size,
-        isActive: productVariants.isActive,
-        productName: products.name,
-        productSlug: products.slug,
-        keeperSku: groundStockSync.keeperSku,
-        keeperDescription: groundStockSync.keeperDescription,
-        itemCode: groundStockSync.itemCode,
-        schoolName: groundStockSync.schoolName,
-        available: groundStockSync.available,
-        snapshotAt: groundStockSync.snapshotAt,
-        syncedAt: groundStockSync.syncedAt,
-      })
-      .from(groundStockSync)
-      .innerJoin(productVariants, eq(productVariants.id, groundStockSync.variantId))
-      .innerJoin(products, eq(products.id, productVariants.productId))
-      .where(where)
-      .orderBy(products.name, productVariants.size)
-      .limit(PAGE)
-      .offset((page - 1) * PAGE),
-    db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(groundStockSync)
-      .innerJoin(productVariants, eq(productVariants.id, groundStockSync.variantId))
-      .innerJoin(products, eq(products.id, productVariants.productId))
-      .where(where),
+  const grouped = sql`
+    select coalesce(g.keeper_sku, g.item_code) as keeper_sku,
+           max(g.keeper_description) as description,
+           max(g.keeper_category) as category,
+           max(g.keeper_group) as "group",
+           ${shelfExpr} as shelf,
+           max(g.available)::int as available,
+           count(*)::int as linked,
+           array_agg(v.sku order by v.sku) as skus,
+           array_agg(distinct p.name) as products,
+           max(g.snapshot_at)::text as snapshot_at
+      from ground_stock_sync g
+      join product_variants v on v.id = g.variant_id
+      join products p on p.id = v.product_id
+      ${where}
+     group by 1, 5
+     ${having}`;
+
+  const [rowsRaw, countRaw, totalsRaw, schoolsRaw] = await Promise.all([
+    db.execute(sql`${grouped} order by 5, 3, 1 limit ${PAGE} offset ${(page - 1) * PAGE}`),
+    db.execute(sql`select count(*)::int as n from (${grouped}) t`),
+    db.execute(sql`
+      select count(*)::int as tracked,
+             count(*) filter (where available > 0)::int as in_stock,
+             count(*) filter (where available <= 0)::int as sold_out,
+             coalesce(sum(available), 0)::bigint as units
+        from (select coalesce(g.keeper_sku, g.item_code) k, ${shelfExpr} s, max(g.available) available
+                from ground_stock_sync g
+                join product_variants v on v.id = g.variant_id
+                join products p on p.id = v.product_id
+               group by 1, 2) t`),
+    db.execute(sql`
+      select distinct g.school_name as name
+        from ground_stock_sync g
+        join product_variants v on v.id = g.variant_id
+        join products p on p.id = v.product_id
+       where g.school_name is not null and g.school_name <> ${ALL_SCHOOLS}
+         and not (g.keeper_group = 'Books' or p.kind = 'book')
+       order by 1`),
   ]);
+  const rows = (rowsRaw as unknown as Array<Record<string, unknown>>).map<Row>((r) => ({
+    keeperSku: String(r.keeper_sku),
+    description: (r.description as string | null) ?? null,
+    category: (r.category as string | null) ?? null,
+    group: (r.group as string | null) ?? null,
+    shelf: String(r.shelf),
+    available: Number(r.available),
+    linked: Number(r.linked),
+    skus: (r.skus as string[]) ?? [],
+    products: (r.products as string[]) ?? [],
+    snapshotAt: (r.snapshot_at as string | null) ?? null,
+  }));
+  const count = Number((countRaw as unknown as { n: number }[])[0]?.n ?? 0);
+  const totals = (totalsRaw as unknown as { tracked: number; in_stock: number; sold_out: number; units: number }[])[0];
+  const schoolOptions = (schoolsRaw as unknown as { name: string }[]).map((s) => s.name);
 
   const pages = Math.max(1, Math.ceil(count / PAGE));
   const link = (patch: Record<string, string | number | undefined>) => {
@@ -147,21 +147,21 @@ export default async function GroundStockPage({
     const s = u.toString();
     return `/admin/ground-stock${s ? `?${s}` : ""}`;
   };
-  const fmt = (d: Date | null) =>
-    d ? d.toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" }) : "—";
+  const fmt = (iso: string | null) =>
+    iso ? new Date(iso).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" }) : "—";
 
   return (
     <div>
       <PageHeader
         breadcrumb={[{ label: "Catalog", href: "/admin/catalog" }, { label: "Ground Stock" }]}
         title="Ground Stock"
-        description="What the audit's Ground Stock (New) page says is on the shelf, per size. The storefront sells against exactly these numbers."
+        description="The audit's Ground Stock (New) shelf by standard SKU, one row per pile, copied into the Stock module every 5 minutes. The storefront reads the Stock module; adjust a bin there and it holds until the audit counts again."
       />
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-        <Stat label="Sizes tracked by the audit" value={Number(totals?.tracked ?? 0).toLocaleString("en-IN")} iconTone="default" />
-        <Stat label="In stock" value={Number(totals?.inStock ?? 0).toLocaleString("en-IN")} iconTone="success" />
-        <Stat label="Sold out" value={Number(totals?.soldOut ?? 0).toLocaleString("en-IN")} iconTone="warning" />
+        <Stat label="Standard SKUs on the shelf" value={Number(totals?.tracked ?? 0).toLocaleString("en-IN")} iconTone="default" />
+        <Stat label="In stock" value={Number(totals?.in_stock ?? 0).toLocaleString("en-IN")} iconTone="success" />
+        <Stat label="Sold out" value={Number(totals?.sold_out ?? 0).toLocaleString("en-IN")} iconTone="warning" />
         <Stat label="Units on the shelf" value={Number(totals?.units ?? 0).toLocaleString("en-IN")} iconTone="info" />
       </div>
 
@@ -172,8 +172,8 @@ export default async function GroundStockPage({
       <Card padded={false}>
         <div className="px-5 lg:px-6 pt-5 lg:pt-6 pb-3 flex flex-wrap items-end justify-between gap-3">
           <CardHeader
-            title="Per size"
-            description={`${count.toLocaleString("en-IN")} row${count === 1 ? "" : "s"}${schoolPicked ? ` · ${schoolPicked.name}` : ""}${q ? ` matching “${q}”` : ""}`}
+            title="By standard SKU"
+            description={`${count.toLocaleString("en-IN")} row${count === 1 ? "" : "s"}${school ? ` · ${school}` : ""}${q ? ` matching “${q}”` : ""}`}
           />
           <form method="get" action="/admin/ground-stock" className="flex flex-wrap items-center gap-2 text-[13px]">
             <input type="hidden" name="show" value={show} />
@@ -190,13 +190,6 @@ export default async function GroundStockPage({
                 <a
                   key={k}
                   href={link({ stock: k, page: 1, school: k === "books" || k === "merch" ? "" : school })}
-                  title={
-                    k === "books"
-                      ? "One shared books shelf — the audit counts titles once, not per school"
-                      : k === "merch"
-                        ? "One shelf for every school — the audit reports these as a single All-schools line"
-                        : undefined
-                  }
                   className={
                     "px-3 h-9 inline-flex items-center " +
                     (stock === k ? "bg-ink-900 text-white" : "text-ink-700 hover:bg-ink-50")
@@ -216,8 +209,8 @@ export default async function GroundStockPage({
             >
               <option value="">All schools</option>
               {schoolOptions.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
+                <option key={s} value={s}>
+                  {s}
                 </option>
               ))}
             </select>
@@ -225,7 +218,7 @@ export default async function GroundStockPage({
               id="ground-stock-q"
               name="q"
               defaultValue={q}
-              placeholder="Search product, SKU or keeper SKU"
+              placeholder="Search standard SKU, description, school SKU"
               className="h-9 w-64 rounded-md border border-ink-200 px-3 text-[13px]"
             />
             <button type="submit" className="h-9 px-3 rounded-md bg-ink-900 text-white">
@@ -257,12 +250,12 @@ export default async function GroundStockPage({
           <table className="w-full">
             <thead>
               <tr>
-                <Th>Product</Th>
-                <Th>Size</Th>
-                <Th>Storefront SKU</Th>
-                <Th>Audit item</Th>
+                <Th>Standard SKU</Th>
+                <Th>Description</Th>
+                <Th>Category</Th>
                 <Th>Shelf</Th>
                 <Th right>On shelf</Th>
+                <Th>Sold as</Th>
                 <Th>Counted</Th>
               </tr>
             </thead>
@@ -270,35 +263,29 @@ export default async function GroundStockPage({
               {rows.map((r) => {
                 const out = r.available <= 0;
                 return (
-                  <Tr key={r.variantId} className={out ? "bg-amber-50/30" : undefined}>
+                  <Tr key={`${r.keeperSku}|${r.shelf}`} className={out ? "bg-amber-50/30" : undefined}>
                     <Td>
-                      {r.productName}
-                      {!r.isActive && (
-                        <span className="ml-2 text-[11px] text-ink-400">hidden</span>
-                      )}
+                      <span className="font-mono text-[12px]">{r.keeperSku}</span>
                     </Td>
-                    <Td muted>{r.size}</Td>
-                    <Td>
-                      <span className="font-mono text-[12px]">{r.sku}</span>
-                    </Td>
-                    <Td>
-                      {/* What the audit calls the pile — for shared merchandise this is
-                          the only honest name ("Black 10S Shoes"), the storefront product
-                          being one school's copy of it. */}
-                      <div>{r.keeperDescription ?? "—"}</div>
-                      <span className="font-mono text-[11px] text-ink-400">{r.keeperSku ?? ""}</span>
-                    </Td>
-                    <Td muted>
-                      {r.kind === "book"
-                        ? "Books shelf · all schools"
-                        : r.schoolName === ALL_SCHOOLS
-                          ? "Shared · all schools"
-                          : r.schoolName ?? "—"}
-                    </Td>
+                    <Td>{r.description ?? "—"}</Td>
+                    <Td muted>{r.category ?? "—"}</Td>
+                    <Td muted>{r.shelf}</Td>
                     <Td right>
                       <Badge tone={out ? "warning" : "success"} dot size="sm">
                         {r.available}
                       </Badge>
+                    </Td>
+                    <Td>
+                      <details>
+                        <summary className="cursor-pointer text-[12px] text-ink-500">
+                          {r.linked} storefront SKU{r.linked === 1 ? "" : "s"}
+                        </summary>
+                        <div className="mt-1 font-mono text-[11px] text-ink-600 flex flex-col gap-0.5">
+                          {r.skus.map((s) => (
+                            <span key={s}>{s}</span>
+                          ))}
+                        </div>
+                      </details>
                     </Td>
                     <Td muted>{fmt(r.snapshotAt)}</Td>
                   </Tr>

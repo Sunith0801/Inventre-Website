@@ -934,6 +934,9 @@ export const groundStockSync = pgTable(
     keeperSku: text("keeper_sku"),
     /** The audit's own name for that pile, e.g. "Black 10S Shoes". Migration 0078. */
     keeperDescription: text("keeper_description"),
+    /** The audit's category ("Shoes") and group ("General Merchandise"). Migration 0079. */
+    keeperCategory: text("keeper_category"),
+    keeperGroup: text("keeper_group"),
     /** Which audit page supplied the figure: "keeper" (Ground Stock (New)) or the legacy "ground_stock". */
     source: text("source").notNull().default("ground_stock"),
     syncedAt: timestamp("synced_at", { withTimezone: true })

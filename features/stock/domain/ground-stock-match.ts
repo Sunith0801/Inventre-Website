@@ -209,6 +209,8 @@ export function matchItemCodes(
 export type KeeperStockRow = {
   keeper_sku?: string | null;
   keeper_description?: string | null;
+  category?: string | null;
+  merch_group?: string | null;
   school_code?: string | null;
   school_name?: string | null;
   /** True for the merged General Merchandise line (one shelf, every school). */
@@ -228,6 +230,8 @@ export type KeeperStockRow = {
 export type KeeperFigure = GroundStockFigure & {
   keeperSku: string | null;
   keeperDescription: string | null;
+  keeperCategory: string | null;
+  keeperGroup: string | null;
 };
 
 /**
@@ -307,6 +311,8 @@ export function keeperRowsToFigures(
         itemCode: code,
         keeperSku: r.keeper_sku ?? null,
         keeperDescription: r.keeper_description ?? null,
+        keeperCategory: r.category ?? null,
+        keeperGroup: r.merch_group ?? null,
         schoolCode: r.school_code ?? null,
         schoolName: r.school_name ?? null,
         available: Math.max(0, Math.trunc(avail)),

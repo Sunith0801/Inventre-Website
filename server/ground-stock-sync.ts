@@ -222,6 +222,21 @@ export async function runGroundStockSync(
     // 4. Write bins + bookkeeping.
     const wh = await getDefaultWarehouseId();
     const gatedIds = gated.map((m) => m.variantId);
+    // What the bridge itself wrote last time. The admin panel owns the
+    // storefront's stock: a figure an admin sets in the Stock module must
+    // survive the next tick. So a bin is rewritten only when the AUDIT's
+    // figure moved since the last sync — not merely because the bin differs
+    // from the audit. (User's rule, 2026-09-16: "in the admin panel I control
+    // the storefront".)
+    const lastSynced = new Map<string, number>();
+    for (let i = 0; i < gatedIds.length; i += 1000) {
+      const slice = gatedIds.slice(i, i + 1000);
+      const rowsS = await db
+        .select({ variantId: groundStockSync.variantId, available: groundStockSync.available })
+        .from(groundStockSync)
+        .where(inArray(groundStockSync.variantId, slice));
+      for (const r of rowsS) lastSynced.set(r.variantId, r.available);
+    }
     const binByVariant = new Map<string, number>();
     const CHUNK = 1000;
     for (let i = 0; i < gatedIds.length; i += CHUNK) {
@@ -239,9 +254,12 @@ export async function runGroundStockSync(
       const fig = figures.get(m.itemCode)!;
       const target = fig.available;
       const current = binByVariant.get(m.variantId);
-      // A variant with no bin and a zero figure still needs a bin row: the
-      // resolver reads "no bin" as "never counted", and this one was.
-      if (current == null || current !== target) {
+      const previous = lastSynced.get(m.variantId);
+      // Audit unchanged since last tick and the bin exists: leave it — it may
+      // carry an admin's adjustment. A variant with no bin and a zero figure
+      // still needs a bin row: the resolver reads "no bin" as "never counted".
+      const auditMoved = previous == null || previous !== target;
+      if (current == null || (auditMoved && current !== target)) {
         const delta = target - (current ?? 0);
         if (delta !== 0) {
           await applyStockChange(
@@ -282,6 +300,8 @@ export async function runGroundStockSync(
           matchKind: m.matchKind,
           keeperSku: fig.keeperSku,
           keeperDescription: fig.keeperDescription,
+          keeperCategory: fig.keeperCategory,
+          keeperGroup: fig.keeperGroup,
           source: SOURCE,
           syncedAt: now,
         })
@@ -298,6 +318,8 @@ export async function runGroundStockSync(
             matchKind: m.matchKind,
             keeperSku: fig.keeperSku,
             keeperDescription: fig.keeperDescription,
+            keeperCategory: fig.keeperCategory,
+            keeperGroup: fig.keeperGroup,
             source: SOURCE,
             syncedAt: now,
           },
