@@ -210,6 +210,8 @@ export type KeeperStockRow = {
   keeper_sku?: string | null;
   school_code?: string | null;
   school_name?: string | null;
+  /** True for the merged General Merchandise line (one shelf, every school). */
+  all_schools?: boolean | null;
   /** Keeper count (shared pile). Not the storefront figure — see above. */
   qty?: number | string | null;
   gs_linked?: boolean | null;
@@ -224,16 +226,76 @@ export type KeeperStockRow = {
 
 export type KeeperFigure = GroundStockFigure & { keeperSku: string | null };
 
-export function keeperRowsToFigures(rows: KeeperStockRow[]): Map<string, KeeperFigure> {
+/**
+ * One entry of the audit's keeper map (/api/inventre-catalogue/keeper-map):
+ * a legacy ERP item code, the keeper SKU it became, and the school it is
+ * sold to. 4,849 rows on 2026-09-16.
+ */
+export type KeeperMapEntry = {
+  old_sku?: string | null;
+  keeper_sku?: string | null;
+  school_code?: string | null;
+};
+
+/** keeper SKU → its legacy codes (with school), for the fan-out below. */
+export function indexKeeperMap(
+  entries: KeeperMapEntry[]
+): Map<string, { code: string; schoolCode: string | null }[]> {
+  const out = new Map<string, { code: string; schoolCode: string | null }[]>();
+  for (const e of entries) {
+    const sku = (e.keeper_sku ?? "").trim();
+    const code = (e.old_sku ?? "").trim();
+    if (!sku || !code) continue;
+    const list = out.get(sku) ?? [];
+    if (!list.some((x) => x.code === code)) {
+      list.push({ code, schoolCode: e.school_code ?? null });
+      out.set(sku, list);
+    }
+  }
+  return out;
+}
+
+/**
+ * Which legacy codes a dashboard row stands for.
+ *
+ * The dashboard lists them on the row (`old_skus`) — except for General
+ * Merchandise: shoes, bags and bottles are one shelf sold to every school,
+ * and the audit merges those rows into a single "All schools" line whose
+ * `old_skus` it deliberately empties (keeper_stock.py, the ALL_SCHOOLS
+ * merge). Black 10S Shoes, for instance, is BLSHOE-10S for nine schools,
+ * each with its own legacy code (`SAS BP ShoesI10S$`, `SMS ShoesI10S$` …)
+ * that IS the storefront SKU. The keeper map still holds every one of
+ * those, so a row's codes are the union of what it lists and what the map
+ * knows for its keeper SKU — every school's codes for an "All schools"
+ * row, and that school's for a per-school row.
+ */
+function codesForRow(
+  r: KeeperStockRow,
+  keeperMap: Map<string, { code: string; schoolCode: string | null }[]> | undefined
+): Set<string> {
+  const codes = new Set<string>();
+  for (const c of [...(r.old_skus ?? []), ...(r.covers_codes ?? [])]) {
+    const code = (c ?? "").trim();
+    if (code) codes.add(code);
+  }
+  const mapped = keeperMap?.get((r.keeper_sku ?? "").trim()) ?? [];
+  for (const m of mapped) {
+    if (r.all_schools || !r.school_code || !m.schoolCode || m.schoolCode === r.school_code) {
+      codes.add(m.code);
+    }
+  }
+  return codes;
+}
+
+export function keeperRowsToFigures(
+  rows: KeeperStockRow[],
+  keeperMap?: Map<string, { code: string; schoolCode: string | null }[]>
+): Map<string, KeeperFigure> {
   const out = new Map<string, KeeperFigure>();
   for (const r of rows) {
     if (!r.gs_linked) continue;
     const avail = num(r.gs_available);
-    const codes = new Set<string>();
-    for (const c of [...(r.old_skus ?? []), ...(r.covers_codes ?? [])]) {
-      const code = (c ?? "").trim();
-      if (code) codes.add(code);
-    }
+    const codes = codesForRow(r, keeperMap);
     for (const code of codes) {
       const cur = out.get(code);
       if (cur && cur.rawAvailable >= avail) continue;

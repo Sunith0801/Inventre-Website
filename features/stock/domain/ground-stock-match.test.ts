@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   aggregateGroundStock,
+  indexKeeperMap,
   keeperRowsToFigures,
   matchItemCodes,
   normalizeItemCode,
@@ -125,5 +126,42 @@ describe("keeperRowsToFigures — Ground Stock (New)", () => {
     expect(m.get("Y")!.keeperSku).toBe("B");
     expect(m.get("Z")!.available).toBe(7);
     expect(m.size).toBe(3);
+  });
+});
+
+describe("keeperRowsToFigures — shared General Merchandise via the keeper map", () => {
+  const keeperMap = indexKeeperMap([
+    { old_sku: "SAS BP ShoesI10S$", keeper_sku: "BLSHOE-10S", school_code: "SASBP" },
+    { old_sku: "SMS ShoesI10S$", keeper_sku: "BLSHOE-10S", school_code: "SMSAW" },
+    { old_sku: "KIDLINK SHOESI10S$$", keeper_sku: "BLSHOE-10S", school_code: "KLINK" },
+    { old_sku: "SMS Grade 6 Girls PantM22$$", keeper_sku: "RUSCHSGBLUFP-22", school_code: "SMSAW" },
+    { old_sku: "WM JK Girls PantM22$$", keeper_sku: "RUSCHSGBLUFP-22", school_code: "WMAJK" },
+    { old_sku: "", keeper_sku: "X", school_code: "SMSAW" },
+  ]);
+
+  it("an All-schools row with no old_skus fans out to every school's code with the shared Avail.", () => {
+    const m = keeperRowsToFigures(
+      [{ keeper_sku: "BLSHOE-10S", school_code: "ALL", school_name: "All schools", all_schools: true, qty: 329, gs_linked: true, gs_available: 312, old_skus: [], covers_codes: ["KLINK", "SASBP", "SMSAW"] }],
+      keeperMap
+    );
+    expect(m.get("SAS BP ShoesI10S$")!.available).toBe(312);
+    expect(m.get("SMS ShoesI10S$")!.available).toBe(312);
+    expect(m.get("KIDLINK SHOESI10S$$")!.available).toBe(312);
+    expect(m.get("SAS BP ShoesI10S$")!.keeperSku).toBe("BLSHOE-10S");
+  });
+
+  it("a per-school row only takes the map's codes for its own school", () => {
+    const m = keeperRowsToFigures(
+      [{ keeper_sku: "RUSCHSGBLUFP-22", school_code: "SMSAW", gs_linked: true, gs_available: 2, old_skus: [] }],
+      keeperMap
+    );
+    expect(m.get("SMS Grade 6 Girls PantM22$$")!.available).toBe(2);
+    expect(m.has("WM JK Girls PantM22$$")).toBe(false);
+  });
+
+  it("works without a map (old_skus only) and ignores blank map entries", () => {
+    expect(keeperMap.has("X")).toBe(false);
+    const m = keeperRowsToFigures([{ keeper_sku: "BLSHOE-10S", all_schools: true, gs_linked: true, gs_available: 5, old_skus: [] }]);
+    expect(m.size).toBe(0);
   });
 });

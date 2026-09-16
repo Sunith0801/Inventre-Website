@@ -14,8 +14,10 @@ import { redis } from "@/server/redis";
 import { invalidateCatalog } from "@/server/cache";
 import { applyStockChange, getDefaultWarehouseId } from "@/server/repos/inventory";
 import {
+  indexKeeperMap,
   keeperRowsToFigures,
   matchItemCodes,
+  type KeeperMapEntry,
   type KeeperStockRow,
 } from "@/features/stock/domain/ground-stock-match";
 import { isCountedKind } from "@/features/stock/domain/availability";
@@ -61,6 +63,15 @@ import { isCountedKind } from "@/features/stock/domain/availability";
 const LOCK_KEY = "ground-stock-sync:lock";
 const LOCK_TTL_SECONDS = 240;
 const DASHBOARD_PATH = "/api/keeper-stock/dashboard";
+// The keeper map: every legacy ERP item code → keeper SKU + school. Needed
+// because the dashboard empties `old_skus` on its merged General
+// Merchandise lines (shoes, bags, bottles: one shelf, every school). The
+// endpoint pages at 1,000 rows with no offset, so it is read per CATEGORY
+// — the largest category holds 842 rows (2026-09-16) and every row has one,
+// whereas 1,142 rows carry no school and would be invisible to a per-school
+// read.
+const KEEPER_MAP_PATH = "/api/inventre-catalogue/keeper-map";
+const KEEPER_MAP_LIMIT = 1000;
 const SOURCE = "keeper";
 const UNMATCHED_SAMPLE = 60;
 
@@ -81,6 +92,40 @@ export type GroundStockSyncResult = {
 };
 
 type DashboardPayload = { rows?: KeeperStockRow[] };
+type KeeperMapPayload = {
+  rows?: KeeperMapEntry[];
+  totals?: { total?: number };
+  truncated?: number;
+  categories?: { category?: string; count?: number }[];
+};
+
+/**
+ * Read the whole keeper map, one category per request. Throws when a page
+ * is truncated or the distinct rows read disagree with the endpoint's own
+ * total — a partial map would silently leave a school's shoes sold out.
+ */
+async function fetchKeeperMap(): Promise<KeeperMapEntry[]> {
+  const first = await erpAuthedGet<KeeperMapPayload>(`${KEEPER_MAP_PATH}?limit=${KEEPER_MAP_LIMIT}`);
+  const categories = (first.categories ?? [])
+    .map((c) => c.category)
+    .filter((c): c is string => !!c);
+  const expected = first.totals?.total;
+  if (categories.length === 0) throw new Error("keeper map: endpoint listed no categories");
+  const seen = new Map<string, KeeperMapEntry>();
+  for (const cat of categories) {
+    const page = await erpAuthedGet<KeeperMapPayload>(
+      `${KEEPER_MAP_PATH}?limit=${KEEPER_MAP_LIMIT}&category=${encodeURIComponent(cat)}`
+    );
+    if ((page.truncated ?? 0) > 0) {
+      throw new Error(`keeper map: category "${cat}" exceeds ${KEEPER_MAP_LIMIT} rows; page truncated`);
+    }
+    for (const e of page.rows ?? []) seen.set(`${e.old_sku}|${e.keeper_sku}|${e.school_code ?? ""}`, e);
+  }
+  if (expected != null && seen.size < expected) {
+    throw new Error(`keeper map: read ${seen.size} of ${expected} rows`);
+  }
+  return [...seen.values()];
+}
 
 async function acquireLock(): Promise<boolean> {
   try {
@@ -151,8 +196,10 @@ export async function runGroundStockSync(
       throw new Error("dashboard returned 0 rows; leaving stock untouched");
     }
 
-    // 2. Fan out to legacy item codes.
-    const figures = keeperRowsToFigures(rows);
+    // 2. Fan out to legacy item codes — with the keeper map, so the merged
+    //    General Merchandise lines reach every school's shoe/bag/bottle SKU.
+    const keeperMap = indexKeeperMap(await fetchKeeperMap());
+    const figures = keeperRowsToFigures(rows, keeperMap);
 
     // 3. Match.
     const variantRows = await db
