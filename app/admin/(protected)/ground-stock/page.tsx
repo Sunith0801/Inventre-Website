@@ -1,4 +1,4 @@
-import { and, eq, exists, ilike, or, sql } from "drizzle-orm";
+import { and, eq, exists, ilike, isNull, ne, or, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { groundStockSync, productVariants, products, productSchool, schools } from "@/db/schema";
 import {
@@ -18,6 +18,8 @@ import { GroundStockSyncCard } from "@/components/admin/GroundStockSyncCard";
 export const dynamic = "force-dynamic";
 
 const PAGE = 200;
+/** The audit's label on its merged General Merchandise line. */
+const ALL_SCHOOLS = "All schools";
 
 /**
  * Ground Stock — what the audit's "Ground Stock (New)" page says is on the
@@ -27,13 +29,22 @@ const PAGE = 200;
 export default async function GroundStockPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; show?: string; page?: string; school?: string }>;
+  searchParams: Promise<{ q?: string; show?: string; page?: string; school?: string; stock?: string }>;
 }) {
   const sp = await searchParams;
   const q = (sp.q ?? "").trim();
   const show = sp.show === "out" ? "out" : sp.show === "in" ? "in" : "all";
   const page = Math.max(1, parseInt(sp.page ?? "1", 10) || 1);
-  const school = (sp.school ?? "").trim();
+  // Three kinds of shelf on the audit, and they must not be read alike:
+  //   school  uniforms and accessories counted per school (one row per
+  //           school, its own legacy code, its own figure);
+  //   books   ONE shared books shelf — a title sold to five schools is one
+  //           pile, and the audit's book rows carry no school;
+  //   merch   shoes, bags and bottles: one shelf for every school, which
+  //           the audit reports as a single "All schools" line.
+  // The school dropdown therefore applies to school stock only.
+  const stock = sp.stock === "books" ? "books" : sp.stock === "merch" ? "merch" : sp.stock === "school" ? "school" : "all";
+  const school = stock === "books" || stock === "merch" ? "" : (sp.school ?? "").trim();
 
   // Schools that have at least one tracked size — the dropdown's options.
   // School comes from the storefront's own product ↔ school link, not the
@@ -61,6 +72,13 @@ export default async function GroundStockPage({
       : show === "in"
         ? sql`${groundStockSync.available} > 0`
         : undefined,
+    stock === "books"
+      ? eq(products.kind, "book")
+      : stock === "merch"
+        ? eq(groundStockSync.schoolName, ALL_SCHOOLS)
+        : stock === "school"
+          ? and(ne(products.kind, "book"), or(isNull(groundStockSync.schoolName), ne(groundStockSync.schoolName, ALL_SCHOOLS)))
+          : undefined,
     schoolPicked
       ? exists(
           db
@@ -88,6 +106,7 @@ export default async function GroundStockPage({
     db
       .select({
         variantId: groundStockSync.variantId,
+        kind: sql<string>`${products.kind}::text`,
         sku: productVariants.sku,
         size: productVariants.size,
         isActive: productVariants.isActive,
@@ -118,9 +137,9 @@ export default async function GroundStockPage({
   const pages = Math.max(1, Math.ceil(count / PAGE));
   const link = (patch: Record<string, string | number | undefined>) => {
     const u = new URLSearchParams();
-    const merged = { q, show, school, page, ...patch };
+    const merged = { q, show, school, stock, page, ...patch };
     for (const [k, v] of Object.entries(merged)) {
-      if (v === undefined || v === "" || (k === "show" && v === "all") || (k === "page" && v === 1)) continue;
+      if (v === undefined || v === "" || (k === "show" && v === "all") || (k === "stock" && v === "all") || (k === "page" && v === 1)) continue;
       u.set(k, String(v));
     }
     const s = u.toString();
@@ -156,11 +175,42 @@ export default async function GroundStockPage({
           />
           <form method="get" action="/admin/ground-stock" className="flex flex-wrap items-center gap-2 text-[13px]">
             <input type="hidden" name="show" value={show} />
+            <input type="hidden" name="stock" value={stock} />
+            <div className="inline-flex rounded-md border border-ink-200 overflow-hidden">
+              {(
+                [
+                  ["all", "All stock"],
+                  ["school", "School stock"],
+                  ["books", "Books shelf"],
+                  ["merch", "Shoes · bags · bottles"],
+                ] as const
+              ).map(([k, label]) => (
+                <a
+                  key={k}
+                  href={link({ stock: k, page: 1, school: k === "books" || k === "merch" ? "" : school })}
+                  title={
+                    k === "books"
+                      ? "One shared books shelf — the audit counts titles once, not per school"
+                      : k === "merch"
+                        ? "One shelf for every school — the audit reports these as a single All-schools line"
+                        : undefined
+                  }
+                  className={
+                    "px-3 h-9 inline-flex items-center " +
+                    (stock === k ? "bg-ink-900 text-white" : "text-ink-700 hover:bg-ink-50")
+                  }
+                >
+                  {label}
+                </a>
+              ))}
+            </div>
             <select
               id="ground-stock-school"
               name="school"
               defaultValue={school}
-              className="h-9 rounded-md border border-ink-200 px-2 text-[13px] bg-white"
+              disabled={stock === "books" || stock === "merch"}
+              title={stock === "books" || stock === "merch" ? "Shared stock — not held per school" : undefined}
+              className="h-9 rounded-md border border-ink-200 px-2 text-[13px] bg-white disabled:opacity-40"
             >
               <option value="">All schools</option>
               {schoolOptions.map((s) => (
@@ -209,7 +259,7 @@ export default async function GroundStockPage({
                 <Th>Size</Th>
                 <Th>Storefront SKU</Th>
                 <Th>Keeper SKU</Th>
-                <Th>School</Th>
+                <Th>Shelf</Th>
                 <Th right>On shelf</Th>
                 <Th>Counted</Th>
               </tr>
@@ -232,7 +282,13 @@ export default async function GroundStockPage({
                     <Td>
                       <span className="font-mono text-[12px]">{r.keeperSku ?? "—"}</span>
                     </Td>
-                    <Td muted>{r.schoolName ?? "—"}</Td>
+                    <Td muted>
+                      {r.kind === "book"
+                        ? "Books shelf · all schools"
+                        : r.schoolName === ALL_SCHOOLS
+                          ? "Shared · all schools"
+                          : r.schoolName ?? "—"}
+                    </Td>
                     <Td right>
                       <Badge tone={out ? "warning" : "success"} dot size="sm">
                         {r.available}
