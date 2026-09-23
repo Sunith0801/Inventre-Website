@@ -27,9 +27,17 @@ const BUILD_ID = (() => {
 
 export const dynamic = "force-dynamic";
 
+// Baked by next.config.mjs `env` at build time — see the provenance note there.
+const PROVENANCE = {
+  gitSha: process.env.BUILD_GIT_SHA ?? "unknown",
+  gitBranch: process.env.BUILD_GIT_BRANCH ?? "unknown",
+  dirty: process.env.BUILD_GIT_DIRTY === "true",
+  builtAt: process.env.BUILD_TIME ?? null,
+};
+
 export async function GET() {
   return NextResponse.json(
-    { buildId: BUILD_ID },
+    { buildId: BUILD_ID, ...PROVENANCE },
     { headers: { "cache-control": "no-store, must-revalidate" } }
   );
 }

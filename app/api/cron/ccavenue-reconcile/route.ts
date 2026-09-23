@@ -11,12 +11,13 @@
  * are no stuck rows; capped at 50 lookups per run when there are.
  *
  *   GET  /api/cron/ccavenue-reconcile
- *   Auth: Authorization: Bearer <CRON_SECRET>
+ *   Auth: Authorization: Bearer <CRON_TOKEN>
  *
  * Matches the auth shape of the existing retry-webhooks cron so the host
  * scheduler can use the same secret.
  */
 import { NextResponse } from "next/server";
+import { requireCron } from "@/server/cron-auth";
 import { and, asc, eq, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { orders, payments } from "@/db/schema";
@@ -36,11 +37,8 @@ const SETTLE_GRACE = sql`interval '5 minutes'`;
 const MAX_AGE = sql`interval '5 days'`;
 
 export async function GET(req: Request) {
-  const auth = req.headers.get("authorization") ?? "";
-  const expected = `Bearer ${process.env.CRON_SECRET ?? ""}`;
-  if (!process.env.CRON_SECRET || auth !== expected) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const denied = requireCron(req);
+  if (denied) return denied;
 
   if (!isCCAvenueConfigured()) {
     return NextResponse.json(

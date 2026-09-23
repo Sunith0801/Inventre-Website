@@ -31,7 +31,17 @@ URL="${URL%/}"
 
 log() { echo "$(date '+%Y-%m-%d %H:%M:%S') | $*" >> "$LOG"; }
 
-BUILD_ID="$(curl -s "$URL/api/version" --max-time 20 | sed -n 's/.*"buildId"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
+VERSION_JSON="$(curl -s "$URL/api/version" --max-time 20)"
+BUILD_ID="$(sed -n 's/.*"buildId"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' <<<"$VERSION_JSON")"
+GIT_SHA="$(sed -n 's/.*"gitSha"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' <<<"$VERSION_JSON")"
+BUILD_ID="${BUILD_ID}${GIT_SHA:+ @ ${GIT_SHA:0:12}}"
+# The commit that /root/Inventre would build right now. A live commit that is
+# not an ancestor-or-equal of this one came from somewhere else.
+EXPECTED_SHA="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || true)"
+if [ -n "$GIT_SHA" ] && [ -n "$EXPECTED_SHA" ] && [ "$GIT_SHA" != "$EXPECTED_SHA" ] \
+   && ! git -C "$ROOT" merge-base --is-ancestor "$GIT_SHA" "$EXPECTED_SHA" 2>/dev/null; then
+  log "🟠 FOREIGN COMMIT SERVING — live ${GIT_SHA:0:12} is not in /root/Inventre history (HEAD ${EXPECTED_SHA:0:12})"
+fi
 HEADERS="$(curl -sI "$URL" --max-time 20)"
 
 MISSING=""

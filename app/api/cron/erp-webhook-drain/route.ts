@@ -21,6 +21,7 @@
  * customer requests than parallelise here.
  */
 import { NextResponse } from "next/server";
+import { requireCron } from "@/server/cron-auth";
 import { sql } from "drizzle-orm";
 // Cron routes use the isolated `dbCron` pool (max=8) so a tight drain
 // loop can't starve the customer request pool (`db`, max=30).
@@ -50,11 +51,8 @@ function rowsOf<T>(res: unknown): T[] {
 
 export async function GET(req: Request) {
   const startedAt = Date.now();
-  const auth = req.headers.get("authorization") ?? "";
-  const expected = `Bearer ${process.env.CRON_TOKEN ?? ""}`;
-  if (!process.env.CRON_TOKEN || auth !== expected) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const denied = requireCron(req);
+  if (denied) return denied;
   // ERP inbound gated since 2026-05-28 (admin panel is canonical). The
   // drain runs whenever the orders-poll slice is enabled — order/shipment/
   // packing status is what storefront tracking needs; the dispatch layer

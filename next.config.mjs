@@ -1,5 +1,34 @@
+import { execSync } from "node:child_process";
+
+// Build provenance, baked into the bundle at `next build` time and served by
+// /api/version. Why: production is built from this checkout's WORKING TREE,
+// and on 2026-09-10 a build from the wrong checkout replaced production twice
+// with nothing to say which commit was serving. Now every running build can
+// name its commit, branch and whether the tree was dirty when it was built;
+// scripts/verify-deployment.sh refuses to pass a deploy whose live commit is
+// not the one it just built.
+const git = (cmd, fallback = "unknown") => {
+  try {
+    return execSync(`git ${cmd}`, { stdio: ["ignore", "pipe", "ignore"] }).toString().trim() || fallback;
+  } catch {
+    return fallback;
+  }
+};
+const BUILD_GIT_SHA = process.env.BUILD_GIT_SHA || git("rev-parse HEAD");
+const BUILD_GIT_BRANCH = process.env.BUILD_GIT_BRANCH || git("rev-parse --abbrev-ref HEAD");
+const BUILD_GIT_DIRTY =
+  process.env.BUILD_GIT_DIRTY ||
+  (git("status --porcelain -- app components lib server db scripts middleware.ts instrumentation.ts package.json next.config.mjs", "") ? "true" : "false");
+const BUILD_TIME = process.env.BUILD_TIME || new Date().toISOString();
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  env: {
+    BUILD_GIT_SHA,
+    BUILD_GIT_BRANCH,
+    BUILD_GIT_DIRTY,
+    BUILD_TIME,
+  },
   reactStrictMode: true,
   // Dev isolation: prod deploys run `npm run build` on the host in this
   // same checkout (scripts/deploy.sh), which clobbers `.next` under a

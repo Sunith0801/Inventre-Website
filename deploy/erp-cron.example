@@ -1,29 +1,18 @@
-# ─────────────────────────────────────────────────────────────────────
-# Host crontab snippet for the ERP bridge.
-#
-# Install:
-#   sudo cp deploy/erp-cron.example /etc/cron.d/inventre-erp
-#   sudo chmod 644 /etc/cron.d/inventre-erp
-#   # then `crontab -l` for root should show these picked up
-#
-# Required env vars (read from /etc/cron.d so they need to be inline
-# or sourced by the wrapper; the simplest is to inline CRON_TOKEN here):
-#   CRON_TOKEN=<the long random string also set in app .env>
-# ─────────────────────────────────────────────────────────────────────
-
-CRON_TOKEN=REPLACE_ME
-
-# Drainer — pushes buffered order events to ERP every ~30s.
-# Cron's minimum granularity is 1 minute, so run twice (now + 30s).
-*/1 * * * * root  curl -fsS -m 30 -X POST -H "Authorization: Bearer $CRON_TOKEN" http://127.0.0.1:3000/api/cron/erp-drain >> /var/log/inventre-erp-drain.log 2>&1
-*/1 * * * * root  sleep 30; curl -fsS -m 30 -X POST -H "Authorization: Bearer $CRON_TOKEN" http://127.0.0.1:3000/api/cron/erp-drain >> /var/log/inventre-erp-drain.log 2>&1
-
-# Poller — pulls ERP status updates every 60s.
-*/1 * * * * root  curl -fsS -m 60 -X POST -H "Authorization: Bearer $CRON_TOKEN" http://127.0.0.1:3000/api/cron/erp-poll  >> /var/log/inventre-erp-poll.log  2>&1
-
-# Reconciler — catches any paid+confirmed order whose code path forgot to
-# enqueue an order.created event. Re-enqueues anything older than 10 min
-# with no erp_so_name and no in-flight queue/DLQ row. Idempotent.
-*/10 * * * * root  curl -fsS -m 60 -X POST -H "Authorization: Bearer $CRON_TOKEN" http://127.0.0.1:3000/api/cron/erp-reconcile >> /var/log/inventre-erp-reconcile.log 2>&1
-
-# Optional: nightly logrotate is recommended for the log files above.
+# /etc/cron.d/inventre-erp — production scheduled jobs.
+# ONE shared secret, CRON_TOKEN, sourced from .env.deploy (mode 640) on every
+# line; nothing secret lives in this file. All /api/cron routes authenticate
+# with `Authorization: Bearer $CRON_TOKEN` (server/cron-auth.ts).
+SHELL=/bin/sh
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ENV=/root/Inventre/.env.deploy
+APP=http://127.0.0.1:3010
+*/1  * * * * root . $ENV && curl -fsS -m 30  -X POST -H "Authorization: Bearer $CRON_TOKEN" $APP/api/cron/erp-drain >> /var/log/inventre-erp-drain.log 2>&1
+*/1  * * * * root sleep 30; . $ENV && curl -fsS -m 30  -X POST -H "Authorization: Bearer $CRON_TOKEN" $APP/api/cron/erp-drain >> /var/log/inventre-erp-drain.log 2>&1
+*/1  * * * * root . $ENV && curl -fsS -m 25  -X POST -H "Authorization: Bearer $CRON_TOKEN" $APP/api/cron/erp-poll >> /var/log/inventre-erp-poll.log 2>&1
+*/1  * * * * root sleep 30; . $ENV && curl -fsS -m 25  -X POST -H "Authorization: Bearer $CRON_TOKEN" $APP/api/cron/erp-poll >> /var/log/inventre-erp-poll.log 2>&1
+*/10 * * * * root . $ENV && curl -fsS -m 60  -X POST -H "Authorization: Bearer $CRON_TOKEN" $APP/api/cron/erp-reconcile >> /var/log/inventre-erp-reconcile.log 2>&1
+*/5  * * * * root . $ENV && curl -fsS -m 30  -X GET  -H "Authorization: Bearer $CRON_TOKEN" $APP/api/cron/ccavenue-reconcile >> /var/log/inventre-ccavenue-reconcile.log 2>&1
+17   * * * * root . $ENV && curl -fsS -m 120 -X GET  -H "Authorization: Bearer $CRON_TOKEN" $APP/api/cron/ccavenue-settlement-reconcile >> /var/log/inventre-ccavenue-settlement.log 2>&1
+*/2  * * * * root . $ENV && curl -fsS -m 30  -X GET  -H "Authorization: Bearer $CRON_TOKEN" $APP/api/cron/retry-webhooks >> /var/log/inventre-retry-webhooks.log 2>&1
+0    2 * * * root . $ENV && curl -fsS -m 60  -X GET  -H "Authorization: Bearer $CRON_TOKEN" $APP/api/cron/auto-po >> /var/log/inventre-auto-po.log 2>&1
+0  */6 * * * root . $ENV && curl -fsS -m 60  -X GET  -H "Authorization: Bearer $CRON_TOKEN" $APP/api/cron/cleanup-carts >> /var/log/inventre-cleanup-carts.log 2>&1

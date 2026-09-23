@@ -18,13 +18,14 @@
  * rows to reconcileSettlement() — the healing path is identical.
  *
  *   GET /api/cron/ccavenue-settlement-reconcile
- *   Auth: Authorization: Bearer <CRON_SECRET>
+ *   Auth: Authorization: Bearer <CRON_TOKEN>
  *
  * Idempotent + amount-gated: an already-paid order is a no-op, and an order is
  * only flipped to paid when the captured amount reconciles to the local basket
  * total. Safe to run daily (or hourly).
  */
 import { NextResponse } from "next/server";
+import { requireCron } from "@/server/cron-auth";
 import { readdir, readFile, rename } from "node:fs/promises";
 import path from "node:path";
 import {
@@ -33,11 +34,8 @@ import {
 } from "@/server/ccavenue-settlement-reconcile";
 
 export async function GET(req: Request) {
-  const auth = req.headers.get("authorization") ?? "";
-  const expected = `Bearer ${process.env.CRON_SECRET ?? ""}`;
-  if (!process.env.CRON_SECRET || auth !== expected) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const denied = requireCron(req);
+  if (denied) return denied;
 
   const dir = process.env.CCAVENUE_SETTLEMENT_DIR;
   if (!dir) {

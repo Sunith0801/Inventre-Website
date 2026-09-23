@@ -16,8 +16,8 @@ set -a
 . "$APP_DIR/.env.deploy"
 set +a
 
-export DATABASE_URL="postgres://inventre:inventre_prod@localhost:55433/inventre"
-export DATABASE_DIRECT_URL="postgres://inventre:inventre_prod@localhost:55433/inventre"
+export DATABASE_URL="postgres://inventre:${POSTGRES_PASSWORD}@localhost:55433/inventre"
+export DATABASE_DIRECT_URL="postgres://inventre:${POSTGRES_PASSWORD}@localhost:55433/inventre"
 
 {
   echo "===== $(date -Is) cron tick ====="

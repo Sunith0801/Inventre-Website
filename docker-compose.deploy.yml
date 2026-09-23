@@ -5,7 +5,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: inventre
-      POSTGRES_PASSWORD: inventre_prod
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: inventre
     ports:
       - "55433:5432"
@@ -26,7 +26,7 @@ services:
         condition: service_healthy
     environment:
       DB_USER: inventre
-      DB_PASSWORD: inventre_prod
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
       DB_HOST: postgres
       DB_PORT: 5432
       DB_NAME: inventre
@@ -65,7 +65,7 @@ services:
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: inventre
-      MINIO_ROOT_PASSWORD: inventre_prod_secret
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
     ports:
       - "9010:9000"
       - "9011:9001"
@@ -91,7 +91,7 @@ services:
         condition: service_healthy
     entrypoint: >
       /bin/sh -c "
-      mc alias set local http://minio:9000 inventre inventre_prod_secret;
+      mc alias set local http://minio:9000 inventre ${MINIO_ROOT_PASSWORD};
       mc mb --ignore-existing local/inventre;
       mc anonymous set download local/inventre;
       echo 'MinIO bucket ready';
@@ -128,12 +128,10 @@ services:
       NODE_ENV: production
       PORT: "3000"
       HOSTNAME: "0.0.0.0"
-      DATABASE_URL: postgres://inventre:inventre_prod@pgbouncer:5432/inventre
-      DATABASE_DIRECT_URL: postgres://inventre:inventre_prod@postgres:5432/inventre
+      DATABASE_URL: postgres://inventre:${POSTGRES_PASSWORD}@pgbouncer:5432/inventre
+      DATABASE_DIRECT_URL: postgres://inventre:${POSTGRES_PASSWORD}@postgres:5432/inventre
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
-      SMS_API_URL: "https://control.arihantglobal.in/fe/api/v1/send"
-      SMS_API_USERNAME: "inventreedu.trans"
-      SMS_API_PASSWORD: "InventreAPI@2026"
+      # SMS_API_URL / SMS_API_USERNAME / SMS_API_PASSWORD come from .env.deploy (moved 2026-09-23).
       NEXT_PUBLIC_APP_URL: https://inventre.in
       NEXT_TELEMETRY_DISABLED: "1"
       MSG91_SENDER_ID: ""  # legacy — not used, kept to avoid startup warnings

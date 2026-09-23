@@ -26,6 +26,7 @@ set -uo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 EXPECTED_BUILD_ID="${1:-}"
+EXPECTED_GIT_SHA="${2:-}"
 TIMEOUT=20
 RETRIES=15
 
@@ -56,13 +57,25 @@ fi
 pass "homepage returns 200"
 
 # ── 1. build provenance ─────────────────────────────────────────────────────
-LIVE_BUILD_ID="$(curl -s "$URL/api/version" --max-time $TIMEOUT | sed -n 's/.*"buildId"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
+VERSION_JSON="$(curl -s "$URL/api/version" --max-time $TIMEOUT)"
+LIVE_BUILD_ID="$(sed -n 's/.*"buildId"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' <<<"$VERSION_JSON")"
+LIVE_GIT_SHA="$(sed -n 's/.*"gitSha"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' <<<"$VERSION_JSON")"
+LIVE_DIRTY="$(sed -n 's/.*"dirty"[[:space:]]*:[[:space:]]*\(true\|false\).*/\1/p' <<<"$VERSION_JSON")"
 if [ -z "$EXPECTED_BUILD_ID" ]; then
   pass "serving build ${LIVE_BUILD_ID:-unknown} (no expected id given — provenance not asserted)"
 elif [ "$LIVE_BUILD_ID" = "$EXPECTED_BUILD_ID" ]; then
   pass "serving the build we just made ($LIVE_BUILD_ID)"
 else
   fail "WRONG BUILD IS SERVING — expected $EXPECTED_BUILD_ID, live is ${LIVE_BUILD_ID:-unknown}"
+fi
+if [ -n "$EXPECTED_GIT_SHA" ] && [ "$EXPECTED_GIT_SHA" != "unknown" ]; then
+  if [ "$LIVE_GIT_SHA" = "$EXPECTED_GIT_SHA" ]; then
+    pass "live commit is ${LIVE_GIT_SHA:0:12}$([ "$LIVE_DIRTY" = "true" ] && echo ' (built from a DIRTY tree)')"
+  else
+    fail "WRONG COMMIT IS SERVING — expected ${EXPECTED_GIT_SHA:0:12}, live is ${LIVE_GIT_SHA:-unknown}"
+  fi
+elif [ -n "$LIVE_GIT_SHA" ]; then
+  pass "live commit ${LIVE_GIT_SHA:0:12}$([ "$LIVE_DIRTY" = "true" ] && echo ' (dirty tree)')"
 fi
 
 # ── 2. security headers, on the live response ───────────────────────────────

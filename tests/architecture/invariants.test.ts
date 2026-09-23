@@ -186,3 +186,17 @@ describe("repository hygiene", () => {
     expect(forbidden).toEqual([]);
   });
 });
+
+describe("scheduled jobs", () => {
+  // Five auth conventions across twelve cron routes is how a token rotation
+  // misses one. server/cron-auth.ts is the single door; every route uses it.
+  it("every /api/cron route authenticates through requireCron", () => {
+    const routes = tracked("'app/api/cron/*/route.ts'");
+    expect(routes.length).toBeGreaterThan(0);
+    const offenders = routes.filter((f) => {
+      const body = readFileSync(f, "utf8");
+      return !/requireCron\(/.test(body) || /process\.env\.CRON_(SECRET|KEY)/.test(body);
+    });
+    expect(offenders, "cron routes not using requireCron / still reading CRON_SECRET|CRON_KEY").toEqual([]);
+  });
+});

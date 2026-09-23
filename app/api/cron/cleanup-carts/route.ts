@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireCron } from "@/server/cron-auth";
 import { lt, or, isNull, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { carts } from "@/db/schema";
@@ -10,7 +11,7 @@ import { carts } from "@/db/schema";
  *   - past their expiresAt timestamp, OR
  *   - have no expiresAt and were last updated more than CART_TTL_DAYS ago.
  *
- * Auth: header `x-cron-token` must match env CRON_TOKEN. Run from any cron
+ * Auth: `Authorization: Bearer <CRON_TOKEN>` (server/cron-auth.ts). Run from any cron
  * — we expose this as an HTTP endpoint so it works in Vercel/Railway/Docker
  * without an in-process job runner.
  *
@@ -19,16 +20,9 @@ import { carts } from "@/db/schema";
 
 const CART_TTL_DAYS = 7;
 
-function authorized(req: Request): boolean {
-  const expected = process.env.CRON_TOKEN;
-  if (!expected) return false;
-  const got = req.headers.get("x-cron-token");
-  return !!got && got === expected;
-}
-
 async function run(req: Request) {
-  if (!authorized(req))
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const denied = requireCron(req);
+  if (denied) return denied;
 
   const cutoff = new Date(Date.now() - CART_TTL_DAYS * 24 * 60 * 60 * 1000);
   const now = new Date();

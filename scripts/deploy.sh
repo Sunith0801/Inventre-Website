@@ -44,8 +44,8 @@ START=$(date +%s)
 # The overrides exist because a 3 a.m. outage is not the moment to argue with
 # a linter — but they have to be typed on purpose.
 
+DIRTY=$(git status --porcelain -- app components lib server db scripts middleware.ts instrumentation.ts package.json next.config.mjs 2>/dev/null)
 if [ "$ALLOW_DIRTY" = "0" ]; then
-  DIRTY=$(git status --porcelain -- app components lib server db scripts middleware.ts instrumentation.ts package.json next.config.mjs 2>/dev/null)
   if [ -n "$DIRTY" ]; then
     echo "✖ Working tree has uncommitted source changes — this build could not be reproduced:"
     echo "$DIRTY" | sed 's/^/    /'
@@ -72,9 +72,21 @@ echo "▶ Building (${MODE} mode)…"
 # NEXT_DIST_DIR pinned: .env.local points dev servers at .next-dev so they
 # can't corrupt prod bundles mid-build (2026-06-12 outage); the explicit env
 # here outranks .env.local and keeps the deploy build in .next.
-DATABASE_URL="postgres://inventre:inventre_prod@localhost:6433/inventre" \
-DATABASE_DIRECT_URL="postgres://inventre:inventre_prod@localhost:55433/inventre" \
+# The DB password lives in .env.deploy (POSTGRES_PASSWORD) — never in this
+# script. Build provenance (commit, branch, dirty flag) is exported so
+# next.config.mjs bakes it into the bundle and /api/version can report it.
+PG_PASS="$(grep -E '^POSTGRES_PASSWORD=' .env.deploy | head -1 | cut -d= -f2- | tr -d '"')"
+if [ -z "$PG_PASS" ]; then
+  echo "✖ POSTGRES_PASSWORD missing from .env.deploy"; exit 1
+fi
+BUILD_GIT_SHA="$(git rev-parse HEAD 2>/dev/null || echo unknown)"
+BUILD_GIT_BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
+BUILD_GIT_DIRTY="false"; [ -n "$DIRTY" ] && BUILD_GIT_DIRTY="true"
+DATABASE_URL="postgres://inventre:${PG_PASS}@localhost:6433/inventre" \
+DATABASE_DIRECT_URL="postgres://inventre:${PG_PASS}@localhost:55433/inventre" \
 NEXT_DIST_DIR=".next" \
+BUILD_GIT_SHA="$BUILD_GIT_SHA" BUILD_GIT_BRANCH="$BUILD_GIT_BRANCH" BUILD_GIT_DIRTY="$BUILD_GIT_DIRTY" \
+BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
   npm run build
 
 echo "▶ Bundling migrations…"
@@ -217,7 +229,7 @@ done
 # and every existing gate passed. This is the gate that catches that.
 EXPECTED_BUILD_ID="$(cat .next/BUILD_ID 2>/dev/null || true)"
 echo ""
-if ! ./scripts/verify-deployment.sh "$EXPECTED_BUILD_ID"; then
+if ! ./scripts/verify-deployment.sh "$EXPECTED_BUILD_ID" "$BUILD_GIT_SHA"; then
   echo ""
   echo "✖ The deployed site failed verification — rolling back."
   if docker exec -u root inventre-deploy-app sh -c '[ -d /app/.next.prev ]' 2>/dev/null; then

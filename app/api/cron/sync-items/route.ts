@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireCron } from "@/server/cron-auth";
 import { enqueueErpItemSync } from "@/server/jobs/erp-item-sync";
 import { erpInboundDisabledResponse } from "@/server/erp-inbound-guard";
 
@@ -9,20 +10,14 @@ import { erpInboundDisabledResponse } from "@/server/erp-inbound-guard";
  * systemd timer) at e.g. 03:00 IST nightly:
  *
  *   GET /api/cron/sync-items
- *   Header: X-Cron-Key: $CRON_KEY
+ *   Header: Authorization: Bearer $CRON_TOKEN
  *
- * 401 if the header is wrong; 503 if CRON_KEY isn't configured (fails
+ * 401 if the header is wrong; 503 if CRON_TOKEN isn't configured (fails
  * closed). Returns the backgroundJobs id so the scheduler can log it.
  */
 export async function GET(req: Request) {
-  const expected = process.env.CRON_KEY;
-  if (!expected) {
-    return NextResponse.json({ error: "CRON_KEY not configured" }, { status: 503 });
-  }
-  const provided = req.headers.get("x-cron-key");
-  if (!provided || provided !== expected) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const denied = requireCron(req);
+  if (denied) return denied;
   const off = erpInboundDisabledResponse();
   if (off) return off;
   const { jobId, alreadyRunning } = await enqueueErpItemSync("cron");
