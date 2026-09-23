@@ -15,6 +15,7 @@ li>ul{margin-top:1.4mm}
 strong{color:var(--ink-900);font-weight:600}
 code,pre{font-family:"JetBrains Mono","Liberation Mono",monospace}
 code{font-size:9.8pt;background:var(--cream-200);padding:.5px 5px;border-radius:4px;color:var(--ink-800);white-space:nowrap}
+td code,li code,.callout code{white-space:normal;overflow-wrap:anywhere}
 pre{font-size:9.6pt;line-height:1.5;background:var(--cream);border:1px solid var(--ink-100);border-left:4px solid var(--brand);border-radius:6px;padding:3.5mm 4.5mm;margin:0 0 4mm;white-space:pre-wrap;break-inside:avoid;color:var(--ink-800)}
 pre code{background:none;padding:0;white-space:pre-wrap}
 section.sec{break-before:page}

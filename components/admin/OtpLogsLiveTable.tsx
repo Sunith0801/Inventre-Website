@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Wifi, WifiOff } from "lucide-react";
 import { Badge, EmptyState, Td, Th, Tr } from "@/components/admin/ui/primitives";
 import { MessageSquare } from "lucide-react";
@@ -11,7 +11,8 @@ export type OtpLogRow = {
   phone: string;
   purpose: string;
   event: string;
-  otpCode: string | null;
+  /** true when a sealed code exists; the code itself never reaches the browser */
+  hasCode: boolean;
   transactionId: string | null;
   error: string | null;
   ip: string | null;
@@ -47,14 +48,106 @@ function purposeLabel(p: string) {
  * indicator below the title surfaces last-refresh time + a flashing
  * "+N" pill when new rows arrive.
  */
+/**
+ * Per-row OTP reveal (P-01). Codes are sealed at rest; a staff member with
+ * otp-logs.write types the key phrase and sees ONE code for 60 s. The
+ * server logs every reveal to the activity log.
+ */
+function OtpCodeCell({ row, canReveal }: { row: OtpLogRow; canReveal: boolean }) {
+  const [open, setOpen] = useState(false);
+  const [phrase, setPhrase] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [code, setCode] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!code) return;
+    const t = setTimeout(() => setCode(null), 60_000);
+    return () => clearTimeout(t);
+  }, [code]);
+
+  if (!row.hasCode) return <span className="text-ink-300">—</span>;
+  if (code)
+    return (
+      <span className="font-mono text-[14px] font-bold tracking-widest text-ink-900" title="Hides again in 60 s">
+        {code}
+      </span>
+    );
+  if (!canReveal) return <span className="font-mono text-[13px] tracking-widest text-ink-400">••••••</span>;
+
+  async function reveal(e: FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setErr(null);
+    try {
+      const r = await fetch("/api/admin/data/otp-logs/reveal", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: row.id, phrase }),
+      });
+      const data = (await r.json()) as { code?: string | null; error?: string; unavailable?: boolean };
+      if (!r.ok) {
+        setErr(data.error ?? "Could not reveal");
+        return;
+      }
+      if (!data.code) {
+        setErr("Code unavailable (legacy row or key changed)");
+        return;
+      }
+      setCode(data.code);
+      setOpen(false);
+      setPhrase("");
+    } catch {
+      setErr("Network error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!open)
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="rounded border border-ink-200 px-2 py-0.5 font-mono text-[12px] tracking-widest text-ink-500 hover:border-ink-400 hover:text-ink-900"
+        title="Reveal with the key phrase (logged)"
+      >
+        •••••• Reveal
+      </button>
+    );
+  return (
+    <form onSubmit={reveal} className="flex items-center gap-1">
+      <input
+        type="password"
+        autoFocus
+        value={phrase}
+        onChange={(e) => setPhrase(e.target.value)}
+        placeholder="Key phrase"
+        className="w-28 rounded border border-ink-200 px-2 py-0.5 text-[12px]"
+        aria-label="OTP reveal key phrase"
+      />
+      <button type="submit" disabled={busy || !phrase} className="rounded bg-ink-900 px-2 py-0.5 text-[12px] text-white disabled:opacity-40">
+        {busy ? "…" : "Show"}
+      </button>
+      <button type="button" onClick={() => { setOpen(false); setErr(null); }} className="text-[12px] text-ink-400">
+        ✕
+      </button>
+      {err ? <span className="text-[11px] text-red-500">{err}</span> : null}
+    </form>
+  );
+}
+
 export function OtpLogsLiveTable({
   initialRows,
   filterParams,
   polling,
+  canReveal = false,
 }: {
   initialRows: OtpLogRow[];
   filterParams: { phone?: string; purpose?: string; event?: string; since?: string };
   polling: boolean;
+  /** Viewer holds otp-logs.write → may Reveal a code with the key phrase. */
+  canReveal?: boolean;
 }) {
   const [rows, setRows] = useState<OtpLogRow[]>(initialRows);
   const [lastRefreshedAt, setLastRefreshedAt] = useState<Date | null>(polling ? new Date() : null);
@@ -195,13 +288,7 @@ export function OtpLogsLiveTable({
                 </Td>
                 <Td>{eventBadge(r.event)}</Td>
                 <Td>
-                  {r.otpCode ? (
-                    <span className="font-mono text-[14px] font-bold tracking-widest text-ink-900">
-                      {r.otpCode}
-                    </span>
-                  ) : (
-                    <span className="text-ink-300">—</span>
-                  )}
+                  <OtpCodeCell row={r} canReveal={canReveal} />
                 </Td>
                 <Td muted>
                   <span className="font-mono text-[11px]">{r.transactionId ?? "—"}</span>

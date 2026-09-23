@@ -1,4 +1,4 @@
-import { desc, and, eq, ilike, gte } from "drizzle-orm";
+import { desc, and, eq, ilike, gte, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { otpLogs } from "@/db/schema";
 import {
@@ -43,7 +43,18 @@ export default async function OtpLogsPage({
 
   const [rows, [{ total }]] = await Promise.all([
     db
-      .select()
+      .select({
+        id: otpLogs.id,
+        createdAt: otpLogs.createdAt,
+        phone: otpLogs.phone,
+        purpose: otpLogs.purpose,
+        event: otpLogs.event,
+        // sealed code never leaves the server; see /api/admin/data/otp-logs/reveal
+        hasCode: sql<boolean>`(${otpLogs.otpCode} is not null)`,
+        transactionId: otpLogs.transactionId,
+        error: otpLogs.error,
+        ip: otpLogs.ip,
+      })
       .from(otpLogs)
       .where(conds.length ? and(...conds) : undefined)
       .orderBy(desc(otpLogs.createdAt))
@@ -134,6 +145,7 @@ export default async function OtpLogsPage({
             initialRows={rows as unknown as OtpLogRow[]}
             filterParams={{ phone, purpose, event, since }}
             polling={page === 1}
+            canReveal={guard.permissions.has("otp-logs.write")}
           />
         </div>
       </Card>

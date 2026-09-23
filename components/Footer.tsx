@@ -285,8 +285,8 @@ export function Footer() {
           </p>
           <div className="flex items-center gap-5 flex-wrap">
             <div className="flex flex-wrap gap-x-5 gap-y-2 text-[12px] text-white/50">
-              <a href="#" className="hover:text-white">Privacy</a>
-              <a href="#" className="hover:text-white">Terms</a>
+              <a href="/privacy" className="hover:text-white">Privacy</a>
+              <a href="/terms" className="hover:text-white">Terms</a>
               <a href="/contact?kind=parent" className="hover:text-white">
                 Returns
               </a>

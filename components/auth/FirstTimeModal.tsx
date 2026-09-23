@@ -6,6 +6,7 @@ import { CheckCircle2, ArrowRight, Eye, EyeOff, ShieldCheck } from "lucide-react
 import { Modal } from "@/components/ui/Modal";
 import { auth } from "@/lib/auth";
 import { TC_SECTIONS, TC_REQUIRED_CHECKS, TC_VERSION } from "@/lib/legal/terms";
+import { PrivacyLinkedLabel } from "@/components/auth/PrivacyLinkedLabel";
 
 function maskMobile(m: string) {
   if (m.length < 10) return `+91 ${m}`;
@@ -252,7 +253,7 @@ export function FirstTimeModal({
                       }
                       className="mt-0.5 h-4 w-4 accent-brand flex-shrink-0"
                     />
-                    <span>{c.label}</span>
+                    <PrivacyLinkedLabel text={c.label} />
                   </label>
                 ))}
               </div>

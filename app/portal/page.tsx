@@ -32,6 +32,13 @@ import { Footer } from "@/components/Footer";
  * is never lost. Size Exchange shows a popup pointing to the website.
  */
 
+
+/** The search API masks a guardian's mobile (`******1234`) unless the visitor
+ *  searched by that number; a masked value must not prefill the form. */
+function unmasked(v: string | null | undefined): string | null {
+  return v && !v.includes("*") ? v : null;
+}
+
 const GRADES = [
   "Nursery", "LKG", "UKG",
   ...Array.from({ length: 12 }, (_, i) => `Grade ${i + 1}`),
@@ -357,7 +364,7 @@ export default function PortalPage() {
             category={category}
             student={student}
             orders={data?.orders ?? []}
-            defaultPhone={data?.parent?.mobile ?? student.guardianMobile ?? ""}
+            defaultPhone={unmasked(data?.parent?.mobile) ?? unmasked(student.guardianMobile) ?? ""}
             defaultName={student.guardianName ?? ""}
             onBack={() => window.history.back()}
             onDone={(ref) => {

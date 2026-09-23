@@ -3103,7 +3103,8 @@ export const otpLogs = pgTable(
     purpose: text("purpose").notNull(), // 'login' | 'first-time' | 'recover-old' | 'recover-new'
     event: text("event").notNull(),     // 'sent' | 'send_failed' | 'verified' | 'verify_failed'
     transactionId: text("transaction_id"),
-    otpCode: varchar("otp_code", { length: 6 }),
+    /** Sealed (`enc:…`) via server/otp-log-crypto.ts; legacy rows may still be plain. */
+  otpCode: text("otp_code"),
     error: text("error"),
     ip: text("ip"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

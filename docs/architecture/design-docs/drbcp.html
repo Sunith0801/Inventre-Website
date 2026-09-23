@@ -9,9 +9,9 @@
   <div class="band"></div>
   <div>
     <div class="meta">
-      <div><span>Document</span><b>DR-BCP v1.0</b></div>
-      <div><span>Date</span><b>23 September 2026</b></div>
-      <div><span>Status</span><b>Baseline, awaiting drill</b></div>
+      <div><span>Document</span><b>DR-BCP v1.1</b></div>
+      <div><span>Date</span><b>24 September 2026</b></div>
+      <div><span>Status</span><b>Baseline; first restore drill recorded</b></div>
       <div><span>Owner</span><b>Inventre Engineering</b></div>
     </div>
     <p class="small" style="margin-top:4mm">Technical procedures reference the runbooks in the repository (<code>docs/runbooks/</code>) and the recovery kit stored beside the backups. Names in the contact table are placeholders where a role has not yet been assigned; filling them is the first action.</p>
@@ -30,11 +30,12 @@
     <li><span>Communication during an incident</span><span class="pg">16</span></li>
     <li><span>Degraded operation: keeping the business going</span><span class="pg">18</span></li>
     <li><span>Testing and drills</span><span class="pg">19</span></li>
-    <li><span>Findings and action plan</span><span class="pg">20</span></li>
+    <li><span>Findings and action plan</span><span class="pg">21</span></li>
   </ol>
   <h3>Revision history</h3>
   <table class="hist compact"><thead><tr><th>Version</th><th>Date</th><th>Author</th><th>Change</th></tr></thead>
-  <tbody><tr><td>1.0</td><td>2026-09-23</td><td>Engineering</td><td>First baseline after the backup pipeline and recovery kit went live; targets proposed, playbooks written, drill schedule set.</td></tr></tbody></table>
+  <tbody><tr><td>1.0</td><td>2026-09-23</td><td>Engineering</td><td>First baseline after the backup pipeline and recovery kit went live; targets proposed, playbooks written, drill schedule set.</td></tr>
+  <tr><td>1.1</td><td>2026-09-24</td><td>Engineering</td><td>Point-in-time restore drill run on the production host into a throwaway container (D-02); one-command maintenance switch (D-08); restore script gains a volume override; new finding D-11 (nginx bypass token readable).</td></tr></tbody></table>
 </div>
 
 <section class="sec">
@@ -48,7 +49,7 @@
 <tr><td><strong>Maximum tolerable outage</strong> before the business is materially hurt</td><td><strong>2 business days</strong></td><td>Beyond this, schools escalate, parents lose trust and delivery slots are missed. Every playbook is designed to finish far inside it.</td></tr>
 <tr><td><strong>Drill frequency</strong></td><td><strong>Quarterly</strong> restore drill, <strong>annual</strong> full rebuild</td><td>A backup that has never been restored is a hope, not a backup.</td></tr>
 </tbody></table>
-<div class="callout"><span class="t">Current measured position</span><p>RPO: about 5 minutes (verified: transaction-log segments and the 5-minute mirror are live). RTO: <strong>not yet measured</strong>; the rebuild script exists and is syntax-checked but has not been run on a clean machine. The first drill (Section 9) turns the 90-minute estimate into a number.</p></div>
+<div class="callout"><span class="t">Current measured position</span><p>RPO: about 5 minutes (verified: transaction-log segments and the 5-minute mirror are live). RTO for a full rebuild (Scenario A): <strong>not yet measured</strong>; the rebuild script exists and is syntax-checked but has not been run on a clean machine. The point-in-time restore (Scenario B) was drilled on 2026-09-24 into a throwaway container on the production host; the measured time is in the drill record (Section 9). The first full rebuild drill turns the 90-minute estimate into a number.</p></div>
 </section>
 
 <section class="sec">
@@ -71,7 +72,7 @@
 <rect x="20" y="216" width="200" height="64" rx="10" fill="#FAF7F2" stroke="#D6D0C6" stroke-width="1.5"/><text x="120" y="242" text-anchor="middle" font-size="15" font-weight="700">Cloudflare R2</text><text x="120" y="264" text-anchor="middle" font-size="13" fill="#5B5B5B">product images</text>
 <rect x="540" y="20" width="200" height="64" rx="10" fill="#FAF7F2" stroke="#D6D0C6" stroke-width="1.5"/><text x="640" y="46" text-anchor="middle" font-size="15" font-weight="700">CCAvenue</text><text x="640" y="68" text-anchor="middle" font-size="13" fill="#5B5B5B">payments</text>
 <rect x="540" y="118" width="200" height="64" rx="10" fill="#FAF7F2" stroke="#D6D0C6" stroke-width="1.5"/><text x="640" y="144" text-anchor="middle" font-size="15" font-weight="700">Audit ERP</text><text x="640" y="166" text-anchor="middle" font-size="13" fill="#5B5B5B">fulfilment (separate host)</text>
-<rect x="540" y="216" width="200" height="64" rx="10" fill="#FAF7F2" stroke="#D6D0C6" stroke-width="1.5"/><text x="640" y="242" text-anchor="middle" font-size="15" font-weight="700">SMS · MyClassBoard · M365</text><text x="640" y="264" text-anchor="middle" font-size="13" fill="#5B5B5B">login OTP · fees · e-mail, backups</text>
+<rect x="540" y="216" width="200" height="64" rx="10" fill="#FAF7F2" stroke="#D6D0C6" stroke-width="1.5"/><text x="640" y="242" text-anchor="middle" font-size="15" font-weight="700">SMS · MyClassBoard · M365</text><text x="640" y="264" text-anchor="middle" font-size="13" fill="#5B5B5B">login OTP · fees · backups</text>
 <line x1="220" y1="52" x2="270" y2="120" stroke="#5B5B5B" stroke-width="1.8" marker-end="url(#ah)"/><line x1="220" y1="150" x2="270" y2="150" stroke="#5B5B5B" stroke-width="1.8" marker-end="url(#ah)"/><line x1="220" y1="248" x2="270" y2="180" stroke="#5B5B5B" stroke-width="1.8" marker-end="url(#ah)"/>
 <line x1="490" y1="120" x2="540" y2="52" stroke="#5B5B5B" stroke-width="1.8" marker-end="url(#ah)"/><line x1="490" y1="150" x2="540" y2="150" stroke="#5B5B5B" stroke-width="1.8" marker-end="url(#ah)"/><line x1="490" y1="180" x2="540" y2="248" stroke="#5B5B5B" stroke-width="1.8" marker-end="url(#ah)"/>
 </svg>
@@ -179,6 +180,7 @@
 <tr><td>B3</td><td>For point-in-time: the maintenance page goes up (orders placed during the window would be lost), the technical lead runs <code>restore-from-m365.sh restore-pitr "YYYY-MM-DD HH:MM"</code> on the <em>same</em> host into a fresh data volume, verifies counts, then switches the compose stack to it. Orders placed between the target time and the restore are re-entered from CCAvenue's records.</td><td>Technical lead</td><td>0:30–1:30</td></tr>
 <tr><td>B4</td><td>Verify, reopen, all-clear; record what was lost and re-entered.</td><td>Comms</td><td>1:30</td></tr>
 </tbody></table>
+<p class="small">Drill: <code>scripts/backup/pitr-drill.sh ["YYYY-MM-DD HH:MM:SS"]</code> rehearses step B3 without touching the live stack. It restores from the local archive (<code>/root/backups-archive</code>, which holds the WAL segments the replay needs) into a throwaway container and data volume on the production host (<code>PG_VOLUME</code> override), prints the counts, then removes them. First run 2026-09-24 (Section 9). The dev database cannot be used for this: it has no WAL archive.</p>
 
 <h3>Scenario C — Security compromise (repeat of June 2026)</h3>
 <table class="compact"><thead><tr><th style="width:12%">Step</th><th>Action</th><th style="width:14%">Who</th></tr></thead><tbody>
@@ -217,7 +219,7 @@
 <li><strong>All-clear:</strong> "The store is back online. Orders placed before [time] are intact. If you paid between [time] and [time] and your order is missing, reply to this message or call the school coordinator; we will complete it for you."</li>
 <li><strong>Payment partner outage:</strong> "Online payment is currently unavailable due to an issue at our payment provider. You can complete your order later; your cart is saved. Urgent orders can be placed through the school coordinator."</li>
 </ol>
-<div class="callout"><span class="t">Maintenance page</span><p>Already built: nginx serves a branded page with a 503 status when <code>$maint_on</code> is 1; admin and API paths stay live; staff bypass with a token. Copy the current page to nginx with <code>/root/maintenance/sync.sh</code>. Exact steps in the HLD (maintenance page and nginx 503 gate).</p></div>
+<div class="callout"><span class="t">Maintenance page</span><p>Already built: nginx serves a branded page with a 503 status when <code>$maint_on</code> is 1; admin and API paths stay live; staff bypass with a token. Copy the current page to nginx with <code>/root/maintenance/sync.sh</code>. One command: <code>bash scripts/maintenance.sh on|off|status</code> (backs up the nginx site file, edits the map, tests, reloads, restores on failure). Runbook <code>docs/runbooks/maintenance-page.md</code>; exact nginx steps in the HLD (maintenance page and nginx 503 gate).</p></div>
 </section>
 
 <section class="sec">
@@ -228,7 +230,7 @@
 <tr><td>Fulfilment link down</td><td>Warehouse works from the admin console's order list or an Excel export until the queue drains.</td></tr>
 <tr><td>Login (OTP) down</td><td>Password login; supervised OTP bypass; call centre places orders on behalf of parents using view-as-parent is read-only, so orders are keyed as offline orders instead.</td></tr>
 <tr><td>Fee console down</td><td>Fee desk works directly in MyClassBoard; Inventre's console is a reporting layer.</td></tr>
-<tr><td>Engineering unavailable</td><td>Deputy follows the recovery kit README; the hosting provider's console can reboot the machine; the maintenance page can be toggled by anyone with SSH.</td></tr>
+<tr><td>Engineering unavailable</td><td>Deputy follows the recovery kit README; the hosting provider's console can reboot the machine; the maintenance page can be toggled by anyone with SSH (<code>bash scripts/maintenance.sh on|off</code>).</td></tr>
 </tbody></table>
 </section>
 
@@ -238,30 +240,32 @@
 <tr><td>Automatic restore of the newest dump</td><td>Weekly, Sunday 03:30</td><td>The dump is restorable; table and row counts are sane; e-mail to it@inventre.in</td><td><span class="pill ok">Scheduled</span> first run 2026-09-27</td></tr>
 <tr><td>Mirror integrity</td><td>Continuous</td><td>Sync succeeded; transaction log is fresh; e-mail on failure or staleness</td><td><span class="pill ok">Live</span></td></tr>
 <tr><td>Full rebuild drill (Scenario A on a throwaway server)</td><td>Quarterly; first one now</td><td>The recovery kit works end to end; measures the real RTO; finds gaps in this document</td><td><span class="pill bad">Not yet done</span> D-01</td></tr>
-<tr><td>Point-in-time restore drill (Scenario B on the dev database)</td><td>Quarterly</td><td>Replay to a chosen minute works; the team knows the command</td><td><span class="pill bad">Not yet done</span> D-02</td></tr>
+<tr><td>Point-in-time restore drill (Scenario B, throwaway container on the production host)</td><td>Quarterly</td><td>Replay to a chosen minute works; the team knows the command</td><td><span class="pill ok">Done</span> 2026-09-24 — 45 s from the base backup + 12 WAL segments to a promoted database (118 tables, 31,683 orders, 24,213 students). The first attempt failed on the in-progress WAL segment; fixed in both restore scripts</td></tr>
 <tr><td>Tabletop: compromise + data-breach notification</td><td>Annual</td><td>People know the order of actions and the 72-hour clock</td><td><span class="pill bad">Not yet done</span> D-03</td></tr>
 <tr><td>Contact tree check</td><td>Quarterly</td><td>Every name in Section 4 answers; password-manager entries open</td><td><span class="pill bad">Not yet done</span></td></tr>
 </tbody></table>
 <h3>Drill record</h3>
 <table class="compact"><thead><tr><th>Date</th><th>Drill</th><th>Measured RTO</th><th>Data loss</th><th>Gaps found</th></tr></thead><tbody>
-<tr><td colspan="5" class="small">No drills recorded yet. The first full rebuild drill fills this row.</td></tr>
+<tr><td>2026-09-24</td><td>Point-in-time restore (<code>scripts/backup/pitr-drill.sh</code>)</td><td>45 s (database only; the app restart comes on top)</td><td>None up to the target minute; the un-archived tail is at most one WAL segment (a few minutes)</td><td>(1) Postgres refused the in-progress WAL segment ("has wrong size") and aborted the whole recovery instead of stopping at the last complete record — both restore scripts now zero-pad that segment to 16 MB and fail fast when the container exits. (2) <code>restore-from-m365.sh</code> hard-coded the PRODUCTION volume name in its fresh-volume step (fixed: <code>PG_VOLUME</code> override); Section 6 said "on the dev database" — the drill actually needs the WAL archive, so it runs from <code>/root/backups-archive</code> into a throwaway volume</td></tr>
+<tr><td colspan="5" class="small">The full rebuild drill (D-01) is still to be recorded.</td></tr>
 </tbody></table>
 </section>
 
 <section class="sec">
 <div class="section-hd"><span class="num">10</span><h2>Findings and action plan</h2></div>
-<table class="register"><thead><tr><th style="width:8%">ID</th><th style="width:10%">Priority</th><th style="width:34%">Finding</th><th>Action</th><th style="width:7%">Effort</th><th style="width:12%">Owner</th></tr></thead><tbody>
+<table class="register"><thead><tr><th style="width:8%">ID</th><th style="width:10%">Priority</th><th style="width:27%">Finding</th><th style="width:36%">Action</th><th style="width:7%">Effort</th><th style="width:12%">Owner</th></tr></thead><tbody>
 <tr><td>D-01</td><td><span class="pill bad">Now</span></td><td>The rebuild has never been run on a clean machine; RTO is an estimate</td><td>Provide a throwaway server; run Scenario A end to end with a stopwatch; fix whatever breaks; record the drill</td><td>M</td><td>Owner (server), Engineering</td></tr>
-<tr><td>D-02</td><td><span class="pill bad">Now</span></td><td>Point-in-time restore untested</td><td>Run <code>restore-pitr</code> against the dev database to a chosen minute; verify counts</td><td>S</td><td>Engineering</td></tr>
+<tr><td>D-02</td><td><span class="pill ok">Closed</span></td><td>Point-in-time restore untested</td><td>Drilled 2026-09-24 with <code>scripts/backup/pitr-drill.sh</code> into a throwaway container on the production host; counts verified; repeat quarterly</td><td>S</td><td>Engineering</td></tr>
 <tr><td>D-03</td><td><span class="pill warn">High</span></td><td>No named deputies or communications lead</td><td>Fill Section 4; store the table in the password manager; phone notification on it@inventre.in</td><td>S</td><td>Owner</td></tr>
 <tr><td>D-04</td><td><span class="pill warn">High</span></td><td>Database password not yet rotated (also a security item)</td><td>Run the rotation script at a quiet moment</td><td>S</td><td>Owner</td></tr>
 <tr><td>D-05</td><td><span class="pill warn">High</span></td><td>Targets in Section 1 and 3 not yet approved</td><td>Owner approves or amends; the numbers then drive drill acceptance</td><td>S</td><td>Owner</td></tr>
 <tr><td>D-06</td><td><span class="pill warn">High</span></td><td>A deliberate deletion in SharePoint could remove the backups (recycle bin only)</td><td>Enable a retention policy or retention label on the backup library so files cannot be permanently deleted for 30 days; keep the deploy key's write scope minimal</td><td>S</td><td>Microsoft 365 admin</td></tr>
 <tr><td>D-07</td><td><span class="pill neutral">Medium</span></td><td>Single host; no warm standby</td><td>Decide after the first drill: if the measured RTO is acceptable, stay; if not, a second small host with a streaming replica cuts RTO to minutes</td><td>L</td><td>Owner</td></tr>
-<tr><td>D-08</td><td><span class="pill neutral">Medium</span></td><td>The maintenance page must be enabled by hand over SSH</td><td>Add a one-command toggle in the recovery kit and document who may flip it</td><td>S</td><td>Engineering</td></tr>
+<tr><td>D-08</td><td><span class="pill ok">Closed</span></td><td>The maintenance page must be enabled by hand over SSH</td><td>Done 2026-09-24: <code>bash scripts/maintenance.sh on|off|status</code>; runbook <code>docs/runbooks/maintenance-page.md</code> says who may flip it</td><td>S</td><td>Engineering</td></tr>
 <tr><td>D-09</td><td><span class="pill neutral">Medium</span></td><td>Offline-order fallback relies on a script and staff knowledge</td><td>Write the coordinator's paper form and the staff SOP for keying offline orders</td><td>S</td><td>Operations</td></tr>
 <tr><td>D-10</td><td><span class="pill neutral">Medium</span></td><td>Partner escalation contacts not centralised</td><td>Add merchant ids, support numbers and account owners to the password-manager entry</td><td>S</td><td>Owner</td></tr>
+<tr><td>D-11</td><td><span class="pill warn">High</span></td><td>The maintenance bypass token is written in plain text in <code>/etc/nginx/sites-available/inventre</code>, which is world-readable (mode 644)</td><td>Move it to an include file with mode 600, or restrict the site file</td><td>S</td><td>Engineering</td></tr>
 </tbody></table>
-<p class="small">Sources: backup and restore scripts under <code>scripts/backup/</code>, runbooks under <code>docs/runbooks/</code>, the HLD and LLD v1.7, and the operational history recorded in this engineering programme (June 2026 compromise, September 2026 outages and fixes).</p>
+<p class="small">Sources: backup and restore scripts under <code>scripts/backup/</code>, runbooks under <code>docs/runbooks/</code>, the HLD and LLD v1.8, and the operational history recorded in this engineering programme (June 2026 compromise, September 2026 outages and fixes).</p>
 </section>
 </body></html>

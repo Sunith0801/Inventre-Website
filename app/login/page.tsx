@@ -26,8 +26,8 @@ export default async function LoginPage() {
         <div className="px-5 lg:px-10 py-5 text-[11px] text-ink-400 flex items-center justify-between">
           <span>© {new Date().getFullYear()} Inventre</span>
           <div className="flex gap-4">
-            <a href="#" className="hover:text-ink-700">Privacy</a>
-            <a href="#" className="hover:text-ink-700">Terms</a>
+            <a href="/privacy" className="hover:text-ink-700">Privacy</a>
+            <a href="/terms" className="hover:text-ink-700">Terms</a>
           </div>
         </div>
       </div>

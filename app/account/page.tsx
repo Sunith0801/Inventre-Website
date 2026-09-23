@@ -21,6 +21,7 @@ import { Nav } from "@/components/Nav";
 import { Footer } from "@/components/Footer";
 import { auth, clearMeCache, type Me } from "@/lib/auth";
 import { SiblingsList } from "@/components/account/SiblingsList";
+import { YourDataCard } from "@/components/account/YourDataCard";
 
 function titleCase(s: string | null | undefined): string {
   if (!s) return "";
@@ -57,7 +58,7 @@ export default function AccountPage() {
 
   useEffect(() => {
     auth
-      .me()
+      .meWithDob()
       .then((u) => {
         setMe(u);
         if (u?.kind === "parent") {
@@ -98,7 +99,7 @@ export default function AccountPage() {
       // overwritten by stale cached data and the UI would "snap back",
       // making the edit appear silently broken.
       clearMeCache();
-      const refreshed = await auth.me();
+      const refreshed = await auth.meWithDob();
       setMe(refreshed);
       setEditField(null);
       setSavedFlash(field === "name" ? "Name updated" : "Email updated");
@@ -312,6 +313,8 @@ export default function AccountPage() {
             />
           </div>
         </Card>
+
+        <YourDataCard />
 
         {/* Footer-style sign out */}
         <div className="mt-8 flex items-center justify-between px-1 py-4 border-t border-ink-100">

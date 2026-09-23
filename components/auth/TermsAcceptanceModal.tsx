@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { ShieldCheck, ArrowRight, CheckCircle2 } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { TC_SECTIONS, TC_REQUIRED_CHECKS, TC_VERSION } from "@/lib/legal/terms";
+import { PrivacyLinkedLabel } from "@/components/auth/PrivacyLinkedLabel";
 import { auth } from "@/lib/auth";
 
 /**
@@ -129,7 +130,7 @@ export function TermsAcceptanceModal({
                       }
                       className="mt-0.5 h-4 w-4 accent-brand flex-shrink-0"
                     />
-                    <span>{c.label}</span>
+                    <PrivacyLinkedLabel text={c.label} />
                   </label>
                 ))}
               </div>

@@ -110,6 +110,13 @@ export const auth = {
     return meInflight;
   },
 
+  /** Account page only: same as me() but includes each child's date of
+   *  birth. Not cached, so it never leaks into the shared me() cache. */
+  async meWithDob(): Promise<Me> {
+    const data = await api<{ user: Me }>("/api/auth/me?include=dob");
+    return data.user;
+  },
+
   async loginWithPassword(phone: string, password: string) {
     const r = await api<{ ok: true }>("/api/auth/login", {
       method: "POST",

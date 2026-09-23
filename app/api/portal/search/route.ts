@@ -2,6 +2,15 @@ import { NextResponse } from "next/server";
 import { and, desc, eq, inArray, or, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { students, schools, parents, concerns } from "@/db/schema";
+
+/** `******1234` unless the query itself was that number. */
+function safeMobile(phone: string | null | undefined, query: string): string | null {
+  if (!phone) return null;
+  const digits = phone.replace(/\D/g, "");
+  const qd = query.replace(/\D/g, "");
+  if (qd.length >= 10 && digits.slice(-10) === qd.slice(-10)) return phone;
+  return `******${digits.slice(-4)}`;
+}
 import {
   listParentOrdersFromErp,
   getParentOrderDetailFromErp,
@@ -118,11 +127,14 @@ export async function GET(req: Request) {
   return NextResponse.json({
     found: true,
     parentId,
-    parent: { name: parent?.name ?? null, mobile: parent?.phone ?? null },
+    // Public, no-login endpoint: only echo the full mobile back to someone
+    // who searched BY that mobile (they already know it). A Student-ID
+    // search gets a masked number (Data Protection P-05).
+    parent: { name: parent?.name ?? null, mobile: safeMobile(parent?.phone, q) },
     students: kidRows.map((k) => ({
       ...k,
       guardianName: parent?.name ?? null,
-      guardianMobile: parent?.phone ?? null,
+      guardianMobile: safeMobile(parent?.phone, q),
     })),
     orders,
     concerns: concernRows.map((c) => ({

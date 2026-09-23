@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { and, desc, eq, gt, gte, ilike } from "drizzle-orm";
+import { and, desc, eq, gt, gte, ilike, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { otpLogs } from "@/db/schema";
 import { isResponse, requirePermission } from "@/server/admin-guard";
@@ -48,8 +48,20 @@ export async function GET(req: Request) {
       : undefined,
   ].filter(Boolean) as Parameters<typeof and>[0][];
 
+  // The sealed code is never sent to the browser — only whether one exists.
+  // Staff reveal a single code via POST ./reveal with the key phrase (P-01).
   const rows = await db
-    .select()
+    .select({
+      id: otpLogs.id,
+      createdAt: otpLogs.createdAt,
+      phone: otpLogs.phone,
+      purpose: otpLogs.purpose,
+      event: otpLogs.event,
+      hasCode: sql<boolean>`(${otpLogs.otpCode} is not null)`,
+      transactionId: otpLogs.transactionId,
+      error: otpLogs.error,
+      ip: otpLogs.ip,
+    })
     .from(otpLogs)
     .where(conds.length ? and(...conds) : undefined)
     .orderBy(desc(otpLogs.createdAt))

@@ -17,6 +17,7 @@ import bcrypt from "@node-rs/bcrypt";
 import { eq, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { students, otpLogs } from "@/db/schema";
+import { sealOtpCode } from "@/server/otp-log-crypto";
 import { redis } from "@/server/redis";
 import { rateLimit } from "@/server/rate-limit";
 import { sendOtpSms, generateOtp } from "@/server/notify/sms";
@@ -114,7 +115,7 @@ export async function POST(req: Request) {
     try {
       const { transactionId } = await sendOtpSms(body.newPhone, code);
       db.insert(otpLogs)
-        .values({ phone: body.newPhone, purpose: "recover-new", event: "sent", transactionId, otpCode: code, ip })
+        .values({ phone: body.newPhone, purpose: "recover-new", event: "sent", transactionId, otpCode: sealOtpCode(code), ip })
         .catch(console.error);
     } catch (err) {
       db.insert(otpLogs)
@@ -122,7 +123,7 @@ export async function POST(req: Request) {
           phone: body.newPhone,
           purpose: "recover-new",
           event: "send_failed",
-          otpCode: code,
+          otpCode: sealOtpCode(code),
           error: err instanceof Error ? err.message : String(err),
           ip,
         })

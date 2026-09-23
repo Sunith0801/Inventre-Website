@@ -61,12 +61,15 @@ pg_password() {  # from the restored .env.deploy (step "code" writes it)
   [ -f /root/Inventre/.env.deploy ] || die "run the 'code' step first — it restores .env.deploy, which holds POSTGRES_PASSWORD"
   grep -E '^POSTGRES_PASSWORD=' /root/Inventre/.env.deploy | head -1 | cut -d= -f2- | tr -d '"'
 }
-fresh_volume() { docker rm -f inventre-restore-pg >/dev/null 2>&1 || true; docker volume rm -f inventre-deploy_pgdata >/dev/null 2>&1 || true; docker volume create inventre-deploy_pgdata >/dev/null; }
+# PG_VOLUME may be overridden (e.g. PG_VOLUME=inventre-drill) to rehearse on a host
+# that already runs production — the default is the volume the compose stack uses.
+PG_VOLUME="${PG_VOLUME:-inventre-deploy_pgdata}"
+fresh_volume() { docker rm -f inventre-restore-pg >/dev/null 2>&1 || true; docker volume rm -f "$PG_VOLUME" >/dev/null 2>&1 || true; docker volume create "$PG_VOLUME" >/dev/null; }
 report_db() {
   docker exec inventre-restore-pg psql -U inventre -d inventre -Atc \
     "select 'tables='||(select count(*) from information_schema.tables where table_schema='public')||' orders='||(select count(*) from orders)||' students='||(select count(*) from students)||' newest order='||coalesce((select max(placed_at)::text from orders),'-')"
   docker rm -f inventre-restore-pg >/dev/null
-  echo "✓ data volume inventre-deploy_pgdata is ready. Next: ./restore-from-m365.sh start"
+  echo "✓ data volume $PG_VOLUME is ready. Next: ./restore-from-m365.sh start"
 }
 
 case "$MODE" in
@@ -115,7 +118,7 @@ restore-dump)
   PW="$(pg_password)"
   log "fresh Postgres 16 on volume inventre-deploy_pgdata, restoring $(basename "$DUMP")"
   fresh_volume
-  docker run -d --name inventre-restore-pg -v inventre-deploy_pgdata:/var/lib/postgresql/data -e POSTGRES_USER=inventre -e POSTGRES_PASSWORD="$PW" -e POSTGRES_DB=inventre postgres:16-alpine >/dev/null
+  docker run -d --name inventre-restore-pg -v "$PG_VOLUME":/var/lib/postgresql/data -e POSTGRES_USER=inventre -e POSTGRES_PASSWORD="$PW" -e POSTGRES_DB=inventre postgres:16-alpine >/dev/null
   for _ in $(seq 1 60); do docker exec inventre-restore-pg pg_isready -U inventre -q 2>/dev/null && break; sleep 2; done
   docker exec -i inventre-restore-pg pg_restore -U inventre -d inventre --no-owner --no-acl < "$DUMP" 2> "$R/pg_restore.err" || true
   echo "  (pg_restore warnings, if any, are in $R/pg_restore.err)"
@@ -129,17 +132,21 @@ restore-pitr)
   log "point-in-time restore from $(basename "$BASE_DIR") + WAL${TARGET_TIME:+ to $TARGET_TIME}"
   rm -rf "$R/wal-plain"; mkdir -p "$R/wal-plain"
   for f in "$R"/wal/*.gz "$R"/wal/*.gz.partial; do [ -f "$f" ] || continue; out="$(basename "$f")"; out="${out%.partial}"; out="${out%.gz}"; gunzip -c "$f" > "$R/wal-plain/$out" 2>/dev/null || true; done
+  # The in-progress (.partial) segment is shorter than 16 MB; Postgres aborts the
+  # whole recovery on it ("has wrong size"). Zero-pad so it reads as end-of-WAL.
+  for f in "$R"/wal-plain/*; do [ -f "$f" ] && [ "$(stat -c %s "$f")" -lt 16777216 ] && truncate -s 16777216 "$f"; done
   fresh_volume
-  docker run --rm -v inventre-deploy_pgdata:/data -v "$BASE_DIR":/base:ro -e TT="$TARGET_TIME" alpine sh -c '
+  docker run --rm -v "$PG_VOLUME":/data -v "$BASE_DIR":/base:ro -e TT="$TARGET_TIME" alpine sh -c '
     set -e; cd /data && tar -xzf /base/base.tar.gz
     rm -rf /data/pg_wal && mkdir -p /data/pg_wal
     echo "restore_command = '"'"'cp /walarchive/%f %p'"'"'" >> /data/postgresql.auto.conf
     if [ -n "$TT" ]; then echo "recovery_target_time = '"'"'$TT'"'"'" >> /data/postgresql.auto.conf; echo "recovery_target_action = '"'"'promote'"'"'" >> /data/postgresql.auto.conf; fi
     touch /data/recovery.signal; chown -R 70:70 /data'
   log "Postgres replays WAL (this can take minutes), then promotes"
-  docker run -d --name inventre-restore-pg -v inventre-deploy_pgdata:/var/lib/postgresql/data -v "$R/wal-plain":/walarchive:ro -e POSTGRES_PASSWORD="$PW" postgres:16-alpine >/dev/null
+  docker run -d --name inventre-restore-pg -v "$PG_VOLUME":/var/lib/postgresql/data -v "$R/wal-plain":/walarchive:ro -e POSTGRES_PASSWORD="$PW" postgres:16-alpine >/dev/null
   for _ in $(seq 1 240); do
     if docker exec inventre-restore-pg pg_isready -U inventre -q 2>/dev/null && [ "$(docker exec inventre-restore-pg psql -U inventre -d inventre -Atc 'select pg_is_in_recovery()' 2>/dev/null)" = "f" ]; then break; fi
+    [ "$(docker inspect -f '{{.State.Running}}' inventre-restore-pg 2>/dev/null)" = "true" ] || { docker logs --tail 20 inventre-restore-pg; die "Postgres exited during WAL replay — see the log above"; }
     sleep 5
   done
   report_db

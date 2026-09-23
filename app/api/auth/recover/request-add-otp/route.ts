@@ -21,6 +21,7 @@ import { z } from "zod";
 import bcrypt from "@node-rs/bcrypt";
 import { db } from "@/db/client";
 import { otpLogs } from "@/db/schema";
+import { sealOtpCode } from "@/server/otp-log-crypto";
 import { redis } from "@/server/redis";
 import { rateLimit } from "@/server/rate-limit";
 import { sendOtpSms, generateOtp } from "@/server/notify/sms";
@@ -83,7 +84,7 @@ export async function POST(req: Request) {
           purpose: "recover-add",
           event: "sent",
           transactionId,
-          otpCode: code,
+          otpCode: sealOtpCode(code),
           ip,
         })
         .catch(console.error);
@@ -93,7 +94,7 @@ export async function POST(req: Request) {
           phone: body.newPhone,
           purpose: "recover-add",
           event: "send_failed",
-          otpCode: code,
+          otpCode: sealOtpCode(code),
           error: err instanceof Error ? err.message : String(err),
           ip,
         })

@@ -233,3 +233,52 @@ describe("admin navigation", () => {
     expect(used.filter((s) => !slugs.has(s)), "nav perms with no ADMIN_PAGES slug").toEqual([]);
   });
 });
+
+describe("privacy: no third-party scripts in the storefront", () => {
+  /**
+   * The Privacy Notice (/privacy) tells parents there is no advertising,
+   * no tracking and no behavioural profiling of children. That promise is
+   * only true while nobody drops an analytics tag into the storefront, so
+   * the rule is executable: any tracker/script loader under the public
+   * storefront trees fails here. Staff-only areas (admin, fees) and API
+   * routes are out of scope.
+   */
+  const STOREFRONT_EXCLUDE = /^app\/(admin|fees|api)\//;
+  const FORBIDDEN = [
+    "next/script",
+    "<Script ",
+    "<script src=",
+    "googletagmanager",
+    "gtag(",
+    "hotjar",
+    "clarity.ms",
+    "facebook.net",
+    "fbq(",
+    "segment.com",
+    "mixpanel",
+  ];
+
+  it("no storefront file loads a third-party script or tracker", () => {
+    const files = [...tracked("'app/**'"), ...tracked("'components/**'")]
+      .filter((f) => /\.(tsx?|jsx?|mdx?)$/.test(f))
+      .filter((f) => !STOREFRONT_EXCLUDE.test(f));
+    expect(files.length).toBeGreaterThan(50); // the rule must not pass vacuously
+
+    const offenders: string[] = [];
+    for (const f of files) {
+      const src = readFileSync(f, "utf8");
+      for (const needle of FORBIDDEN) {
+        if (src.includes(needle)) offenders.push(`${f}: ${needle}`);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it("the privacy and terms pages exist and the footer links to /privacy", () => {
+    expect(existsSync("app/privacy/page.tsx")).toBe(true);
+    expect(existsSync("app/terms/page.tsx")).toBe(true);
+    const footer = readFileSync("components/Footer.tsx", "utf8");
+    expect(footer).toContain('href="/privacy"');
+    expect(footer).toContain('href="/terms"');
+  });
+});
