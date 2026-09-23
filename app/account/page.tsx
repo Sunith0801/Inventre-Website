@@ -21,7 +21,6 @@ import { Nav } from "@/components/Nav";
 import { Footer } from "@/components/Footer";
 import { auth, clearMeCache, type Me } from "@/lib/auth";
 import { SiblingsList } from "@/components/account/SiblingsList";
-import { YourDataCard } from "@/components/account/YourDataCard";
 
 function titleCase(s: string | null | undefined): string {
   if (!s) return "";
@@ -314,13 +313,15 @@ export default function AccountPage() {
           </div>
         </Card>
 
-        <YourDataCard />
-
         {/* Footer-style sign out */}
         <div className="mt-8 flex items-center justify-between px-1 py-4 border-t border-ink-100">
           <p className="text-[12px] text-ink-500">
             Signed in as{" "}
             <span className="font-mono text-ink-700">{maskPhone(me.phone)}</span>
+            <span className="mx-2 text-ink-300">·</span>
+            <Link href="/account/privacy" className="underline hover:text-ink-700">
+              Privacy &amp; your data
+            </Link>
           </p>
           <button
             onClick={logout}

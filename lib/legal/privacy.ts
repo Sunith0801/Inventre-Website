@@ -136,9 +136,9 @@ export const PRIVACY_SECTIONS: PrivacySection[] = [
       "Under the Digital Personal Data Protection Act 2023 you can:",
     ],
     bullets: [
-      "Get a copy of your information: Account → Download my data.",
+      "Get a copy of your information: Account → Privacy & your data → Download my data.",
       "Correct it: change your name, email, phone number and addresses in the app. School, grade and section come from the school's roster, so ask the school to correct those.",
-      "Erase it: Account → Request account deletion, or write to the grievance officer. We will delete everything except the records the law requires us to keep (such as invoices).",
+      "Erase it: Account → Privacy & your data → Request account deletion, or write to the grievance officer. We will delete everything except the records the law requires us to keep (such as invoices).",
       "Withdraw your consent: the same way. Note that without your consent we cannot deliver the kit programme for your child.",
       "Nominate someone to exercise these rights for you if you are unable to.",
       "Complain: to our grievance officer first, and if you are not satisfied with our answer, to the Data Protection Board of India.",
