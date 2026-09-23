@@ -1,7 +1,9 @@
 # Inventre backup pipeline (F-11). Scripts source .env.deploy themselves.
+# Server clock is IST: the daily set runs at 00:00 (full DB), 00:10 (logical dump), 00:20 (code).
 SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 */5 * * * * root /root/Inventre/scripts/backup/sync-to-m365.sh >> /var/log/inventre/m365-sync.log 2>&1
-0   2 * * * root /root/Inventre/scripts/backup/base-backup.sh  >> /var/log/inventre/base-backup.log 2>&1
-0   4 * * * root /root/Inventre/scripts/backup/code-bundle.sh  >> /var/log/inventre/code-backup.log 2>&1
+0   0 * * * root /root/Inventre/scripts/backup/base-backup.sh  >> /var/log/inventre/base-backup.log 2>&1
+10  0 * * * root /root/Inventre/scripts/backup-db.sh >/dev/null 2>&1
+20  0 * * * root /root/Inventre/scripts/backup/code-bundle.sh  >> /var/log/inventre/code-backup.log 2>&1
 30  3 * * 0 root /root/Inventre/scripts/backup/verify-restore.sh >> /var/log/inventre/restore-test.log 2>&1

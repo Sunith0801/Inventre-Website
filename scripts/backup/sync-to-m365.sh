@@ -1,18 +1,35 @@
 #!/bin/bash
 # Mirror every backup artefact to the company's Microsoft 365 (SharePoint
 # library) every 5 minutes. Sources → destination folders:
-#   /root/backups-archive/{wal,base,code}  → <site>/Documents/Inventre Backups/prod/{wal,base,code}  (encrypted, rclone crypt)
+#   /root/backups-archive/{wal,base,code,config} → <site>/Documents/Inventre Backups/prod/{…}  (encrypted, rclone crypt)
+#   code/ holds git bundles (every commit, via the post-commit hook) + uncommitted-latest.* when the tree is dirty
+#   config/env.deploy.gpg = .env.deploy, AES-256 (SNAPSHOT_PASSPHRASE), refreshed on change
 #   /root/Inventre/db_backups/{daily,monthly} → Backups/prod/dumps/{daily,monthly}
 #   /root/Inventre/backups/*.tar.gz (6-hourly encrypted snapshots) → Backups/prod/snapshots
 # `sync` mirrors local retention; nothing is deleted remotely that still exists locally.
 set -uo pipefail; . "$(dirname "$0")/lib.sh"
 exec 9>/tmp/inventre-m365-sync.lock; flock -n 9 || exit 0
 m365_env || { log "M365 not configured"; exit 1; }
+# Configuration: .env.deploy, AES-256 with SNAPSHOT_PASSPHRASE, refreshed whenever it changes
+# (the 6-hourly snapshot carries it too; this keeps the mirror within 5 minutes of any edit).
+mkdir -p "$ARCHIVE/config"
+if [ "$(sha256sum "$ROOT/.env.deploy" | cut -c1-64)" != "$(cat "$ARCHIVE/config/.env.sha" 2>/dev/null)" ]; then
+  gpg --batch --yes --quiet --symmetric --cipher-algo AES256 --passphrase "$SNAPSHOT_PASSPHRASE" -o "$ARCHIVE/config/env.deploy.gpg" "$ROOT/.env.deploy" \
+    && sha256sum "$ROOT/.env.deploy" | cut -c1-64 > "$ARCHIVE/config/.env.sha" && log "config: .env.deploy re-encrypted"
+fi
+# Code: anything edited but not yet committed (committed work is bundled by the post-commit hook)
+if [ -n "$(git -C "$ROOT" status --porcelain 2>/dev/null)" ]; then
+  ( cd "$ROOT" && git ls-files -m -o --exclude-standard -z | tar --null -T - -czf "$ARCHIVE/code/uncommitted-latest.tar.gz" 2>/dev/null ) \
+    && ( cd "$ROOT" && git diff HEAD > "$ARCHIVE/code/uncommitted-latest.patch" 2>/dev/null; git status --porcelain > "$ARCHIVE/code/uncommitted-latest.txt" ) || true
+else
+  rm -f "$ARCHIVE/code/uncommitted-latest.tar.gz" "$ARCHIVE/code/uncommitted-latest.patch" "$ARCHIVE/code/uncommitted-latest.txt"
+fi
 DEST="m365crypt:"; FAIL=0
 R="--fast-list --transfers 4 --checkers 8 --retries 3 --low-level-retries 10 --stats 0 -q"
 rclone sync $R "$ARCHIVE/wal"  "$DEST/wal"  || FAIL=1
 rclone sync $R "$ARCHIVE/base" "$DEST/base" || FAIL=1
 rclone sync $R "$ARCHIVE/code" "$DEST/code" || FAIL=1
+rclone sync $R --exclude ".env.sha" "$ARCHIVE/config" "$DEST/config" || FAIL=1
 rclone sync $R "$ROOT/db_backups/daily"   "$DEST/dumps/daily"   || FAIL=1
 rclone sync $R "$ROOT/db_backups/monthly" "$DEST/dumps/monthly" || FAIL=1
 rclone sync $R --include 'inventre-snapshot-*.tar.gz' "$ROOT/backups" "$DEST/snapshots" || FAIL=1

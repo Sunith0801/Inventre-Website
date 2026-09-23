@@ -81,7 +81,9 @@ fetch)
   rclone copy $RC m365crypt:wal "$R/wal/"
   log "newest code bundle → $R/code"
   c="$(rclone lsf m365crypt:code | sort | tail -1)"; [ -n "$c" ] && rclone copy $RC "m365crypt:code/$c" "$R/code/"
-  log "newest encrypted snapshot (carries .env.deploy) → $R/snapshots"
+  log "latest encrypted .env.deploy → $R/config"; rclone copy $RC m365crypt:config "$R/config/" || true
+  log "uncommitted code changes at the time of the last sync (if any) → $R/code"
+  log "newest encrypted snapshot (carries .env.deploy too) → $R/snapshots"
   s="$(rclone lsf m365crypt:snapshots | sort | tail -1)"; [ -n "$s" ] && rclone copy $RC "m365crypt:snapshots/$s" "$R/snapshots/"
   echo; echo "✓ fetched:"; du -sh "$R"/* 2>/dev/null; echo "Next: ./restore-from-m365.sh code"
   ;;
@@ -97,8 +99,13 @@ code)
   git checkout -q "$(git bundle list-heads "$BUNDLE" | awk '/refs\/heads\//{print $2}' | sed 's#refs/heads/##' | grep -m1 -E '^(feat/ground-stock-availability|main)$' || echo main)" 2>/dev/null || true
   log "restoring .env.deploy from the encrypted snapshot"
   rm -rf "$R/snap"; mkdir -p "$R/snap"; tar -xzf "$SNAP" -C "$R/snap"
-  ENVGPG="$(find "$R/snap" -name 'env.deploy.gpg' | head -1)"; [ -f "$ENVGPG" ] || die "snapshot has no env/env.deploy.gpg"
+  ENVGPG="$R/config/env.deploy.gpg"   # refreshed within 5 min of any edit on the old host
+  [ -f "$ENVGPG" ] || ENVGPG="$(find "$R/snap" -name 'env.deploy.gpg' | head -1)"; [ -f "$ENVGPG" ] || die "no encrypted .env.deploy found (config/ or snapshot)"
   gpg --batch --yes --quiet --passphrase "$SNAPSHOT_PASSPHRASE" -o /root/Inventre/.env.deploy -d "$ENVGPG"; chmod 640 /root/Inventre/.env.deploy
+  if [ -f "$R/code/uncommitted-latest.tar.gz" ]; then
+    log "re-applying files that were edited but not committed on the old host (list: $R/code/uncommitted-latest.txt)"
+    tar -xzf "$R/code/uncommitted-latest.tar.gz" -C /root/Inventre
+  fi
   echo "✓ code at /root/Inventre ($(git log -1 --format='%h %s' | cut -c1-70)); .env.deploy restored. Next: restore-dump or restore-pitr"
   ;;
 
