@@ -21,6 +21,15 @@ m365_env() {
   export RCLONE_CONFIG_M365_TENANT="$M365_TENANT_ID"
   export RCLONE_CONFIG_M365_DRIVE_TYPE=documentLibrary
   export RCLONE_CONFIG_M365_DRIVE_ID="$(m365_drive_id)"
+  # Everything goes through a crypt layer: file names and contents are encrypted
+  # on this server, so SharePoint members and Microsoft see only opaque blobs.
+  : "${BACKUP_CRYPT_PASSWORD:?}" "${BACKUP_CRYPT_SALT:?}"
+  export RCLONE_CONFIG_M365CRYPT_TYPE=crypt
+  export RCLONE_CONFIG_M365CRYPT_REMOTE="m365:Inventre Backups/prod"
+  export RCLONE_CONFIG_M365CRYPT_FILENAME_ENCRYPTION=standard
+  export RCLONE_CONFIG_M365CRYPT_DIRECTORY_NAME_ENCRYPTION=true
+  export RCLONE_CONFIG_M365CRYPT_PASSWORD="$BACKUP_CRYPT_PASSWORD"
+  export RCLONE_CONFIG_M365CRYPT_PASSWORD2="$BACKUP_CRYPT_SALT"
 }
 # The site's default document library id, resolved once through Graph and cached.
 m365_drive_id() {

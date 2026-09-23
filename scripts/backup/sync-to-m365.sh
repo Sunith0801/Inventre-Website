@@ -1,14 +1,14 @@
 #!/bin/bash
 # Mirror every backup artefact to the company's Microsoft 365 (SharePoint
 # library) every 5 minutes. Sources → destination folders:
-#   /root/backups-archive/{wal,base,code}  → Backups/prod/{wal,base,code}
+#   /root/backups-archive/{wal,base,code}  → <site>/Documents/Inventre Backups/prod/{wal,base,code}  (encrypted, rclone crypt)
 #   /root/Inventre/db_backups/{daily,monthly} → Backups/prod/dumps/{daily,monthly}
 #   /root/Inventre/backups/*.tar.gz (6-hourly encrypted snapshots) → Backups/prod/snapshots
 # `sync` mirrors local retention; nothing is deleted remotely that still exists locally.
 set -uo pipefail; . "$(dirname "$0")/lib.sh"
 exec 9>/tmp/inventre-m365-sync.lock; flock -n 9 || exit 0
 m365_env || { log "M365 not configured"; exit 1; }
-DEST="m365:Backups/prod"; FAIL=0
+DEST="m365crypt:"; FAIL=0
 R="--fast-list --transfers 4 --checkers 8 --retries 3 --low-level-retries 10 --stats 0 -q"
 rclone sync $R "$ARCHIVE/wal"  "$DEST/wal"  || FAIL=1
 rclone sync $R "$ARCHIVE/base" "$DEST/base" || FAIL=1
