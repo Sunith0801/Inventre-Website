@@ -28,3 +28,4 @@ inventre_deck_builder.py
 # build context. The backfill scripts that read data/imports/ run on
 # the host via tsx, never inside the image.
 data
+inventre-db-password.txt
