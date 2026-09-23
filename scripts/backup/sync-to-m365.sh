@@ -26,5 +26,7 @@ if [ -n "$NEWEST" ] && [ $(( $(date +%s) - NEWEST )) -gt 1800 ] && ! docker ps -
   [ "$PREV" != "stale" ] && mail_alert "WAL streaming is NOT running" "No WAL received for $(( ( $(date +%s) - NEWEST ) / 60 )) min and the inventre-wal-stream container is down. Start: systemctl start inventre-wal-stream"
   echo stale > $STATE; exit 0
 fi
+# self-contained recovery kit (scripts + one-passphrase secret bundle) next to the data
+"$ROOT/scripts/backup/publish-recovery-kit.sh" >/dev/null 2>&1 || log "recovery kit publish failed"
 [ "$PREV" != "ok" ] && mail_alert "backups healthy again" "Sync to Microsoft 365 succeeded; WAL streaming current."
 echo ok > $STATE; log "synced ($(du -sh "$ARCHIVE" | cut -f1) archive)"
