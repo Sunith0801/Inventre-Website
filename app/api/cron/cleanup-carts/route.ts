@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireCron } from "@/server/cron-auth";
+import { acquireCronLock, cronLockedResponse, requireCron } from "@/server/cron-auth";
 import { and, lt, or, isNull } from "drizzle-orm";
 import { db } from "@/db/client";
 import { carts } from "@/db/schema";
@@ -23,25 +23,31 @@ const CART_TTL_DAYS = 7;
 async function run(req: Request) {
   const denied = requireCron(req);
   if (denied) return denied;
+  const lock = await acquireCronLock("cleanup-carts", 60);
+  if (!lock) return cronLockedResponse("cleanup-carts");
+  try {
 
-  const cutoff = new Date(Date.now() - CART_TTL_DAYS * 24 * 60 * 60 * 1000);
-  const now = new Date();
+    const cutoff = new Date(Date.now() - CART_TTL_DAYS * 24 * 60 * 60 * 1000);
+    const now = new Date();
 
-  const deleted = await db
-    .delete(carts)
-    .where(
-      // Typed operators, not a raw sql`` fragment: postgres.js cannot bind a
-      // JS Date passed through sql`` ("Received an instance of Date"), which
-      // made this job 500 on every tick until 2026-09-23.
-      or(lt(carts.expiresAt, now), and(isNull(carts.expiresAt), lt(carts.updatedAt, cutoff)))
-    )
-    .returning({ id: carts.id });
+    const deleted = await db
+      .delete(carts)
+      .where(
+        // Typed operators, not a raw sql`` fragment: postgres.js cannot bind a
+        // JS Date passed through sql`` ("Received an instance of Date"), which
+        // made this job 500 on every tick until 2026-09-23.
+        or(lt(carts.expiresAt, now), and(isNull(carts.expiresAt), lt(carts.updatedAt, cutoff)))
+      )
+      .returning({ id: carts.id });
 
-  return NextResponse.json({
-    ok: true,
-    deletedCount: deleted.length,
-    cutoff: cutoff.toISOString(),
-  });
+    return NextResponse.json({
+      ok: true,
+      deletedCount: deleted.length,
+      cutoff: cutoff.toISOString(),
+    });
+  } finally {
+    await lock.release();
+  }
 }
 
 export async function GET(req: Request) {

@@ -103,10 +103,13 @@ if [ "$MODE" = "full" ]; then
 
   echo "▶ Creating container with correct config…"
   # --force-recreate ensures command/env changes from compose file are applied.
-  docker-compose -p inventre-deploy --env-file .env.deploy -f docker-compose.deploy.yml up \
+  # `docker compose` (v2 plugin) — the v1 `docker-compose` binary on this host
+  # crashes with KeyError 'ContainerConfig' when it meets an existing container
+  # (Redis outage 2026-09-23, F-22). The stop+rm above keeps that path clear.
+  docker compose -p inventre-deploy --env-file .env.deploy -f docker-compose.deploy.yml up \
     --no-deps --no-start --force-recreate app
 
-  # docker-compose with --no-deps + single-service --force-recreate
+  # compose with --no-deps + single-service --force-recreate
   # occasionally attaches the new container to ONLY the external network
   # declared in the compose file (erp-staging_default in our case) and
   # drops the project's default network — where postgres / redis / minio

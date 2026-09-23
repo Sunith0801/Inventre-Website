@@ -87,7 +87,7 @@ export default async function DashboardPage({
         title="Dashboard"
         description="Live snapshot of the Inventre business."
       />
-      <UniversalSearch role={role} />
+      <UniversalSearch permissions={[...me.permissions]} />
 
       {/* Date-range chips — every revenue / orders KPI + the Recent
           Orders table below re-query against the selected window. */}

@@ -4,6 +4,7 @@ import { getCurrentParent } from "@/server/session";
 import { readSupportView } from "@/server/support-view";
 import { getSiteAccess } from "@/server/site-access";
 import AccessClosed from "@/components/shop/AccessClosed";
+import VersionWatcher from "@/components/VersionWatcher";
 
 export default async function ShopLayout({
   children,
@@ -46,5 +47,12 @@ export default async function ShopLayout({
     }
   }
 
-  return <CartProvider>{children}</CartProvider>;
+  // Careful mode: a parent mid-checkout is never yanked — a "newer version"
+  // prompt appears once they have typed anything; an idle tab reloads itself.
+  return (
+    <CartProvider>
+      <VersionWatcher careful />
+      {children}
+    </CartProvider>
+  );
 }

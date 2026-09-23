@@ -48,7 +48,7 @@ const STATUS_COPY: Record<
   requested: {
     title: "Approval pending",
     body: () =>
-      "Our customer-care team is reviewing your request. You'll get an SMS as soon as it's approved.",
+      "Our customer-care team is reviewing your request. This page updates as soon as it is approved.",
     tone: "amber",
     Icon: Clock,
   },

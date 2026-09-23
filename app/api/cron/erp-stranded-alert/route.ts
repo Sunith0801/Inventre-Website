@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireCron } from "@/server/cron-auth";
+import { acquireCronLock, cronLockedResponse, requireCron } from "@/server/cron-auth";
 import { findStrandedOrders, markStrandedAlerted } from "@/server/erp-stranded";
 import { sendEmail, isEmailConfigured } from "@/server/notify/email";
 
@@ -10,7 +10,7 @@ import { sendEmail, isEmailConfigured } from "@/server/notify/email";
  * audit for longer than the grace window (default 2h) and emails ops.
  * Auth: same shared CRON_TOKEN as /api/cron/erp-drain.
  *
- * Recipients come from ALERT_EMAIL (comma-separated) when set, else the
+ * Recipients come from ALERT_EMAIL_TO (or legacy ALERT_EMAIL, comma-separated) when set, else the
  * baked-in ops list. Grace window overridable via STRANDED_GRACE_HOURS.
  */
 export const dynamic = "force-dynamic";
@@ -22,7 +22,7 @@ const DEFAULT_RECIPIENTS = [
 ];
 
 function recipients(): string[] {
-  const raw = process.env.ALERT_EMAIL;
+  const raw = process.env.ALERT_EMAIL_TO ?? process.env.ALERT_EMAIL;
   if (raw && raw.trim()) {
     return raw
       .split(",")
@@ -35,65 +35,71 @@ function recipients(): string[] {
 export async function POST(req: Request) {
   const denied = requireCron(req);
   if (denied) return denied;
+  const lock = await acquireCronLock("erp-stranded-alert", 60);
+  if (!lock) return cronLockedResponse("erp-stranded-alert");
+  try {
 
-  const graceHours = Number(process.env.STRANDED_GRACE_HOURS ?? 2);
-  const report = await findStrandedOrders(graceHours);
+    const graceHours = Number(process.env.STRANDED_GRACE_HOURS ?? 2);
+    const report = await findStrandedOrders(graceHours);
 
-  if (report.strandedCount === 0) {
-    return NextResponse.json({ ok: true, stranded: 0, alerted: false });
-  }
+    if (report.strandedCount === 0) {
+      return NextResponse.json({ ok: true, stranded: 0, alerted: false });
+    }
 
-  if (!isEmailConfigured()) {
-    return NextResponse.json(
-      { ok: false, stranded: report.strandedCount, alerted: false, reason: "no email transport" },
-      { status: 200 }
+    if (!isEmailConfigured()) {
+      return NextResponse.json(
+        { ok: false, stranded: report.strandedCount, alerted: false, reason: "no email transport" },
+        { status: 200 }
+      );
+    }
+
+    const to = recipients();
+    const subject = `[Inventre] ${report.strandedCount} paid order(s) not synced to audit`;
+    const list = report.sample
+      .map((n) => `<li>${n}</li>`)
+      .join("");
+    const more =
+      report.strandedCount > report.sample.length
+        ? `<p>…and ${report.strandedCount - report.sample.length} more.</p>`
+        : "";
+    const html = `
+      <p><strong>${report.strandedCount}</strong> confirmed + paid order(s) have not
+      mirrored to audit.inventre.in (no <code>erp_so_name</code>) for more than
+      ${graceHours}h.</p>
+      <p>Oldest stranded: <strong>${report.oldest ?? "n/a"}</strong></p>
+      <p>Outbound queue — failed: <strong>${report.queueFailed}</strong>, DLQ:
+      <strong>${report.dlq}</strong>.</p>
+      <p>Order numbers:</p>
+      <ul>${list}</ul>
+      ${more}
+      <p>To recover: reset their <code>erp_outbound_queue</code> rows to
+      <code>status='pending', attempts=0</code> — the drain cron re-sends them.</p>
+    `;
+    const text =
+      `${report.strandedCount} paid order(s) not synced to audit for >${graceHours}h.\n` +
+      `Oldest: ${report.oldest ?? "n/a"}. Queue failed: ${report.queueFailed}, DLQ: ${report.dlq}.\n` +
+      report.sample.join(", ");
+
+    const results = await Promise.allSettled(
+      to.map((addr) => sendEmail({ to: addr, subject, html, text }))
     );
+    const sent = results.filter(
+      (r) => r.status === "fulfilled" && (r.value as { ok?: boolean })?.ok
+    ).length;
+
+    // Stamp cooldown timestamp so these orders don't re-alert for 23 h.
+    if (sent > 0) {
+      await markStrandedAlerted(report.orderIds);
+    }
+
+    return NextResponse.json({
+      ok: true,
+      stranded: report.strandedCount,
+      alerted: true,
+      recipients: to.length,
+      emailsSent: sent,
+    });
+  } finally {
+    await lock.release();
   }
-
-  const to = recipients();
-  const subject = `[Inventre] ${report.strandedCount} paid order(s) not synced to audit`;
-  const list = report.sample
-    .map((n) => `<li>${n}</li>`)
-    .join("");
-  const more =
-    report.strandedCount > report.sample.length
-      ? `<p>…and ${report.strandedCount - report.sample.length} more.</p>`
-      : "";
-  const html = `
-    <p><strong>${report.strandedCount}</strong> confirmed + paid order(s) have not
-    mirrored to audit.inventre.in (no <code>erp_so_name</code>) for more than
-    ${graceHours}h.</p>
-    <p>Oldest stranded: <strong>${report.oldest ?? "n/a"}</strong></p>
-    <p>Outbound queue — failed: <strong>${report.queueFailed}</strong>, DLQ:
-    <strong>${report.dlq}</strong>.</p>
-    <p>Order numbers:</p>
-    <ul>${list}</ul>
-    ${more}
-    <p>To recover: reset their <code>erp_outbound_queue</code> rows to
-    <code>status='pending', attempts=0</code> — the drain cron re-sends them.</p>
-  `;
-  const text =
-    `${report.strandedCount} paid order(s) not synced to audit for >${graceHours}h.\n` +
-    `Oldest: ${report.oldest ?? "n/a"}. Queue failed: ${report.queueFailed}, DLQ: ${report.dlq}.\n` +
-    report.sample.join(", ");
-
-  const results = await Promise.allSettled(
-    to.map((addr) => sendEmail({ to: addr, subject, html, text }))
-  );
-  const sent = results.filter(
-    (r) => r.status === "fulfilled" && (r.value as { ok?: boolean })?.ok
-  ).length;
-
-  // Stamp cooldown timestamp so these orders don't re-alert for 23 h.
-  if (sent > 0) {
-    await markStrandedAlerted(report.orderIds);
-  }
-
-  return NextResponse.json({
-    ok: true,
-    stranded: report.strandedCount,
-    alerted: true,
-    recipients: to.length,
-    emailsSent: sent,
-  });
 }

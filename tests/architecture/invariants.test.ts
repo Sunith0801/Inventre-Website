@@ -200,3 +200,36 @@ describe("scheduled jobs", () => {
     expect(offenders, "cron routes not using requireCron / still reading CRON_SECRET|CRON_KEY").toEqual([]);
   });
 });
+
+describe("migrations", () => {
+  // The runner applies files in filename order and remembers them by name,
+  // so two files sharing a numeric prefix is legal but confusing. The ten
+  // historical collisions stay (renaming a file re-runs it on every host);
+  // no NEW collision may be added. (F-19)
+  const KNOWN_COLLISIONS = new Set(["0014", "0020", "0021", "0022", "0023", "0029", "0030", "0031", "0032", "0034"]);
+  it("no new migration shares a numeric prefix with another", () => {
+    const files = tracked("'db/migrations/*.sql'").map((f) => f.split("/").pop() as string);
+    const byPrefix = new Map<string, string[]>();
+    for (const f of files) {
+      const m = /^(\d{4})_/.exec(f);
+      if (!m) continue;
+      byPrefix.set(m[1], [...(byPrefix.get(m[1]) ?? []), f]);
+    }
+    const newCollisions = [...byPrefix.entries()].filter(([p, fs]) => fs.length > 1 && !KNOWN_COLLISIONS.has(p));
+    expect(newCollisions, "new duplicate migration prefixes").toEqual([]);
+  });
+  it("there is no nested copy of the migrations folder", () => {
+    expect(tracked("'db/migrations/migrations/*'")).toEqual([]);
+  });
+});
+
+describe("admin navigation", () => {
+  it("every sidebar item points at a registered admin page slug", async () => {
+    const nav = readFileSync("lib/admin-nav.ts", "utf8");
+    const perms = readFileSync("lib/admin-permissions.ts", "utf8");
+    const slugs = new Set([...perms.matchAll(/slug:\s*"([a-z0-9-]+)"/g)].map((m) => m[1]));
+    const used = [...nav.matchAll(/perm:\s*"([a-z0-9-]+)"/g)].map((m) => m[1]);
+    expect(used.length).toBeGreaterThan(20);
+    expect(used.filter((s) => !slugs.has(s)), "nav perms with no ADMIN_PAGES slug").toEqual([]);
+  });
+});

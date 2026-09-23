@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireCron } from "@/server/cron-auth";
+import { acquireCronLock, cronLockedResponse, requireCron } from "@/server/cron-auth";
 import { enqueueErpItemSync } from "@/server/jobs/erp-item-sync";
 import { erpInboundDisabledResponse } from "@/server/erp-inbound-guard";
 
@@ -18,8 +18,14 @@ import { erpInboundDisabledResponse } from "@/server/erp-inbound-guard";
 export async function GET(req: Request) {
   const denied = requireCron(req);
   if (denied) return denied;
-  const off = erpInboundDisabledResponse();
-  if (off) return off;
-  const { jobId, alreadyRunning } = await enqueueErpItemSync("cron");
-  return NextResponse.json({ jobId, alreadyRunning });
+  const lock = await acquireCronLock("sync-items", 60);
+  if (!lock) return cronLockedResponse("sync-items");
+  try {
+    const off = erpInboundDisabledResponse();
+    if (off) return off;
+    const { jobId, alreadyRunning } = await enqueueErpItemSync("cron");
+    return NextResponse.json({ jobId, alreadyRunning });
+  } finally {
+    await lock.release();
+  }
 }

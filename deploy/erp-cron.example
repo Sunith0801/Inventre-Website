@@ -16,3 +16,6 @@ APP=http://127.0.0.1:3010
 */2  * * * * root . $ENV && curl -fsS -m 30  -X GET  -H "Authorization: Bearer $CRON_TOKEN" $APP/api/cron/retry-webhooks >> /var/log/inventre-retry-webhooks.log 2>&1
 0    2 * * * root . $ENV && curl -fsS -m 60  -X GET  -H "Authorization: Bearer $CRON_TOKEN" $APP/api/cron/auto-po >> /var/log/inventre-auto-po.log 2>&1
 0  */6 * * * root . $ENV && curl -fsS -m 60  -X GET  -H "Authorization: Bearer $CRON_TOKEN" $APP/api/cron/cleanup-carts >> /var/log/inventre-cleanup-carts.log 2>&1
+*/1  * * * * root . $ENV && curl -fsS -m 60  -X GET  -H "Authorization: Bearer $CRON_TOKEN" $APP/api/cron/erp-webhook-drain >> /var/log/inventre-erp-webhook-drain.log 2>&1
+5    * * * * root . $ENV && curl -fsS -m 60  -X POST -H "Authorization: Bearer $CRON_TOKEN" $APP/api/cron/erp-stranded-alert >> /var/log/inventre-erp-stranded.log 2>&1
+# sync-items (ERPNext item feed) is deliberately NOT scheduled: the production host cannot reach ERPNext; run it from the admin ERP page when needed.

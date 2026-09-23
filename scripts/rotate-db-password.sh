@@ -27,9 +27,9 @@ docker exec -e NEWPW="$NEW" "$PG_CONTAINER" sh -c 'psql -U inventre -d inventre 
 echo "▶ writing POSTGRES_PASSWORD to $ENVF…"
 sed -i -E "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=$NEW|" $ENVF
 echo "▶ recreating pgbouncer + app with the new password…"
-docker-compose -p inventre-deploy --env-file $ENVF -f docker-compose.deploy.yml up -d --no-deps --force-recreate pgbouncer
+docker compose -p inventre-deploy --env-file $ENVF -f docker-compose.deploy.yml up -d --no-deps --force-recreate pgbouncer
 sleep 3
-docker-compose -p inventre-deploy --env-file $ENVF -f docker-compose.deploy.yml up -d --no-deps --force-recreate app
+docker compose -p inventre-deploy --env-file $ENVF -f docker-compose.deploy.yml up -d --no-deps --force-recreate app
 docker network connect inventre-deploy_default inventre-deploy-app 2>/dev/null || true
 echo "▶ the recreated app container serves the IMAGE's build; syncing the current build back in…"
 ./scripts/deploy.sh --fast --allow-dirty

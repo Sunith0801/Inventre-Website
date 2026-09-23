@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireCron } from "@/server/cron-auth";
+import { acquireCronLock, cronLockedResponse, requireCron } from "@/server/cron-auth";
 import { processWebhookRetries } from "@/server/notify/event-bus";
 
 /**
@@ -9,6 +9,12 @@ import { processWebhookRetries } from "@/server/notify/event-bus";
 export async function GET(req: Request) {
   const denied = requireCron(req);
   if (denied) return denied;
-  const result = await processWebhookRetries();
-  return NextResponse.json(result);
+  const lock = await acquireCronLock("retry-webhooks", 30);
+  if (!lock) return cronLockedResponse("retry-webhooks");
+  try {
+    const result = await processWebhookRetries();
+    return NextResponse.json(result);
+  } finally {
+    await lock.release();
+  }
 }

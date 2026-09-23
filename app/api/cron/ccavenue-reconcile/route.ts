@@ -17,7 +17,7 @@
  * scheduler can use the same secret.
  */
 import { NextResponse } from "next/server";
-import { requireCron } from "@/server/cron-auth";
+import { acquireCronLock, cronLockedResponse, requireCron } from "@/server/cron-auth";
 import { and, asc, eq, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { orders, payments } from "@/db/schema";
@@ -39,110 +39,116 @@ const MAX_AGE = sql`interval '5 days'`;
 export async function GET(req: Request) {
   const denied = requireCron(req);
   if (denied) return denied;
+  const lock = await acquireCronLock("ccavenue-reconcile", 30);
+  if (!lock) return cronLockedResponse("ccavenue-reconcile");
+  try {
 
-  if (!isCCAvenueConfigured()) {
-    return NextResponse.json(
-      { ok: true, skipped: "ccavenue_not_configured" },
-      { status: 200 }
-    );
-  }
-
-  // Eligible rows: payment still pending, never finalised, created long
-  // enough ago to let the callback land but not so long that CCAvenue's
-  // auto-cancel will hide them, and either never polled or last polled
-  // before the cooldown window.
-  const rows = await db
-    .select({
-      orderId: orders.id,
-      orderNumber: orders.orderNumber,
-      gatewayTrackingId: payments.gatewayTrackingId,
-    })
-    .from(payments)
-    .innerJoin(orders, eq(orders.id, payments.orderId))
-    .where(
-      and(
-        // Pending rows that never finalised, OR recently-failed rows that
-        // carry a CCAvenue tracking id. The latter covers a retry whose
-        // success callback we missed: re-polling lets finalizeOrderPayment
-        // heal `failed` → `paid` server-side. Paid/refunded are terminal and
-        // excluded. (The MAX_AGE window keeps this to recent failures; the
-        // historical backlog is handled by a one-off remediation script.)
-        or(
-          and(
-            eq(payments.status, "pending"),
-            eq(payments.paymentFinalized, false),
-          ),
-          and(
-            eq(payments.status, "failed"),
-            isNotNull(payments.gatewayTrackingId),
-          ),
-        ),
-        lt(payments.createdAt, sql`now() - ${SETTLE_GRACE}`),
-        sql`${payments.createdAt} > now() - ${MAX_AGE}`,
-        or(
-          isNull(payments.lastStatusPollAt),
-          lt(payments.lastStatusPollAt, sql`now() - ${PER_ORDER_COOLDOWN}`)
-        )
-      )
-    )
-    // Oldest-untouched first so a backlog drains fairly instead of the
-    // scan re-hitting the same heap pages run after run. coalesce() keeps
-    // never-polled rows ahead of recently-polled ones.
-    .orderBy(asc(sql`coalesce(${payments.lastStatusPollAt}, ${payments.createdAt})`))
-    .limit(BATCH_LIMIT);
-
-  let finalizedPaid = 0;
-  let finalizedFailed = 0;
-  let stillPending = 0;
-  let errors = 0;
-
-  for (const row of rows) {
-    // Mark the attempt first so a failed call still respects the cooldown.
-    await db
-      .update(payments)
-      .set({ lastStatusPollAt: new Date() })
-      .where(eq(payments.orderId, row.orderId));
-
-    try {
-      // CCAvenue knows this transaction by the order_id we sent at
-      // session-init, which is orders.id (UUID) — see buildRedirectPayload.
-      // Sending orderNumber here returns "No Record Found".
-      const normalized = await fetchCCAvenueOrderStatus({
-        referenceNo: row.gatewayTrackingId ?? null,
-        orderNo: row.orderId,
-      });
-      // Persist the raw CCAvenue status so the admin orders list can
-      // show "Initiated" / "Awaited" / "No Record Found" / etc. instead
-      // of the stale local "placed" label while the order is pending.
-      await db
-        .update(payments)
-        .set({
-          gatewayResponseMessage: `CCAvenue ${new Date().toISOString()}: status=${normalized.rawStatus}`,
-        })
-        .where(eq(payments.orderId, row.orderId));
-      const result = await finalizeOrderPayment({
-        orderId: row.orderId,
-        source: "cron-reconcile",
-        normalized,
-      });
-      if (result.kind === "marked-paid") finalizedPaid++;
-      else if (result.kind === "marked-failed") finalizedFailed++;
-      else stillPending++;
-    } catch (e) {
-      errors++;
-      console.error(
-        `[ccavenue-reconcile] order=${row.orderId} status-poll failed:`,
-        e instanceof Error ? e.message : e
+    if (!isCCAvenueConfigured()) {
+      return NextResponse.json(
+        { ok: true, skipped: "ccavenue_not_configured" },
+        { status: 200 }
       );
     }
-  }
 
-  return NextResponse.json({
-    ok: true,
-    checked: rows.length,
-    finalizedPaid,
-    finalizedFailed,
-    stillPending,
-    errors,
-  });
+    // Eligible rows: payment still pending, never finalised, created long
+    // enough ago to let the callback land but not so long that CCAvenue's
+    // auto-cancel will hide them, and either never polled or last polled
+    // before the cooldown window.
+    const rows = await db
+      .select({
+        orderId: orders.id,
+        orderNumber: orders.orderNumber,
+        gatewayTrackingId: payments.gatewayTrackingId,
+      })
+      .from(payments)
+      .innerJoin(orders, eq(orders.id, payments.orderId))
+      .where(
+        and(
+          // Pending rows that never finalised, OR recently-failed rows that
+          // carry a CCAvenue tracking id. The latter covers a retry whose
+          // success callback we missed: re-polling lets finalizeOrderPayment
+          // heal `failed` → `paid` server-side. Paid/refunded are terminal and
+          // excluded. (The MAX_AGE window keeps this to recent failures; the
+          // historical backlog is handled by a one-off remediation script.)
+          or(
+            and(
+              eq(payments.status, "pending"),
+              eq(payments.paymentFinalized, false),
+            ),
+            and(
+              eq(payments.status, "failed"),
+              isNotNull(payments.gatewayTrackingId),
+            ),
+          ),
+          lt(payments.createdAt, sql`now() - ${SETTLE_GRACE}`),
+          sql`${payments.createdAt} > now() - ${MAX_AGE}`,
+          or(
+            isNull(payments.lastStatusPollAt),
+            lt(payments.lastStatusPollAt, sql`now() - ${PER_ORDER_COOLDOWN}`)
+          )
+        )
+      )
+      // Oldest-untouched first so a backlog drains fairly instead of the
+      // scan re-hitting the same heap pages run after run. coalesce() keeps
+      // never-polled rows ahead of recently-polled ones.
+      .orderBy(asc(sql`coalesce(${payments.lastStatusPollAt}, ${payments.createdAt})`))
+      .limit(BATCH_LIMIT);
+
+    let finalizedPaid = 0;
+    let finalizedFailed = 0;
+    let stillPending = 0;
+    let errors = 0;
+
+    for (const row of rows) {
+      // Mark the attempt first so a failed call still respects the cooldown.
+      await db
+        .update(payments)
+        .set({ lastStatusPollAt: new Date() })
+        .where(eq(payments.orderId, row.orderId));
+
+      try {
+        // CCAvenue knows this transaction by the order_id we sent at
+        // session-init, which is orders.id (UUID) — see buildRedirectPayload.
+        // Sending orderNumber here returns "No Record Found".
+        const normalized = await fetchCCAvenueOrderStatus({
+          referenceNo: row.gatewayTrackingId ?? null,
+          orderNo: row.orderId,
+        });
+        // Persist the raw CCAvenue status so the admin orders list can
+        // show "Initiated" / "Awaited" / "No Record Found" / etc. instead
+        // of the stale local "placed" label while the order is pending.
+        await db
+          .update(payments)
+          .set({
+            gatewayResponseMessage: `CCAvenue ${new Date().toISOString()}: status=${normalized.rawStatus}`,
+          })
+          .where(eq(payments.orderId, row.orderId));
+        const result = await finalizeOrderPayment({
+          orderId: row.orderId,
+          source: "cron-reconcile",
+          normalized,
+        });
+        if (result.kind === "marked-paid") finalizedPaid++;
+        else if (result.kind === "marked-failed") finalizedFailed++;
+        else stillPending++;
+      } catch (e) {
+        errors++;
+        console.error(
+          `[ccavenue-reconcile] order=${row.orderId} status-poll failed:`,
+          e instanceof Error ? e.message : e
+        );
+      }
+    }
+
+    return NextResponse.json({
+      ok: true,
+      checked: rows.length,
+      finalizedPaid,
+      finalizedFailed,
+      stillPending,
+      errors,
+    });
+  } finally {
+    await lock.release();
+  }
 }

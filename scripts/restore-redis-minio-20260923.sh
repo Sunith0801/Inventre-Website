@@ -7,7 +7,7 @@ cd /root/Inventre
 for c in $(docker ps -a --format '{{.Names}}' | grep -E '(^|_)inventre-deploy-(redis|minio|minio-init)$'); do
   docker rm -f "$c" >/dev/null && echo "removed $c"
 done
-docker-compose -p inventre-deploy --env-file .env.deploy -f docker-compose.deploy.yml up -d --no-deps redis minio minio-init
+docker compose -p inventre-deploy --env-file .env.deploy -f docker-compose.deploy.yml up -d --no-deps redis minio minio-init
 sleep 6
 docker ps --format '{{.Names}}\t{{.Status}}' | grep -E 'inventre-deploy-(redis|minio|app)'
 echo "--- app health:"; curl -s -m 20 https://inventre.in/api/health; echo

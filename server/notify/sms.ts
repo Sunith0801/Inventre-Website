@@ -177,8 +177,12 @@ export async function sendSms({
 }) {
   const otp = variables?.otp ?? variables?.code;
   if (!otp) {
-    // Non-OTP message — no matching DLT template yet, skip silently.
-    return { ok: true as const, transactionId: "skipped", dev: true };
+    // Non-OTP message — no approved DLT template on the transactional
+    // gateway yet, so nothing is sent. Say so in the log instead of
+    // pretending (F-09): callers record `transactionId: "skipped"` and no
+    // customer copy promises an SMS any more.
+    console.warn(`[sms] skipped non-OTP message to +91${phone} — no transactional DLT template configured`);
+    return { ok: true as const, transactionId: "skipped", dev: true, skipped: "no-transactional-template" as const };
   }
   return sendOtpSms(phone, otp);
 }

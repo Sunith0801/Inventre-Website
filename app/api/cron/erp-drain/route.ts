@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireCron } from "@/server/cron-auth";
+import { acquireCronLock, cronLockedResponse, requireCron } from "@/server/cron-auth";
 import { drainOutboundQueue } from "@/server/erp-drain";
 import { getErpConfig } from "@/server/erp-config";
 
@@ -15,6 +15,12 @@ export async function POST(req: Request) {
   const cfg = getErpConfig();
   const denied = requireCron(req);
   if (denied) return denied;
-  const result = await drainOutboundQueue();
-  return NextResponse.json({ ok: true, target: cfg.target, ...result });
+  const lock = await acquireCronLock("erp-drain", 30);
+  if (!lock) return cronLockedResponse("erp-drain");
+  try {
+    const result = await drainOutboundQueue();
+    return NextResponse.json({ ok: true, target: cfg.target, ...result });
+  } finally {
+    await lock.release();
+  }
 }

@@ -25,7 +25,7 @@
  * total. Safe to run daily (or hourly).
  */
 import { NextResponse } from "next/server";
-import { requireCron } from "@/server/cron-auth";
+import { acquireCronLock, cronLockedResponse, requireCron } from "@/server/cron-auth";
 import { readdir, readFile, rename } from "node:fs/promises";
 import path from "node:path";
 import {
@@ -36,78 +36,84 @@ import {
 export async function GET(req: Request) {
   const denied = requireCron(req);
   if (denied) return denied;
-
-  const dir = process.env.CCAVENUE_SETTLEMENT_DIR;
-  if (!dir) {
-    return NextResponse.json(
-      { ok: true, skipped: "no_settlement_dir" },
-      { status: 200 }
-    );
-  }
-
-  let files: string[];
+  const lock = await acquireCronLock("ccavenue-settlement-reconcile", 120);
+  if (!lock) return cronLockedResponse("ccavenue-settlement-reconcile");
   try {
-    // CCAvenue's live SFTP push sends .xlsx; ops CSV exports are still
-    // supported. `.done.*` marks an already-processed file.
-    files = (await readdir(dir))
-      .filter((f) => /\.(csv|xlsx|xls)$/i.test(f) && !/\.done\.[^.]+$/i.test(f))
-      .sort();
-  } catch (e) {
-    // Directory missing / unreadable — treat as nothing to do, but surface it.
-    return NextResponse.json(
-      { ok: true, skipped: "settlement_dir_unreadable", detail: String(e) },
-      { status: 200 }
-    );
-  }
 
-  const results: Array<Record<string, unknown>> = [];
-  let totalHealed = 0;
-  let totalMismatch = 0;
-  let totalErrors = 0;
-
-  for (const file of files) {
-    const full = path.join(dir, file);
-    try {
-      const isWorkbook = /\.(xlsx|xls)$/i.test(file);
-      const report = isWorkbook
-        ? await reconcileSettlementWorkbook(await readFile(full), { apply: true })
-        : await reconcileSettlementCsv(await readFile(full, "utf8"), { apply: true });
-      totalHealed += report.healed;
-      totalMismatch += report.amountMismatch;
-      totalErrors += report.errors;
-      results.push({
-        file,
-        healed: report.healed,
-        alreadyPaid: report.alreadyPaid,
-        notFound: report.notFound,
-        amountMismatch: report.amountMismatch,
-        errors: report.errors,
-        // Surface anything that needs a human: mismatches + finalize errors.
-        needsReview: report.outcomes
-          .filter(
-            (o) => o.action === "amount-mismatch" || o.action === "error"
-          )
-          .map((o) => ({
-            orderId: o.orderId,
-            orderNumber: o.orderNumber,
-            action: o.action,
-            detail: o.detail,
-          })),
-      });
-      // Mark processed so the next run skips it.
-      await rename(full, full.replace(/\.([^.]+)$/i, ".done.$1"));
-    } catch (e) {
-      totalErrors++;
-      results.push({ file, error: e instanceof Error ? e.message : String(e) });
+    const dir = process.env.CCAVENUE_SETTLEMENT_DIR;
+    if (!dir) {
+      return NextResponse.json(
+        { ok: true, skipped: "no_settlement_dir" },
+        { status: 200 }
+      );
     }
-  }
 
-  return NextResponse.json({
-    ok: true,
-    filesProcessed: results.length,
-    totalHealed,
-    totalMismatch,
-    totalErrors,
-    results,
-  });
+    let files: string[];
+    try {
+      // CCAvenue's live SFTP push sends .xlsx; ops CSV exports are still
+      // supported. `.done.*` marks an already-processed file.
+      files = (await readdir(dir))
+        .filter((f) => /\.(csv|xlsx|xls)$/i.test(f) && !/\.done\.[^.]+$/i.test(f))
+        .sort();
+    } catch (e) {
+      // Directory missing / unreadable — treat as nothing to do, but surface it.
+      return NextResponse.json(
+        { ok: true, skipped: "settlement_dir_unreadable", detail: String(e) },
+        { status: 200 }
+      );
+    }
+
+    const results: Array<Record<string, unknown>> = [];
+    let totalHealed = 0;
+    let totalMismatch = 0;
+    let totalErrors = 0;
+
+    for (const file of files) {
+      const full = path.join(dir, file);
+      try {
+        const isWorkbook = /\.(xlsx|xls)$/i.test(file);
+        const report = isWorkbook
+          ? await reconcileSettlementWorkbook(await readFile(full), { apply: true })
+          : await reconcileSettlementCsv(await readFile(full, "utf8"), { apply: true });
+        totalHealed += report.healed;
+        totalMismatch += report.amountMismatch;
+        totalErrors += report.errors;
+        results.push({
+          file,
+          healed: report.healed,
+          alreadyPaid: report.alreadyPaid,
+          notFound: report.notFound,
+          amountMismatch: report.amountMismatch,
+          errors: report.errors,
+          // Surface anything that needs a human: mismatches + finalize errors.
+          needsReview: report.outcomes
+            .filter(
+              (o) => o.action === "amount-mismatch" || o.action === "error"
+            )
+            .map((o) => ({
+              orderId: o.orderId,
+              orderNumber: o.orderNumber,
+              action: o.action,
+              detail: o.detail,
+            })),
+        });
+        // Mark processed so the next run skips it.
+        await rename(full, full.replace(/\.([^.]+)$/i, ".done.$1"));
+      } catch (e) {
+        totalErrors++;
+        results.push({ file, error: e instanceof Error ? e.message : String(e) });
+      }
+    }
+
+    return NextResponse.json({
+      ok: true,
+      filesProcessed: results.length,
+      totalHealed,
+      totalMismatch,
+      totalErrors,
+      results,
+    });
+  } finally {
+    await lock.release();
+  }
 }

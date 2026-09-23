@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireCron } from "@/server/cron-auth";
+import { acquireCronLock, cronLockedResponse, requireCron } from "@/server/cron-auth";
 import { runGroundStockSync } from "@/server/ground-stock-sync";
 
 /**
@@ -14,6 +14,12 @@ export const maxDuration = 240;
 export async function POST(req: Request) {
   const denied = requireCron(req);
   if (denied) return denied;
-  const result = await runGroundStockSync("cron");
-  return NextResponse.json(result, { status: result.ok || result.skipped ? 200 : 502 });
+  const lock = await acquireCronLock("ground-stock-sync", 240);
+  if (!lock) return cronLockedResponse("ground-stock-sync");
+  try {
+    const result = await runGroundStockSync("cron");
+    return NextResponse.json(result, { status: result.ok || result.skipped ? 200 : 502 });
+  } finally {
+    await lock.release();
+  }
 }

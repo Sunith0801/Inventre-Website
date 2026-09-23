@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireCron } from "@/server/cron-auth";
+import { acquireCronLock, cronLockedResponse, requireCron } from "@/server/cron-auth";
 import { reconcileMissingAuditEvents } from "@/server/erp-reconcile";
 
 /**
@@ -13,6 +13,12 @@ export const dynamic = "force-dynamic";
 export async function POST(req: Request) {
   const denied = requireCron(req);
   if (denied) return denied;
-  const result = await reconcileMissingAuditEvents();
-  return NextResponse.json({ ok: true, ...result });
+  const lock = await acquireCronLock("erp-reconcile", 60);
+  if (!lock) return cronLockedResponse("erp-reconcile");
+  try {
+    const result = await reconcileMissingAuditEvents();
+    return NextResponse.json({ ok: true, ...result });
+  } finally {
+    await lock.release();
+  }
 }

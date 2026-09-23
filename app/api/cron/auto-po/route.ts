@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireCron } from "@/server/cron-auth";
+import { acquireCronLock, cronLockedResponse, requireCron } from "@/server/cron-auth";
 import { runAutoPo } from "@/server/auto-po";
 
 /**
@@ -11,6 +11,12 @@ import { runAutoPo } from "@/server/auto-po";
 export async function GET(req: Request) {
   const denied = requireCron(req);
   if (denied) return denied;
-  const result = await runAutoPo();
-  return NextResponse.json(result);
+  const lock = await acquireCronLock("auto-po", 60);
+  if (!lock) return cronLockedResponse("auto-po");
+  try {
+    const result = await runAutoPo();
+    return NextResponse.json(result);
+  } finally {
+    await lock.release();
+  }
 }

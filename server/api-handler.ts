@@ -3,34 +3,27 @@ import { NextResponse } from "next/server";
 import { z, type ZodError, type ZodTypeAny } from "zod";
 
 /**
- * Shared API helpers — eliminate the repeated try/catch + Zod parsing across
- * route handlers. Two entry points:
+ * Request validation helpers. ONE 400 shape everywhere (F-18, 2026-09-23):
  *
- *   parseJson(req, schema)      - parse + validate body, returning either
- *                                  the parsed value OR a NextResponse 400.
- *   parseQuery(req, schema)     - same, for URL search params.
+ *   { error: "<messages joined by '; '>",       // flat, for a toast
+ *     details: [{ path: "qty", message: "…" }], // per field, for forms
+ *     issues: ZodIssue[] }                       // raw, for callers that
+ *                                                // already read it
  *
- *   apiHandler(handler)         - wraps a handler so any thrown Error becomes
- *                                  a JSON 500 (or 400 for ZodError) instead
- *                                  of bubbling to the framework's HTML page.
+ *   parseJson(req, schema)   body      → value | NextResponse(400)
+ *   parseQuery(req, schema)  ?query    → value | NextResponse(400)
  *
- * Usage:
- *   const Body = z.object({ qty: z.number().int().min(1) });
- *
- *   export const POST = apiHandler(async (req) => {
- *     const body = await parseJson(req, Body);
- *     if (body instanceof NextResponse) return body;
- *     ...
- *   });
+ * server/parse-body.ts `parseBody` is an alias of parseJson kept so 64 routes
+ * did not have to change their import.
  */
-
-function zodToErrorPayload(err: ZodError) {
+export function zodToErrorPayload(err: ZodError) {
   return {
-    error: "Validation failed",
+    error: err.issues.map((i) => i.message).join("; ") || "Validation failed",
     details: err.issues.map((i) => ({
       path: i.path.join("."),
       message: i.message,
     })),
+    issues: err.issues,
   };
 }
 
@@ -43,7 +36,7 @@ export async function parseJson<T extends ZodTypeAny>(
     raw = await req.json();
   } catch {
     return NextResponse.json(
-      { error: "Body must be valid JSON" },
+      { error: "Body must be valid JSON", details: [], issues: [] },
       { status: 400 }
     );
   }
@@ -58,45 +51,16 @@ export function parseQuery<T extends ZodTypeAny>(
   req: Request,
   schema: T
 ): z.infer<T> | NextResponse {
-  const params: Record<string, string> = {};
-  new URL(req.url).searchParams.forEach((v, k) => {
-    params[k] = v;
-  });
-  const result = schema.safeParse(params);
+  const url = new URL(req.url);
+  const obj: Record<string, string | string[]> = {};
+  for (const [k, v] of url.searchParams.entries()) {
+    const prev = obj[k];
+    if (prev === undefined) obj[k] = v;
+    else obj[k] = Array.isArray(prev) ? [...prev, v] : [prev, v];
+  }
+  const result = schema.safeParse(obj);
   if (!result.success) {
     return NextResponse.json(zodToErrorPayload(result.error), { status: 400 });
   }
   return result.data;
-}
-
-type RouteHandler<Ctx> = (req: Request, ctx: Ctx) => Promise<Response> | Response;
-
-/**
- * Wrap a Next.js route handler with uniform error handling. Catches:
- *   - ZodError    → 400 with details
- *   - Error       → 500 with message (only in dev) or generic message in prod
- *   - non-Error   → 500 generic
- */
-export function apiHandler<Ctx = unknown>(
-  handler: RouteHandler<Ctx>
-): RouteHandler<Ctx> {
-  return async (req, ctx) => {
-    try {
-      return await handler(req, ctx);
-    } catch (e) {
-      if (e instanceof z.ZodError) {
-        return NextResponse.json(zodToErrorPayload(e), { status: 400 });
-      }
-      const isDev = process.env.NODE_ENV !== "production";
-      const message =
-        e instanceof Error
-          ? e.message
-          : "Unknown error";
-      console.error("[api]", req.method, new URL(req.url).pathname, e);
-      return NextResponse.json(
-        { error: isDev ? message : "Internal server error" },
-        { status: 500 }
-      );
-    }
-  };
 }

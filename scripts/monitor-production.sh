@@ -30,6 +30,15 @@ URL="${URL:-https://inventre.in}"
 URL="${URL%/}"
 
 log() { echo "$(date '+%Y-%m-%d %H:%M:%S') | $*" >> "$LOG"; }
+# E-mail on every TRANSITION (F-13). Uses the host's msmtp relay
+# (/etc/msmtprc, Office 365) and ALERT_EMAIL_TO from .env.deploy; silently
+# a no-op when either is missing so the monitor itself never fails.
+ALERT_TO="$(grep -E '^ALERT_EMAIL_TO=' "$ROOT/.env.deploy" 2>/dev/null | head -1 | cut -d= -f2- | tr -d '"' || true)"
+alert() {
+  [ -n "$ALERT_TO" ] && command -v msmtp >/dev/null 2>&1 || return 0
+  printf 'To: %s\nFrom: Support@inventre.in\nSubject: [Inventre prod] %s\n\n%s\n\n%s\n' \
+    "$ALERT_TO" "$1" "$2" "log: $LOG" | msmtp -t >/dev/null 2>&1 || true
+}
 
 VERSION_JSON="$(curl -s "$URL/api/version" --max-time 20)"
 BUILD_ID="$(sed -n 's/.*"buildId"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' <<<"$VERSION_JSON")"
@@ -41,6 +50,8 @@ EXPECTED_SHA="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || true)"
 if [ -n "$GIT_SHA" ] && [ -n "$EXPECTED_SHA" ] && [ "$GIT_SHA" != "$EXPECTED_SHA" ] \
    && ! git -C "$ROOT" merge-base --is-ancestor "$GIT_SHA" "$EXPECTED_SHA" 2>/dev/null; then
   log "🟠 FOREIGN COMMIT SERVING — live ${GIT_SHA:0:12} is not in /root/Inventre history (HEAD ${EXPECTED_SHA:0:12})"
+  [ "$(cat "$STATE.sha" 2>/dev/null)" = "$GIT_SHA" ] || alert "foreign commit is serving" "Live commit ${GIT_SHA:0:12} is not in /root/Inventre history (HEAD ${EXPECTED_SHA:0:12}). A deploy from another checkout has replaced production."
+  echo "$GIT_SHA" > "$STATE.sha"
 fi
 HEADERS="$(curl -sI "$URL" --max-time 20)"
 
@@ -60,10 +71,14 @@ if [ -n "$MISSING" ]; then
     log "🔴 SECURITY POSTURE LOST — build $BUILD_ID is missing:$MISSING"
     log "   A deploy from a checkout other than /root/Inventre has overwritten production."
     log "   Restore with: cd /root/Inventre && ./scripts/deploy.sh --fast"
+    [ "$PREV" != "degraded" ] && alert "security posture LOST" "Build $BUILD_ID is missing:$MISSING. Restore with: cd /root/Inventre && ./scripts/deploy.sh --fast"
   fi
 else
   NOW="ok"
-  [ "$PREV" = "degraded" ] && log "✅ recovered — build $BUILD_ID serves all six headers"
+  if [ "$PREV" = "degraded" ]; then
+    log "✅ recovered — build $BUILD_ID serves all six headers"
+    alert "recovered" "Build $BUILD_ID serves all six security headers again."
+  fi
   [ "$PREV" = "unknown" ] && log "monitor started — build $BUILD_ID, all six headers present"
 fi
 

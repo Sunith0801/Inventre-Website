@@ -44,127 +44,11 @@ import {
 } from "lucide-react";
 import type { CurrentAdmin } from "@/server/session";
 import { isReadOnlyAdmin, canSeePage } from "@/lib/admin-permissions";
+import { ADMIN_NAV_GROUPS } from "@/lib/admin-nav";
 import { cn } from "@/lib/cn";
 import { TopProgressBar } from "@/components/admin/TopProgressBar";
 
-type NavItem = {
-  href: string;
-  label: string;
-  icon: React.ComponentType<{ className?: string }>;
-  /** Permission key from lib/admin-permissions.ts. Item is hidden when
-   *  the current admin's permissions Set doesn't include it. Omit to
-   *  always show (rare — used only for items pre-RBAC). */
-  perm?: string;
-};
-
-type NavGroup = { kicker: string; items: NavItem[] };
-
-const groups: NavGroup[] = [
-  {
-    kicker: "Overview",
-    items: [{ href: "/admin/dashboard", label: "Dashboard", icon: LayoutDashboard, perm: "nav:dashboard" }],
-  },
-  {
-    kicker: "Sales",
-    items: [
-      { href: "/admin/orders",    label: "Orders",    icon: ShoppingBag, perm: "nav:orders" },
-      { href: "/admin/shipments", label: "Shipments", icon: Truck,       perm: "nav:shipments" },
-      { href: "/admin/invoices",  label: "Invoices",  icon: FileText,    perm: "nav:invoices" },
-      { href: "/admin/returns",   label: "Returns",   icon: PackageOpen, perm: "nav:returns" },
-    ],
-  },
-  {
-    kicker: "Network",
-    items: [
-      { href: "/admin/schools",            label: "Schools",       icon: School,        perm: "nav:schools" },
-      { href: "/admin/grades",             label: "Grades",        icon: GraduationCap, perm: "nav:grades" },
-      { href: "/admin/delivery-fee-rules", label: "Delivery fees", icon: Truck,         perm: "nav:delivery-fees" },
-    ],
-  },
-  {
-    kicker: "People",
-    items: [
-      { href: "/admin/customers", label: "Customers (Parents)", icon: Users,         perm: "nav:customers" },
-      { href: "/admin/students",  label: "Students",            icon: GraduationCap, perm: "nav:students" },
-      { href: "/admin/mcb",       label: "MCB",                 icon: Wallet,        perm: "nav:mcb" },
-      { href: "/admin/guardians", label: "Guardians",           icon: Users,         perm: "nav:guardians" },
-    ],
-  },
-  {
-    // One door for catalog. The Catalog page is the Shop Preview — pick
-    // (school, grade, new/returning) and see what parents see. Deep
-    // editors (Products, BOMs, Pricing, Stock, etc.) are linked from
-    // within that page so the sidebar stays uncluttered and there's no
-    // "which tab do I click first?" confusion.
-    kicker: "Catalog",
-    items: [
-      { href: "/admin/catalog", label: "Catalog", icon: Eye, perm: "nav:catalog" },
-      { href: "/admin/ground-stock", label: "Ground Stock", icon: Boxes, perm: "nav:catalog" },
-    ],
-  },
-  {
-    kicker: "Pricing & Tax",
-    items: [
-      { href: "/admin/discounts", label: "Discounts", icon: Tag,     perm: "nav:discounts" },
-      { href: "/admin/tax/rates", label: "Tax & GST", icon: Receipt, perm: "nav:tax" },
-    ],
-  },
-  {
-    kicker: "Payment Charges",
-    items: [
-      { href: "/admin/payment-charges", label: "Payment charges", icon: IndianRupee, perm: "nav:payment-charges" },
-    ],
-  },
-  {
-    kicker: "Buying",
-    items: [
-      { href: "/admin/suppliers",       label: "Suppliers",       icon: TruckSupplier,  perm: "nav:suppliers" },
-      { href: "/admin/purchase-orders", label: "Purchase orders", icon: ClipboardList,  perm: "nav:purchase-orders" },
-    ],
-  },
-  {
-    kicker: "Accounting",
-    items: [
-      { href: "/admin/payments",          label: "Payments",              icon: CreditCard, perm: "nav:payments" },
-      { href: "/admin/payments/ccavenue", label: "CCAvenue Payment Logs", icon: Receipt,    perm: "nav:payments-ccavenue" },
-    ],
-  },
-  {
-    kicker: "Engagement",
-    items: [
-      { href: "/admin/reviews",       label: "Reviews",       icon: Star,                perm: "nav:reviews" },
-      { href: "/admin/testimonials",  label: "Testimonials",  icon: MessageSquareQuote,  perm: "nav:testimonials" },
-      { href: "/admin/contact-forms", label: "Contact forms", icon: Inbox,               perm: "nav:contact-forms" },
-      { href: "/admin/parent-concerns", label: "Parent Concerns", icon: LifeBuoy,        perm: "nav:contact-forms" },
-      { href: "/admin/gift-cards",    label: "Gift cards",    icon: Gift,                perm: "nav:gift-cards" },
-    ],
-  },
-  {
-    kicker: "Content",
-    items: [
-      { href: "/admin/content", label: "Pages & blocks", icon: ImageIcon, perm: "nav:content" },
-    ],
-  },
-  {
-    kicker: "Tools",
-    items: [
-      { href: "/admin/import",   label: "Import CSV/XLSX", icon: Upload,        perm: "nav:import" },
-      { href: "/admin/reports",  label: "Reports",         icon: BarChart3,     perm: "nav:reports" },
-      { href: "/admin/activity", label: "Activity log",    icon: Activity,      perm: "nav:activity" },
-      { href: "/admin/otp-logs", label: "OTP Logs",        icon: MessageSquare, perm: "nav:otp-logs" },
-      { href: "/admin/order-notifications", label: "Order Notifications", icon: Send, perm: "nav:order-notifications" },
-    ],
-  },
-  {
-    kicker: "Settings",
-    items: [
-      { href: "/admin/settings/users",       label: "Admin users",       icon: Settings, perm: "nav:settings-users" },
-      { href: "/admin/roles",                label: "Roles & permissions", icon: KeyRound, perm: "nav:roles" },
-      { href: "/admin/settings/otp",         label: "SMS / SMTP OTP",    icon: KeyRound, perm: "nav:settings-otp" },
-      { href: "/admin/settings/erp-bridge",  label: "ERP bridge (live)", icon: Activity, perm: "nav:settings-erp-bridge" },
-    ],
-  },
-];
+const groups = ADMIN_NAV_GROUPS;
 
 export function AdminShell({
   user,
@@ -199,13 +83,7 @@ export function AdminShell({
     <div className="space-y-5 py-2">
       {groups.map((g) => {
         const visible = g.items.filter((it) => {
-          if (!it.perm) return true;
-          // Legacy nav:<slug> keys map to (<slug>.read OR <slug>.write).
-          // The 0046 migration replaced nav:* in the DB with .read/.write
-          // pairs; AdminShell still labels sidebar items by their legacy
-          // nav: identifier for now.
-          const slug = it.perm.startsWith("nav:") ? it.perm.slice(4) : it.perm;
-          return canSeePage(user.permissions, slug);
+          return canSeePage(user.permissions, it.perm);
         });
         if (visible.length === 0) return null;
         return (
