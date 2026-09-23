@@ -37,7 +37,24 @@ ensure_tools() {
   need gpg || apt-get install -y -qq gnupg >/dev/null
   need git || apt-get install -y -qq git >/dev/null
   if ! need rclone; then log "installing rclone"; curl -fsS https://rclone.org/install.sh | bash >/dev/null; fi
-  if ! need docker; then log "installing docker"; apt-get update -qq && apt-get install -y -qq docker.io docker-compose-plugin >/dev/null; systemctl enable --now docker; fi
+  if ! need docker; then
+    log "installing docker"
+    apt-get update -qq
+    # Ubuntu 24.04 ships the compose v2 plugin as `docker-compose-v2`; the name
+    # `docker-compose-plugin` only exists in Docker's own apt repository. Try
+    # the distro package first, then fall back to Docker's repo. (Found by the
+    # first clean-VM drill, 2026-09-24: the kit died here after 18 s.)
+    if ! apt-get install -y -qq docker.io docker-compose-v2 >/dev/null 2>&1; then
+      log "distro packages unavailable — using Docker's apt repository"
+      apt-get install -y -qq ca-certificates curl >/dev/null
+      install -m 0755 -d /etc/apt/keyrings
+      curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+      echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" > /etc/apt/sources.list.d/docker.list
+      apt-get update -qq && apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-compose-plugin >/dev/null
+    fi
+    systemctl enable --now docker
+  fi
+  docker compose version >/dev/null 2>&1 || die "docker compose v2 is not available after install"
 }
 
 # rclone remotes from env — identical to scripts/backup/lib.sh on the old host
@@ -83,7 +100,10 @@ fetch)
   log "all WAL segments → $R/wal"
   rclone copy $RC m365crypt:wal "$R/wal/"
   log "newest code bundle → $R/code"
-  c="$(rclone lsf m365crypt:code | sort | tail -1)"; [ -n "$c" ] && rclone copy $RC "m365crypt:code/$c" "$R/code/"
+  # newest by MODIFICATION TIME, bundles only. Sorting by name picked
+  # `uncommitted-latest.txt` (u > i) and, among bundles, a random sha — found
+  # by the first clean-VM drill, 2026-09-24.
+  c="$(rclone lsf --files-only --include '*.bundle' --format tp --separator '|' m365crypt:code | sort | tail -1 | cut -d'|' -f2)"; [ -n "$c" ] && rclone copy $RC "m365crypt:code/$c" "$R/code/"
   log "latest encrypted .env.deploy → $R/config"; rclone copy $RC m365crypt:config "$R/config/" || true
   log "uncommitted code changes at the time of the last sync (if any) → $R/code"; rclone copy $RC --include 'uncommitted-latest.*' m365crypt:code "$R/code/" || true
   log "newest encrypted snapshot (carries .env.deploy too) → $R/snapshots"

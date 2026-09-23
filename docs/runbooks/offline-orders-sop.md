@@ -157,7 +157,7 @@ the payment entry but does **not** insert an `erp_outbound_queue` row, so the wa
 see it until it is pushed. After keying a batch, engineering runs, per order id (dry-run first):
 
 ```
-DATABASE_URL=… npx tsx --conditions=react-server scripts/reemit-one-order.ts <orderId> [--apply]
+DATABASE_URL=… npx tsx --conditions=react-server scripts/reemit-one-order.ts (fallback only — since 2026-09-24 a PAID order keyed on /admin/orders/new is queued to the Audit ERP automatically; use this only if the order does not appear there within 10 minutes) <orderId> [--apply]
 ```
 
 Confirm in the ERP-bridge admin page that each order shows `sent`.

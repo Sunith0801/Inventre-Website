@@ -21,6 +21,7 @@ import {
   getDefaultWarehouseId,
 } from "@/server/repos/inventory";
 import { logAdminActivity } from "@/server/activity";
+import { enqueueOrderEvent } from "@/server/erp-bridge";
 
 export async function GET(req: Request) {
   const guard = await requirePermission("orders.read");
@@ -276,6 +277,11 @@ export async function POST(req: Request) {
       summary: `Created order ${orderNumber} (${body.paymentStatus})`,
       req,
     });
+
+    // D-12 (DR-BCP): a paid order keyed by staff must reach the warehouse like
+    // any storefront order. Same buffered outbox the checkout uses; pending
+    // orders are pushed by the normal confirm path later.
+    if (body.paymentStatus === "paid") void enqueueOrderEvent(created.id, "order.created");
 
     return NextResponse.json({ id: created.id, orderNumber });
   } catch (e) {
