@@ -6,6 +6,10 @@
 # stopped for long, the server's disk grows; the sync job alerts on that.
 set -euo pipefail; . "$(dirname "$0")/lib.sh"
 docker rm -f inventre-wal-stream >/dev/null 2>&1 || true
+# --create-slot creates the slot and EXITS (by design), so it is a separate,
+# idempotent step; the streaming run below must not carry it.
+docker run --rm --network inventre-deploy_default -e PGPASSWORD="$POSTGRES_PASSWORD" postgres:16-alpine \
+  pg_receivewal -h postgres -U inventre --slot inventre_wal --create-slot --if-not-exists >/dev/null 2>&1 || true
 exec docker run --rm --name inventre-wal-stream --network inventre-deploy_default \
   -v "$ARCHIVE/wal":/wal -e PGPASSWORD="$POSTGRES_PASSWORD" postgres:16-alpine \
-  pg_receivewal -h postgres -U inventre -D /wal --slot inventre_wal --create-slot --if-not-exists --compress=gzip:6 --verbose
+  pg_receivewal -h postgres -U inventre -D /wal --slot inventre_wal --compress=gzip:6 --verbose
