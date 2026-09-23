@@ -118,6 +118,7 @@ export function ShopHeader({ count, query, onQuery, sort, onSort }: Props) {
 
           <div className="relative">
             <select
+              aria-label="Sort products"
               value={sort}
               onChange={(e) => onSort(e.target.value)}
               className="appearance-none rounded-full border border-ink-200 bg-white pl-4 pr-10 py-2.5 text-[14px] font-medium text-ink-800 focus:border-ink-900 focus:outline-none transition-colors"

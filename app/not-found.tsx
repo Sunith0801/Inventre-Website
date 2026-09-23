@@ -5,7 +5,7 @@ export default function NotFound() {
   return (
     <main className="min-h-[70vh] flex items-center justify-center px-4 bg-cream">
       <div className="max-w-md w-full text-center">
-        <p className="text-6xl font-extrabold text-brand-200">404</p>
+        <p aria-hidden className="text-6xl font-extrabold text-brand-200">404</p>
         <h1 className="mt-2 text-2xl font-bold text-ink-900">That page does not exist</h1>
         <p className="mt-2 text-ink-600">
           The link may be old, or the item may have been removed from the catalogue.

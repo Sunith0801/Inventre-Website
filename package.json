@@ -26,7 +26,8 @@
     "db:backfill:erp": "tsx --conditions=react-server scripts/backfill-erp-reemit.ts",
     "db:remediate:ccavenue": "tsx --conditions=react-server scripts/remediate-ccavenue-stuck.ts",
     "db:replay:erp-fulfillment": "tsx --conditions=react-server scripts/replay-erp-fulfillment-grade.ts",
-    "e2e": "tsx scripts/e2e.ts"
+    "e2e": "tsx scripts/e2e.ts",
+    "smoke": "node scripts/smoke-storefront.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1040.0",

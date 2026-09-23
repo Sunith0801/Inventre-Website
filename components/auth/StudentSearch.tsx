@@ -98,6 +98,7 @@ export function StudentSearch({
     <div>
       <div className="grid sm:grid-cols-2 gap-3">
         <select
+          aria-label="School"
           value={school}
           onChange={(e) => {
             const next = e.target.value;
@@ -119,6 +120,7 @@ export function StudentSearch({
           ))}
         </select>
         <select
+          aria-label="Grade"
           value={grade}
           onChange={(e) => setGrade(e.target.value)}
           disabled={!school}
