@@ -82,7 +82,7 @@ fetch)
   log "newest code bundle → $R/code"
   c="$(rclone lsf m365crypt:code | sort | tail -1)"; [ -n "$c" ] && rclone copy $RC "m365crypt:code/$c" "$R/code/"
   log "latest encrypted .env.deploy → $R/config"; rclone copy $RC m365crypt:config "$R/config/" || true
-  log "uncommitted code changes at the time of the last sync (if any) → $R/code"
+  log "uncommitted code changes at the time of the last sync (if any) → $R/code"; rclone copy $RC --include 'uncommitted-latest.*' m365crypt:code "$R/code/" || true
   log "newest encrypted snapshot (carries .env.deploy too) → $R/snapshots"
   s="$(rclone lsf m365crypt:snapshots | sort | tail -1)"; [ -n "$s" ] && rclone copy $RC "m365crypt:snapshots/$s" "$R/snapshots/"
   echo; echo "✓ fetched:"; du -sh "$R"/* 2>/dev/null; echo "Next: ./restore-from-m365.sh code"
