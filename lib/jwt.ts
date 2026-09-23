@@ -23,6 +23,20 @@ function getKey(): Uint8Array {
   return new TextEncoder().encode(secret);
 }
 
+/**
+ * Keys a token may have been signed with: the current secret first, then
+ * JWT_SECRET_PREVIOUS when set. Rotation recipe: move the old value to
+ * JWT_SECRET_PREVIOUS, put the new one in JWT_SECRET, deploy — nobody is
+ * logged out; new sessions use the new key; after SESSION_TTL (7 days) drop
+ * JWT_SECRET_PREVIOUS. Rotated this way on 2026-09-23 (F-04).
+ */
+export function getVerifyKeys(): Uint8Array[] {
+  const keys = [getKey()];
+  const prev = process.env.JWT_SECRET_PREVIOUS;
+  if (prev && prev !== process.env.JWT_SECRET) keys.push(new TextEncoder().encode(prev));
+  return keys;
+}
+
 export async function signSession(payload: SessionPayload): Promise<string> {
   return new SignJWT(payload as unknown as JWTPayload)
     .setProtectedHeader({ alg: "HS256" })
@@ -34,12 +48,15 @@ export async function signSession(payload: SessionPayload): Promise<string> {
 export async function verifySession(
   token: string
 ): Promise<SessionPayload | null> {
-  try {
-    const { payload } = await jwtVerify(token, getKey());
-    return payload as unknown as SessionPayload;
-  } catch {
-    return null;
+  for (const key of getVerifyKeys()) {
+    try {
+      const { payload } = await jwtVerify(token, key);
+      return payload as unknown as SessionPayload;
+    } catch {
+      // try the next key
+    }
   }
+  return null;
 }
 
 // Two independent cookies so an admin and a parent session can coexist in

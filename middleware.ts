@@ -63,13 +63,30 @@ async function readSupportView(req: NextRequest): Promise<SupportViewMini | null
 type Kind = "parent" | "admin";
 type Mini = { sub: string; kind: Kind; role?: string };
 
-const KEY_CACHE: { key: Uint8Array | null } = { key: null };
-function key() {
-  if (KEY_CACHE.key) return KEY_CACHE.key;
+// Current secret first, then JWT_SECRET_PREVIOUS during a rotation window
+// (same contract as lib/jwt.ts getVerifyKeys — kept inline: the Edge bundle
+// must not pull server-side modules).
+const KEY_CACHE: { keys: Uint8Array[] | null } = { keys: null };
+function keys(): Uint8Array[] {
+  if (KEY_CACHE.keys) return KEY_CACHE.keys;
   const s = process.env.JWT_SECRET;
   if (!s) throw new Error("JWT_SECRET not set");
-  KEY_CACHE.key = new TextEncoder().encode(s);
-  return KEY_CACHE.key;
+  const out = [new TextEncoder().encode(s)];
+  const prev = process.env.JWT_SECRET_PREVIOUS;
+  if (prev && prev !== s) out.push(new TextEncoder().encode(prev));
+  KEY_CACHE.keys = out;
+  return out;
+}
+async function verifyWithAnyKey(tok: string) {
+  let lastErr: unknown;
+  for (const k of keys()) {
+    try {
+      return await jwtVerify(tok, k);
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  throw lastErr;
 }
 
 /**
@@ -90,7 +107,7 @@ async function readSession(
   const tok = req.cookies.get(cookieName)?.value;
   if (!tok) return null;
   try {
-    const { payload } = await jwtVerify(tok, key());
+    const { payload } = await verifyWithAnyKey(tok);
     const mini = payload as unknown as Mini;
     // Defense in depth: refuse a wrong-kind token even if it ended up in
     // the wrong cookie somehow.

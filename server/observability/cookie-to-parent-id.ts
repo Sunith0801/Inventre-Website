@@ -1,6 +1,6 @@
 import "server-only";
 import { jwtVerify } from "jose";
-import { SESSION_COOKIE } from "@/lib/jwt";
+import { getVerifyKeys, SESSION_COOKIE } from "@/lib/jwt";
 
 /**
  * Best-effort parent id extraction from a raw Cookie header. Used by the
@@ -16,15 +16,17 @@ export async function cookieToParentId(rawCookies: string): Promise<string | nul
   }
   const tok = map.get(SESSION_COOKIE);
   if (!tok) return null;
-  const secret = process.env.JWT_SECRET;
-  if (!secret) return null;
-  try {
-    const { payload } = await jwtVerify(tok, new TextEncoder().encode(secret));
-    if (payload.kind === "parent" && typeof payload.sub === "string") {
-      return payload.sub;
+  if (!process.env.JWT_SECRET) return null;
+  for (const key of getVerifyKeys()) {
+    try {
+      const { payload } = await jwtVerify(tok, key);
+      if (payload.kind === "parent" && typeof payload.sub === "string") {
+        return payload.sub;
+      }
+      return null;
+    } catch {
+      // try the next key
     }
-  } catch {
-    // fall through
   }
   return null;
 }
