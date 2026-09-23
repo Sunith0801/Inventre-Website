@@ -180,10 +180,19 @@ start)
   log "node + dependencies"
   need node || { curl -fsSL https://deb.nodesource.com/setup_20.x | bash - >/dev/null; apt-get install -y -qq nodejs >/dev/null; }
   npm ci --no-audit --no-fund >/dev/null
+  # docker-compose.deploy.yml joins the app to the audit staging stack's network,
+  # which exists only on the old host. Create an empty one so the app container
+  # can be created on a clean server (found by the clean-VM drill, 2026-09-24).
+  for net in $(grep -oE '^\s+name:\s*\S+' docker-compose.deploy.yml | awk '{print $2}'; echo erp-staging_default); do
+    docker network inspect "$net" >/dev/null 2>&1 || docker network create "$net" >/dev/null
+  done
   log "data stores"
   docker compose -p inventre-deploy --env-file .env.deploy -f docker-compose.deploy.yml up -d postgres pgbouncer redis minio >/dev/null
   log "build + start the application (migrations run on boot)"
-  ./scripts/deploy.sh --allow-dirty --skip-verify
+  # post-deploy verification must look at THIS server, not the public URL in the
+  # restored .env.deploy (clean-VM drill 2026-09-24: it compared against the old
+  # host, "failed" and rolled back a healthy build)
+  VERIFY_URL=http://127.0.0.1:3010 ./scripts/deploy.sh --allow-dirty --skip-verify
   echo; echo "✓ Inventre is answering on :3010. Finish by hand (≈20 min), see docs/runbooks/restore-from-m365.md:"
   echo "   nginx + certbot, DNS A record, cron files, systemd inventre-wal-stream, CCAvenue SFTP user, /etc/msmtprc, re-enable backups."
   ;;

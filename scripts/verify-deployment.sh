@@ -30,7 +30,9 @@ EXPECTED_GIT_SHA="${2:-}"
 TIMEOUT=20
 RETRIES=15
 
-URL="$(grep -E '^APP_PUBLIC_URL=' "$ROOT/.env.deploy" 2>/dev/null | head -1 | cut -d= -f2- | tr -d '"' || true)"
+# VERIFY_URL overrides the target — the recovery kit sets it to the local port on
+# a rebuilt server, where the restored APP_PUBLIC_URL still names the OLD host.
+URL="${VERIFY_URL:-$(grep -E '^APP_PUBLIC_URL=' "$ROOT/.env.deploy" 2>/dev/null | head -1 | cut -d= -f2- | tr -d '"' || true)}"
 URL="${URL:-https://inventre.in}"
 URL="${URL%/}"
 

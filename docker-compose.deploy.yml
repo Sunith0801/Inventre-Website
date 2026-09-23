@@ -59,7 +59,7 @@ services:
       - redisdata:/data
 
   minio:
-    image: minio/minio:latest
+    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z   # Docker Hub minio/minio vanished (clean-VM drill 2026-09-24); same release prod runs
     container_name: inventre-deploy-minio
     restart: unless-stopped
     command: server /data --console-address ":9001"
@@ -84,7 +84,7 @@ services:
       disable: true
 
   minio-init:
-    image: minio/mc:latest
+    image: quay.io/minio/mc:latest
     container_name: inventre-deploy-minio-init
     # minio's healthcheck is disabled above, so `condition: service_healthy`
     # can never be met — compose v1 aborted the whole `up` on 2026-09-23.
