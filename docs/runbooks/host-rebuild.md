@@ -12,6 +12,8 @@ Target: storefront serving again within ~2 hours of a fresh Ubuntu box.
 - The `SNAPSHOT_PASSPHRASE` (password manager).
 
 ## Steps
+
+> **Shortcut:** `scripts/backup/restore-from-m365.sh` + `docs/runbooks/restore-from-m365.md` do steps 2–5 below from the Microsoft 365 backups with one command per step. Use them first; this page is the manual fallback.
 1. **Base**: Ubuntu LTS, `apt install docker.io docker-compose-plugin nginx certbot python3-certbot-nginx msmtp fail2ban`, key-only SSH, firewall: 22, 80, 443 only (`scripts/firewall-docker-ports.sh` closes Docker-published ports).
 2. **Code**: clone the repo to `/root/Inventre`, check out the live commit. `npm ci`.
 3. **Secrets**: `gpg -d env/env.deploy.gpg > .env.deploy`; `chmod 640 .env.deploy`.

@@ -1,0 +1,139 @@
+# Bringing Inventre back on another server from the Microsoft 365 backups
+
+If the production host is gone, this is the path back. Everything needed is
+in the company's SharePoint site **Vendor Management Files AUDIT › Documents ›
+Inventre Backups**, encrypted, refreshed every 5 minutes while the old host is
+alive. Target: storefront answering again in **about 90 minutes**, with data
+loss of a few minutes (point-in-time) or up to a day (simple dump).
+
+## 0. Keep these seven values in the password manager — today
+
+Without them the backups are unreadable. They are also inside the encrypted
+snapshot, but that is circular: you need them to open it.
+
+| Value | Where it comes from | Why |
+|---|---|---|
+| `M365_TENANT_ID` | Entra app *inventre-backup-agent* | sign in to Microsoft 365 |
+| `M365_CLIENT_ID` | same | same |
+| `M365_CLIENT_SECRET` | same (expires 2028-09-23) | same |
+| `M365_BACKUP_SITE` | `https://inventre.sharepoint.com/sites/VendorManagementFilesAUDIT` | where the files are |
+| `BACKUP_CRYPT_PASSWORD` | `/root/Inventre/.env.deploy` | decrypt file names and contents |
+| `BACKUP_CRYPT_SALT` | same | same |
+| `SNAPSHOT_PASSPHRASE` | same | decrypt `.env.deploy` inside the snapshot (all other secrets) |
+
+Copy them now: `grep -E '^(M365_|BACKUP_CRYPT_|SNAPSHOT_PASSPHRASE)' /root/Inventre/.env.deploy`
+
+## 1. Prepare the new server (10 min)
+
+Ubuntu 22.04 or 24.04, 4+ vCPU, 16 GB RAM, 200 GB disk, root SSH.
+
+```bash
+apt-get update && apt-get install -y curl git gnupg python3
+mkdir -p /root/restore
+cat > /root/restore.env <<'EOF'
+M365_TENANT_ID=
+M365_CLIENT_ID=
+M365_CLIENT_SECRET=
+M365_BACKUP_SITE=https://inventre.sharepoint.com/sites/VendorManagementFilesAUDIT
+BACKUP_CRYPT_PASSWORD=
+BACKUP_CRYPT_SALT=
+SNAPSHOT_PASSPHRASE=
+EOF
+chmod 600 /root/restore.env
+```
+
+Fill in the values. Then get the restore script itself. It lives in the code
+backup, so bootstrap it from any copy of the repository, or from SharePoint by
+hand: download the newest file in the (encrypted) `code` folder is not possible
+without rclone, so simplest is to paste the script from this runbook's sibling
+`scripts/backup/restore-from-m365.sh` (also kept in the password manager as an
+attachment, and in the GitHub repository).
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ItInventre/Inventre/main/scripts/backup/restore-from-m365.sh -o /root/restore-from-m365.sh
+chmod +x /root/restore-from-m365.sh
+```
+
+## 2. Fetch everything (10–15 min for ≈ 12 GB)
+
+```bash
+/root/restore-from-m365.sh fetch
+```
+
+Downloads the newest daily dump, the newest full (base) backup, every
+transaction-log segment, the newest code bundle and the newest encrypted
+snapshot into `/root/restore/`.
+
+## 3. Code and configuration (2 min)
+
+```bash
+/root/restore-from-m365.sh code
+```
+
+Clones the repository from the bundle to `/root/Inventre` on the branch that
+was live, and decrypts `.env.deploy` out of the snapshot. Every other secret
+(database, Redis, JWT, CCAvenue, SMS, ERP, MCB) is now in place.
+
+## 4. Database — choose one (10–25 min)
+
+**Simple, loses up to 24 hours:**
+```bash
+/root/restore-from-m365.sh restore-dump
+```
+
+**Point in time, loses about 5 minutes** (or stop just before a bad change):
+```bash
+/root/restore-from-m365.sh restore-pitr                        # everything up to the last received segment
+/root/restore-from-m365.sh restore-pitr "2026-09-23 15:40:00"  # or to a chosen moment (server time, IST)
+```
+
+Both print table, order and student counts and the newest order timestamp at
+the end so you can see exactly where the data stands.
+
+## 5. Start the application (5–10 min)
+
+```bash
+/root/restore-from-m365.sh start
+```
+
+Starts Postgres, PgBouncer, Redis and MinIO from the compose file, installs
+Node dependencies, builds and starts the app on port 3010. Migrations run on
+boot. Check: `curl -s http://127.0.0.1:3010/api/health`.
+
+## 6. Make it public (15–20 min, by hand)
+
+1. **nginx + certificate**: `cp deploy/nginx.conf /etc/nginx/sites-available/inventre`, set
+   `server_name inventre.in www.inventre.in`, `proxy_pass http://127.0.0.1:3010`, enable,
+   `certbot --nginx -d inventre.in -d www.inventre.in`.
+2. **DNS**: point the A records for `inventre.in` and `www` at the new IP.
+3. **Cron**: `cp deploy/erp-cron.example /etc/cron.d/inventre-erp`; `cp deploy/cron.d/* /etc/cron.d/`;
+   root crontab lines for `scripts/backup-db.sh` (02:15) and `scripts/monitor-production.sh` (*/10).
+4. **Backups again**: `cp deploy/systemd/inventre-wal-stream.service /etc/systemd/system/`,
+   add `host replication inventre 172.16.0.0/12 scram-sha-256` to the container's `pg_hba.conf`
+   (`docker exec -u postgres inventre-deploy-postgres sh -c 'echo "…" >> /var/lib/postgresql/data/pg_hba.conf && pg_ctl reload -D /var/lib/postgresql/data'`),
+   `systemctl enable --now inventre-wal-stream`. The 5-minute sync resumes from `/etc/cron.d/inventre-backup`.
+   **Before the first sync from the new host, rename the old `prod` folder in SharePoint to `prod-old-<date>`** so the
+   new host does not mirror over the last good copy of the old one.
+5. **Mail relay** for alerts: `/etc/msmtprc` (Office 365, Support@inventre.in).
+6. **CCAvenue settlement SFTP**: user `ccavenue-sftp`, chroot `/home/ccavenue-sftp`, files land in
+   `settlements/`, which the compose file mounts into the app; give CCAvenue the new host key and IP.
+7. **Partners**: Audit ERP allow-list, if any, for the new outbound IP.
+8. **Verify**: `./scripts/verify-deployment.sh`, place a test order, watch `/var/log/inventre-erp-drain.log` for `sent`.
+
+## Time budget
+
+| Step | Minutes |
+|---|---|
+| Prepare server, write restore.env | 10 |
+| Fetch ≈ 12 GB | 10–15 |
+| Code + env | 2 |
+| Database (dump / point-in-time) | 10 / 25 |
+| Start app (cold build) | 5–10 |
+| nginx, DNS, cron, backups, mail, SFTP | 15–20 |
+| **Total** | **≈ 60–90** |
+
+## Practise it
+
+Run steps 2 to 5 once on a throwaway VM (or on the dev box with a different
+compose project name) and time it. The weekly Sunday restore test only proves
+the dump restores; this runbook proves the whole path.
