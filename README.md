@@ -9,7 +9,7 @@ ERPNext (production fulfilment) in sync.
 - **Stack**: Next.js 15 (App Router) · TypeScript · Drizzle ORM · Postgres 16 · Redis · MinIO/R2 · CCAvenue
 - **Live prod**: <https://inventre.in>
 - **Staging**: <https://test.inventre.in>
-- **Architecture**: `docs/architecture/Inventre-HLD-v1.4.pdf` (high-level) and `docs/architecture/Inventre-LLD-v1.4.pdf` (low-level); sources in `docs/architecture/design-docs/`. Superseded plans live in `docs/history/`.
+- **Architecture**: `docs/architecture/Inventre-HLD-v1.5.pdf` (high-level) and `docs/architecture/Inventre-LLD-v1.5.pdf` (low-level); sources in `docs/architecture/design-docs/`. Superseded plans live in `docs/history/`.
 
 ---
 
@@ -400,7 +400,7 @@ If you fork this repo or rip out modules, these are the production‑critical pi
 | [`deploy/replicas/redis-sentinel-setup.md`](./deploy/replicas/redis-sentinel-setup.md) | Redis HA pair with Sentinel |
 | [`deploy/cdn/cloudflare-setup.md`](./deploy/cdn/cloudflare-setup.md) | Cloudflare in front of nginx |
 | [`deploy/monitoring/README.md`](./deploy/monitoring/README.md) | Prometheus + Grafana stack |
-| `docs/architecture/Inventre-HLD-v1.4.pdf`, `Inventre-LLD-v1.4.pdf` | Architecture (as built) + detailed design, with the rectification register |
+| `docs/architecture/Inventre-HLD-v1.5.pdf`, `Inventre-LLD-v1.5.pdf` | Architecture (as built) + detailed design, with the rectification register |
 | `db/schema.ts` | All tables, columns, indexes (single source of truth) |
 | `db/migrations/` | Numbered SQL migrations 0000 → 0034 |
 | `docker-compose.deploy.yml` | Production service topology |
