@@ -114,6 +114,8 @@ export async function GET() {
           relation: studentGuardianLinks.relation,
           email: studentGuardianLinks.email,
           phoneNo: studentGuardianLinks.phoneNo,
+          consentVersion: studentGuardianLinks.consentVersion,
+          consentRecordedAt: studentGuardianLinks.consentRecordedAt,
         })
         .from(studentGuardianLinks)
         .where(inArray(studentGuardianLinks.studentId, studentIds))

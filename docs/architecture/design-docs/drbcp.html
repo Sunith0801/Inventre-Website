@@ -9,7 +9,7 @@
   <div class="band"></div>
   <div>
     <div class="meta">
-      <div><span>Document</span><b>DR-BCP v1.1</b></div>
+      <div><span>Document</span><b>DR-BCP v1.2</b></div>
       <div><span>Date</span><b>24 September 2026</b></div>
       <div><span>Status</span><b>Baseline; first restore drill recorded</b></div>
       <div><span>Owner</span><b>Inventre Engineering</b></div>
@@ -35,7 +35,8 @@
   <h3>Revision history</h3>
   <table class="hist compact"><thead><tr><th>Version</th><th>Date</th><th>Author</th><th>Change</th></tr></thead>
   <tbody><tr><td>1.0</td><td>2026-09-23</td><td>Engineering</td><td>First baseline after the backup pipeline and recovery kit went live; targets proposed, playbooks written, drill schedule set.</td></tr>
-  <tr><td>1.1</td><td>2026-09-24</td><td>Engineering</td><td>Point-in-time restore drill run on the production host into a throwaway container (D-02); one-command maintenance switch (D-08); restore script gains a volume override; new finding D-11 (nginx bypass token readable).</td></tr></tbody></table>
+<tr><td>1.1</td><td>2026-09-24</td><td>Engineering</td><td>Point-in-time restore drill run on the production host into a throwaway container (D-02); one-command maintenance switch (D-08); restore script gains a volume override; new finding D-11 (nginx bypass token readable).</td></tr>
+<tr><td>1.2</td><td>2026-09-24</td><td>Engineering</td><td>D-11 closed: the maintenance bypass token moved out of the world-readable site file into a root-only include.</td></tr></tbody></table>
 </div>
 
 <section class="sec">
@@ -264,8 +265,8 @@
 <tr><td>D-08</td><td><span class="pill ok">Closed</span></td><td>The maintenance page must be enabled by hand over SSH</td><td>Done 2026-09-24: <code>bash scripts/maintenance.sh on|off|status</code>; runbook <code>docs/runbooks/maintenance-page.md</code> says who may flip it</td><td>S</td><td>Engineering</td></tr>
 <tr><td>D-09</td><td><span class="pill neutral">Medium</span></td><td>Offline-order fallback relies on a script and staff knowledge</td><td>Write the coordinator's paper form and the staff SOP for keying offline orders</td><td>S</td><td>Operations</td></tr>
 <tr><td>D-10</td><td><span class="pill neutral">Medium</span></td><td>Partner escalation contacts not centralised</td><td>Add merchant ids, support numbers and account owners to the password-manager entry</td><td>S</td><td>Owner</td></tr>
-<tr><td>D-11</td><td><span class="pill warn">High</span></td><td>The maintenance bypass token is written in plain text in <code>/etc/nginx/sites-available/inventre</code>, which is world-readable (mode 644)</td><td>Move it to an include file with mode 600, or restrict the site file</td><td>S</td><td>Engineering</td></tr>
+<tr><td>D-11</td><td><span class="pill ok">Closed</span></td><td>The maintenance bypass token was written in plain text in <code>/etc/nginx/sites-available/inventre</code>, which is world-readable (mode 644)</td><td>Done 2026-09-24: the token now lives only in <code>/etc/nginx/inventre-maint-token.conf</code> (mode 600, root) as nginx map variables; the site file references the variables and contains no secret; tested and reloaded</td><td>S</td><td>Engineering</td></tr>
 </tbody></table>
-<p class="small">Sources: backup and restore scripts under <code>scripts/backup/</code>, runbooks under <code>docs/runbooks/</code>, the HLD and LLD v1.8, and the operational history recorded in this engineering programme (June 2026 compromise, September 2026 outages and fixes).</p>
+<p class="small">Sources: backup and restore scripts under <code>scripts/backup/</code>, runbooks under <code>docs/runbooks/</code>, the HLD and LLD v1.8, Data Protection v1.2, and the operational history recorded in this engineering programme (June 2026 compromise, September 2026 outages and fixes).</p>
 </section>
 </body></html>

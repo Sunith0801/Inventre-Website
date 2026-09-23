@@ -188,6 +188,11 @@ export const getCurrentParent = cache(async (): Promise<CurrentParent | null> =>
     .where(eq(parents.id, parentId))
     .limit(1);
   if (!parent) return null;
+  // P-17: a block must take effect on the very next request, not only at
+  // the next login. Mirrors the login/OTP gate (`status !== "active"` ⇒
+  // "Account is inactive"). Support view-as is exempt so agents can still
+  // inspect a blocked family read-only.
+  if (!view && parent.status !== "active") return null;
 
   // Storefront only ever picks ENABLED + ACTIVE students. The
   // "Remove from family" admin action flips both fields to hide a

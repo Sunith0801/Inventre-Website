@@ -253,22 +253,51 @@ const RULES: Rule[] = [
     basis:
       "parents with no enabled student, no order ever, coalesce(last_login_at, created_at) older than 3 years, not already anonymised",
     retention:
-      "3 years; then anonymise in place: name 'Deleted parent', email NULL, password_hash NULL, notes NULL, phone 'del-' + first 8 chars of id (varchar(15), unique). student_guardian_links rows are NOT touched and still carry the old phone_no",
+      "3 years; then anonymise in place: name 'Deleted parent', email NULL, password_hash NULL, notes NULL, phone 'del-' + first 8 chars of id (varchar(15), unique). The same phone is scrubbed from student_guardian_links (phone_no, email, guardian_name) and guardians (mobile/alternate number) unless another live parent still uses it",
     autoApply: true,
     count: () => countSql(sql`SELECT count(*) AS n FROM parents p WHERE ${INACTIVE_PARENT_WHERE()}`),
     apply: () =>
       affectedSql(sql`
-        WITH x AS (
+        WITH tgt AS (
+          SELECT p.id, right(regexp_replace(coalesce(p.phone, ''), '\\D', '', 'g'), 10) AS n10
+            FROM parents p
+           WHERE ${INACTIVE_PARENT_WHERE()}
+             -- parents_phone_idx is UNIQUE: skip (never fail on) a prefix collision
+             AND NOT EXISTS (SELECT 1 FROM parents q WHERE q.phone = 'del-' || left(p.id::text, 8))
+        ),
+        x AS (
           UPDATE parents p
              SET name = 'Deleted parent',
                  email = NULL,
                  password_hash = NULL,
                  notes = NULL,
                  phone = 'del-' || left(p.id::text, 8)
-           WHERE ${INACTIVE_PARENT_WHERE()}
-             -- parents_phone_idx is UNIQUE: skip (never fail on) a prefix collision
-             AND NOT EXISTS (SELECT 1 FROM parents q WHERE q.phone = 'del-' || left(p.id::text, 8))
-          RETURNING 1)
+            FROM tgt WHERE p.id = tgt.id
+          RETURNING tgt.n10
+        ),
+        -- the phone lives on in the family graph; scrub it there too, unless
+        -- a different, still-live parent row owns the same number
+        orphan AS (
+          SELECT n10 FROM x
+           WHERE n10 <> ''
+             AND NOT EXISTS (
+               SELECT 1 FROM parents q
+                WHERE right(regexp_replace(coalesce(q.phone, ''), '\\D', '', 'g'), 10) = x.n10)
+        ),
+        l AS (
+          UPDATE student_guardian_links g
+             SET phone_no = 'del-' || left(g.id::text, 8), email = NULL, guardian_name = NULL
+           WHERE right(regexp_replace(coalesce(g.phone_no, ''), '\\D', '', 'g'), 10) IN (SELECT n10 FROM orphan)
+          RETURNING 1
+        ),
+        m AS (
+          UPDATE guardians gu
+             SET mobile_number = CASE WHEN right(regexp_replace(coalesce(gu.mobile_number, ''), '\\D', '', 'g'), 10) IN (SELECT n10 FROM orphan) THEN NULL ELSE gu.mobile_number END,
+                 alternate_number = CASE WHEN right(regexp_replace(coalesce(gu.alternate_number, ''), '\\D', '', 'g'), 10) IN (SELECT n10 FROM orphan) THEN NULL ELSE gu.alternate_number END
+           WHERE right(regexp_replace(coalesce(gu.mobile_number, ''), '\\D', '', 'g'), 10) IN (SELECT n10 FROM orphan)
+              OR right(regexp_replace(coalesce(gu.alternate_number, ''), '\\D', '', 'g'), 10) IN (SELECT n10 FROM orphan)
+          RETURNING 1
+        )
         SELECT count(*) AS n FROM x`),
   },
   {

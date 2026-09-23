@@ -30,3 +30,11 @@ Notes:
 - Open tabs refresh themselves on deploy via `/api/version`, so parents do not need to reload.
 - Design history and rejected iterations of the page live in the project memory notes
   (`maintenance-page-design.md`), not here.
+
+## Where the bypass token lives (D-11, 2026-09-24)
+
+The token is stored only in `/etc/nginx/inventre-maint-token.conf` (mode 600, root),
+as three nginx `map` variables, and in `/root/maintenance/.bypass-token`. The
+world-readable site file only `include`s that file and never contains the secret.
+To rotate: write the new value to both files, then `nginx -t && nginx -s reload`.
+

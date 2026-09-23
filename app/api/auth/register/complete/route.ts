@@ -18,6 +18,7 @@ import { redis } from "@/server/redis";
 import { rateLimit } from "@/server/rate-limit";
 import { createParentSession } from "@/server/session";
 import { upsertGuardianLink } from "@/server/repos/guardians";
+import { TC_VERSION } from "@/lib/legal/terms";
 
 const Body = z.object({
   phone: z.string().regex(/^\d{10}$/),
@@ -114,6 +115,7 @@ export async function POST(req: Request) {
   // the student if unclaimed (no-op if already attached), and runs
   // recomputeStudentParent at the end.
   await upsertGuardianLink({
+    consent: { version: TC_VERSION },
     studentId: student.id,
     phone: body.phone,
     name: parent.name,

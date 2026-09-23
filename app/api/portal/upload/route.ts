@@ -1,10 +1,14 @@
 import { NextResponse } from "next/server";
 import crypto from "crypto";
 import { uploadFile } from "@/server/storage";
+import { rateLimit } from "@/server/rate-limit";
+import { verifyPortalTicket } from "@/server/portal-ticket";
 
 /**
- * PUBLIC photo upload for the Parent Support Portal (mandatory photos on
- * grade-change / payment concerns). No auth — the portal is public. Files
+ * Photo upload for the Parent Support Portal (mandatory photos on
+ * grade-change / payment concerns). The portal has no login, so the gate is
+ * the upload TICKET the search step hands out (header `x-portal-ticket`,
+ * 30 min, bound to the family found) plus a per-IP ceiling — P-16. Files
  * land under `concerns/<uuid>/…`. Not in the middleware matcher, so the
  * 10 MB body cap does not apply.
  */
@@ -20,6 +24,22 @@ const isAllowedImage = (f: File): boolean =>
   ALLOWED_MIME.has(f.type) || ALLOWED_EXT.some((ext) => f.name.toLowerCase().endsWith(ext));
 
 export async function POST(req: Request) {
+  const ticket = await verifyPortalTicket(req.headers.get("x-portal-ticket"));
+  if (!ticket) {
+    return NextResponse.json(
+      { error: "Please search for the student again before attaching photos." },
+      { status: 401 }
+    );
+  }
+  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || req.headers.get("x-real-ip") || "unknown";
+  const rl = await rateLimit({ key: `portal:upload:${ip}`, max: 30, windowSeconds: 600 });
+  if (!rl.ok) {
+    return NextResponse.json(
+      { error: "Too many uploads. Please try again in a few minutes." },
+      { status: 429, headers: { "Retry-After": String(rl.retryAfter) } }
+    );
+  }
+
   let form: FormData;
   try {
     form = await req.formData();

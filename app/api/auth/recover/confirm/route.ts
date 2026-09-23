@@ -21,6 +21,7 @@ import { redis } from "@/server/redis";
 import { rateLimit } from "@/server/rate-limit";
 import { createParentSession } from "@/server/session";
 import { upsertGuardianLink } from "@/server/repos/guardians";
+import { TC_VERSION } from "@/lib/legal/terms";
 
 const Body = z.object({
   studentId: z.string().uuid(),
@@ -254,6 +255,7 @@ export async function POST(req: Request) {
        WHERE student_id = ${body.studentId} ORDER BY row_idx LIMIT 1
     `)) as unknown as Array<{ guardian_name: string | null }>;
     await upsertGuardianLink({
+    consent: { version: TC_VERSION },
       studentId: body.studentId,
       phone: body.newPhone,
       name: primaryName?.guardian_name ?? null,

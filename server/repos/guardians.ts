@@ -48,6 +48,10 @@ export async function upsertGuardianLink(args: {
    *  cleanly. Pass null/undefined when there is no source ID (e.g.
    *  admin manual add). */
   sourceGuardianErpName?: string | null;
+  /** P-11: pass from PARENT self-service flows only — the terms/privacy
+   *  version the parent accepted. Stamps consent_version/consent_recorded_at
+   *  on the link (insert or update). Admin and roster callers omit it. */
+  consent?: { version: string } | null;
 }): Promise<{ id: string; parentId: string }> {
   const n10 = last10(args.phone);
   if (!n10) {
@@ -157,6 +161,10 @@ export async function upsertGuardianLink(args: {
       if (!row.guardianName && cleanName) patch.guardianName = cleanName;
       if (!row.relation && cleanRelation) patch.relation = cleanRelation;
       if (!row.email && cleanEmail) patch.email = cleanEmail;
+      if (args.consent?.version) {
+        patch.consentVersion = args.consent.version;
+        patch.consentRecordedAt = new Date();
+      }
       await tx
         .update(studentGuardianLinks)
         .set(patch)
@@ -184,6 +192,8 @@ export async function upsertGuardianLink(args: {
         relation: cleanRelation,
         email: cleanEmail,
         knownErpNames: sourceErp ? [sourceErp] : [],
+        consentVersion: args.consent?.version ?? null,
+        consentRecordedAt: args.consent?.version ? new Date() : null,
       })
       .returning({ id: studentGuardianLinks.id });
 

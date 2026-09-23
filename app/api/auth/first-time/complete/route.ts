@@ -190,6 +190,7 @@ export async function POST(req: Request) {
     `)) as unknown as Array<{ id: string }>;
     for (const c of candidates) {
       await upsertGuardianLink({
+    consent: { version: TC_VERSION },
         studentId: c.id,
         phone: body.phone,
         name: null,

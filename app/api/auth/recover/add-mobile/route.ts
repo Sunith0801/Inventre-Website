@@ -20,6 +20,7 @@ import { db } from "@/db/client";
 import { redis } from "@/server/redis";
 import { rateLimit } from "@/server/rate-limit";
 import { upsertGuardianLink } from "@/server/repos/guardians";
+import { TC_VERSION } from "@/lib/legal/terms";
 
 const Relations = [
   "Father",
@@ -117,6 +118,7 @@ export async function POST(req: Request) {
   //   • runs recomputeStudentParent so the student's primary parent
   //     reflects the lowest-row_idx phone after the addition.
   await upsertGuardianLink({
+    consent: { version: TC_VERSION },
     studentId: body.studentId,
     phone: body.newPhone,
     name: body.guardianName,

@@ -15,6 +15,8 @@ import {
   listParentOrdersFromErp,
   getParentOrderDetailFromErp,
 } from "@/server/erp-customer-orders";
+import { rateLimit } from "@/server/rate-limit";
+import { issuePortalTicket } from "@/server/portal-ticket";
 
 /**
  * PUBLIC search for the Parent Support Portal — by Student ID (enrollment)
@@ -27,6 +29,16 @@ export const dynamic = "force-dynamic";
 export async function GET(req: Request) {
   const q = (new URL(req.url).searchParams.get("q") ?? "").trim();
   if (!q) return NextResponse.json({ error: "Enter a Student ID or mobile number" }, { status: 400 });
+
+  // P-16: a public lookup of families by number needs a ceiling per caller.
+  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || req.headers.get("x-real-ip") || "unknown";
+  const rl = await rateLimit({ key: `portal:search:${ip}`, max: 60, windowSeconds: 600 });
+  if (!rl.ok) {
+    return NextResponse.json(
+      { error: "Too many searches. Please try again in a few minutes." },
+      { status: 429, headers: { "Retry-After": String(rl.retryAfter) } }
+    );
+  }
 
   const digits = q.replace(/\D/g, "");
   let parentId: string | null = null;
@@ -127,6 +139,8 @@ export async function GET(req: Request) {
   return NextResponse.json({
     found: true,
     parentId,
+    // P-16: lets THIS visitor attach photos to a concern for the next 30 min.
+    uploadTicket: await issuePortalTicket(parentId),
     // Public, no-login endpoint: only echo the full mobile back to someone
     // who searched BY that mobile (they already know it). A Student-ID
     // search gets a masked number (Data Protection P-05).

@@ -74,6 +74,8 @@ type Concern = {
 };
 type SearchResult = {
   found: boolean;
+  /** P-16: short-lived token that lets this visitor attach photos. */
+  uploadTicket?: string;
   parent?: { name: string | null; mobile: string | null };
   students?: Student[];
   orders?: Order[];
@@ -364,6 +366,7 @@ export default function PortalPage() {
             category={category}
             student={student}
             orders={data?.orders ?? []}
+            uploadTicket={data?.uploadTicket ?? ""}
             defaultPhone={unmasked(data?.parent?.mobile) ?? unmasked(student.guardianMobile) ?? ""}
             defaultName={student.guardianName ?? ""}
             onBack={() => window.history.back()}
@@ -699,6 +702,7 @@ function ConcernForm({
   category,
   student,
   orders,
+  uploadTicket,
   defaultName,
   defaultPhone,
   onBack,
@@ -708,6 +712,8 @@ function ConcernForm({
   category: string;
   student: Student;
   orders: Order[];
+  /** P-16: from the search response; required by /api/portal/upload. */
+  uploadTicket: string;
   defaultName: string;
   defaultPhone: string;
   onBack: () => void;
@@ -748,7 +754,11 @@ function ConcernForm({
       if (files.length > 0) {
         const fd = new FormData();
         files.forEach((f) => fd.append("files", f));
-        const up = await fetch("/api/portal/upload", { method: "POST", body: fd });
+        const up = await fetch("/api/portal/upload", {
+          method: "POST",
+          body: fd,
+          headers: { "x-portal-ticket": uploadTicket },
+        });
         const upd = await up.json().catch(() => ({}));
         if (!up.ok) {
           setError(upd.error || "Photo upload failed.");

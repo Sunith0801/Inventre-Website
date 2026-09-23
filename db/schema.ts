@@ -3070,6 +3070,11 @@ export const studentGuardianLinks = pgTable(
     // `79928-NEERADI VIKRANTH`), the second one folds into the first
     // and its erp_name lands here so the admin can still trace it back.
     knownErpNames: text("known_erp_names").array().notNull().default(sql`'{}'::text[]`),
+    /** P-11: terms/privacy version the linking parent had accepted, and when.
+     *  Stamped only by parent self-service flows (register, first login,
+     *  recovery, add-mobile); NULL for admin/roster-created links. */
+    consentVersion: text("consent_version"),
+    consentRecordedAt: timestamp("consent_recorded_at", { withTimezone: true }),
   },
   (t) => ({
     studentIdx: index("student_guardian_links_student_idx").on(t.studentId),
