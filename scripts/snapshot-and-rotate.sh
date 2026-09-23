@@ -49,8 +49,9 @@ BASENAME="$(basename "${TAR}")"
 # R2 may not be wired up yet (bucket missing / creds bucket-scoped). Log
 # the failure prominently but keep going — local snapshots are the
 # primary line of defense and cron should still prune them.
-echo "[2/4] uploading ${BASENAME} to r2://${BACKUP_BUCKET}/"
-R2_OK=1
+echo "[2/4] off-host copy: handled by scripts/backup/sync-to-m365.sh (every 5 min) since 2026-09-23; R2 leg retired"
+R2_OK=0
+if false; then
 docker run --rm \
   -v "${ROOT}/backups":/backups:ro \
   -e MC_HOST_r2="https://${S3_ACCESS_KEY_ID}:${S3_SECRET_ACCESS_KEY}@${S3_ENDPOINT#https://}" \
@@ -58,10 +59,6 @@ docker run --rm \
     mc mb --ignore-existing r2/${BACKUP_BUCKET} > /dev/null 2>&1 || true;
     mc cp /backups/${BASENAME} r2/${BACKUP_BUCKET}/${BASENAME}
   " || R2_OK=0
-if [[ "${R2_OK}" != "1" ]]; then
-  echo "  ⚠  R2 upload failed — local snapshot kept, off-site copy missing"
-  echo "  ⚠  fix: create bucket '${BACKUP_BUCKET}' in Cloudflare R2 +"
-  echo "  ⚠         issue an API token with write access to it"
 fi
 
 # -------- 3. prune local --------

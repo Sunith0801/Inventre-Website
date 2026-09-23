@@ -251,6 +251,8 @@ fi
 END=$(date +%s)
 echo ""
 echo "✓ Deployed in $((END - START))s (${MODE} mode)"
+# Code backup of exactly what just shipped (bundle + GitHub push when authorised).
+./scripts/backup/code-bundle.sh >> /var/log/inventre/code-backup.log 2>&1 || true
 
 # Show the actual user-facing URL (read APP_PUBLIC_URL from .env.deploy,
 # fall back to the host's :3010 port-map). Avoid dumping `docker logs` here

@@ -1,0 +1,13 @@
+[Unit]
+Description=Inventre production WAL streaming (point-in-time backup)
+After=docker.service
+Requires=docker.service
+[Service]
+ExecStart=/root/Inventre/scripts/backup/wal-stream.sh
+ExecStop=/usr/bin/docker stop inventre-wal-stream
+Restart=always
+RestartSec=15
+StandardOutput=append:/var/log/inventre/wal-stream.log
+StandardError=append:/var/log/inventre/wal-stream.log
+[Install]
+WantedBy=multi-user.target
