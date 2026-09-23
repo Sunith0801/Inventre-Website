@@ -1,0 +1,267 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Inventre — Disaster Recovery &amp; Business Continuity</title><link rel="stylesheet" href="style.css"></head><body>
+
+<div class="cover">
+  <div>
+    <span class="eyebrow">Governance · Resilience</span>
+    <h1>Inventre<br><em>Disaster Recovery &amp;<br>Business Continuity</em></h1>
+    <p class="sub">What we do when the server dies, the data is damaged, a partner is down or the people are unavailable: the targets we commit to, who does what, the exact steps, and how we prove it works before we need it.</p>
+  </div>
+  <div class="band"></div>
+  <div>
+    <div class="meta">
+      <div><span>Document</span><b>DR-BCP v1.0</b></div>
+      <div><span>Date</span><b>23 September 2026</b></div>
+      <div><span>Status</span><b>Baseline, awaiting drill</b></div>
+      <div><span>Owner</span><b>Inventre Engineering</b></div>
+    </div>
+    <p class="small" style="margin-top:4mm">Technical procedures reference the runbooks in the repository (<code>docs/runbooks/</code>) and the recovery kit stored beside the backups. Names in the contact table are placeholders where a role has not yet been assigned; filling them is the first action.</p>
+  </div>
+</div>
+
+<div class="toc">
+  <h2>Contents</h2>
+  <ol>
+    <li><span>Summary and commitments</span><span class="pg">3</span></li>
+    <li><span>What we protect and what it depends on</span><span class="pg">4</span></li>
+    <li><span>Targets: how much loss and downtime we accept</span><span class="pg">6</span></li>
+    <li><span>People: roles and contacts</span><span class="pg">7</span></li>
+    <li><span>The backup system, as built</span><span class="pg">9</span></li>
+    <li><span>Scenarios and playbooks</span><span class="pg">10</span></li>
+    <li><span>Communication during an incident</span><span class="pg">13</span></li>
+    <li><span>Degraded operation: keeping the business going</span><span class="pg">14</span></li>
+    <li><span>Testing and drills</span><span class="pg">15</span></li>
+    <li><span>Findings and action plan</span><span class="pg">16</span></li>
+  </ol>
+  <h3>Revision history</h3>
+  <table class="hist compact"><thead><tr><th>Version</th><th>Date</th><th>Author</th><th>Change</th></tr></thead>
+  <tbody><tr><td>1.0</td><td>2026-09-23</td><td>Engineering</td><td>First baseline after the backup pipeline and recovery kit went live; targets proposed, playbooks written, drill schedule set.</td></tr></tbody></table>
+</div>
+
+<section class="sec">
+<div class="section-hd"><span class="num">01</span><h2>Summary and commitments</h2></div>
+<p class="lead">Inventre runs on one server. Until this month, losing it would have meant losing up to 6 hours of orders and the entire code history since June. As of 23 September 2026 the database is streamed off the server continuously, the code is pushed to GitHub on every commit, and everything needed to rebuild lives, encrypted, in the company's Microsoft 365 alongside a one-command recovery kit. What remains is to agree the targets below, name the people, and rehearse.</p>
+<h3>Commitments proposed for approval</h3>
+<table><thead><tr><th style="width:30%">Measure</th><th style="width:22%">Target</th><th>What it means</th></tr></thead><tbody>
+<tr><td><strong>RPO</strong> (Recovery Point Objective): most data we may lose</td><td><strong>5 minutes</strong></td><td>After a total loss, orders placed more than 5 minutes before the failure are recovered. Achieved by continuous transaction-log streaming plus a 5-minute off-host sync.</td></tr>
+<tr><td><strong>RTO</strong> (Recovery Time Objective): longest acceptable downtime</td><td><strong>4 hours</strong> business hours<br><strong>Next morning</strong> overnight</td><td>The technical rebuild is 60 to 90 minutes; the rest is people, DNS and partner steps. Overnight incidents (outside 07:00 to 21:00 IST) are recovered by 09:00.</td></tr>
+<tr><td><strong>Availability</strong> during the ordering season (May to August)</td><td><strong>99.5 %</strong> in business hours</td><td>About 1 hour of unplanned downtime per month in business hours.</td></tr>
+<tr><td><strong>Maximum tolerable outage</strong> before the business is materially hurt</td><td><strong>2 business days</strong></td><td>Beyond this, schools escalate, parents lose trust and delivery slots are missed. Every playbook is designed to finish far inside it.</td></tr>
+<tr><td><strong>Drill frequency</strong></td><td><strong>Quarterly</strong> restore drill, <strong>annual</strong> full rebuild</td><td>A backup that has never been restored is a hope, not a backup.</td></tr>
+</tbody></table>
+<div class="callout"><span class="t">Current measured position</span><p>RPO: about 5 minutes (verified: transaction-log segments and the 5-minute mirror are live). RTO: <strong>not yet measured</strong>; the rebuild script exists and is syntax-checked but has not been run on a clean machine. The first drill (Section 9) turns the 90-minute estimate into a number.</p></div>
+</section>
+
+<section class="sec">
+<div class="section-hd"><span class="num">02</span><h2>What we protect and what it depends on</h2></div>
+<h3>2.1 Business functions, in order of importance</h3>
+<table><thead><tr><th style="width:26%">Function</th><th style="width:16%">Criticality</th><th>Why, and what stops if it fails</th></tr></thead><tbody>
+<tr><td>Parents ordering and paying</td><td><span class="pill bad">Critical</span></td><td>Revenue. In season, hundreds of orders a day; a down storefront during a school's ordering window is visible to the school immediately.</td></tr>
+<tr><td>Order flow to fulfilment (Audit ERP)</td><td><span class="pill bad">Critical</span></td><td>Paid orders that do not reach the warehouse are not packed. The queue buffers; a day's delay is recoverable, a week's is not.</td></tr>
+<tr><td>Payment reconciliation (CCAvenue)</td><td><span class="pill warn">Important</span></td><td>Money is safe at the gateway; unreconciled orders show as unpaid until healed. Recoverable from settlement files.</td></tr>
+<tr><td>Admin console (operations)</td><td><span class="pill warn">Important</span></td><td>Staff cannot change catalogue, students or orders. Tolerable for hours, not days.</td></tr>
+<tr><td>Fee ledger console</td><td><span class="pill neutral">Standard</span></td><td>Management reporting from MyClassBoard. Source of truth is MyClassBoard; a day's outage is an inconvenience.</td></tr>
+<tr><td>Exchange, missing-item and concern intake</td><td><span class="pill neutral">Standard</span></td><td>Parents can phone the call centre instead; requests are back-filled.</td></tr>
+</tbody></table>
+<h3>2.2 Dependencies</h3>
+<div class="figure">
+<svg viewBox="0 0 760 300" xmlns="http://www.w3.org/2000/svg" font-family="Inter, Liberation Sans, sans-serif"><defs><marker id="ah" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#5B5B5B"/></marker></defs>
+<rect x="270" y="100" width="220" height="100" rx="14" fill="#FEF3EC" stroke="#E47127" stroke-width="2"/><text x="380" y="140" text-anchor="middle" font-size="17" font-weight="800" fill="#0A0A0A">inventre.in</text><text x="380" y="164" text-anchor="middle" font-size="13" fill="#5B5B5B">one host · Postgres · Redis</text><text x="380" y="184" text-anchor="middle" font-size="13" fill="#5B5B5B">nginx · Docker</text>
+<rect x="20" y="20" width="200" height="64" rx="10" fill="#FAF7F2" stroke="#D6D0C6" stroke-width="1.5"/><text x="120" y="46" text-anchor="middle" font-size="15" font-weight="700">Hosting provider</text><text x="120" y="68" text-anchor="middle" font-size="13" fill="#5B5B5B">machine, network, IP</text>
+<rect x="20" y="118" width="200" height="64" rx="10" fill="#FAF7F2" stroke="#D6D0C6" stroke-width="1.5"/><text x="120" y="144" text-anchor="middle" font-size="15" font-weight="700">DNS + Let's Encrypt</text><text x="120" y="166" text-anchor="middle" font-size="13" fill="#5B5B5B">domain, certificate</text>
+<rect x="20" y="216" width="200" height="64" rx="10" fill="#FAF7F2" stroke="#D6D0C6" stroke-width="1.5"/><text x="120" y="242" text-anchor="middle" font-size="15" font-weight="700">Cloudflare R2</text><text x="120" y="264" text-anchor="middle" font-size="13" fill="#5B5B5B">product images</text>
+<rect x="540" y="20" width="200" height="64" rx="10" fill="#FAF7F2" stroke="#D6D0C6" stroke-width="1.5"/><text x="640" y="46" text-anchor="middle" font-size="15" font-weight="700">CCAvenue</text><text x="640" y="68" text-anchor="middle" font-size="13" fill="#5B5B5B">payments</text>
+<rect x="540" y="118" width="200" height="64" rx="10" fill="#FAF7F2" stroke="#D6D0C6" stroke-width="1.5"/><text x="640" y="144" text-anchor="middle" font-size="15" font-weight="700">Audit ERP</text><text x="640" y="166" text-anchor="middle" font-size="13" fill="#5B5B5B">fulfilment (separate host)</text>
+<rect x="540" y="216" width="200" height="64" rx="10" fill="#FAF7F2" stroke="#D6D0C6" stroke-width="1.5"/><text x="640" y="242" text-anchor="middle" font-size="15" font-weight="700">SMS · MyClassBoard · M365</text><text x="640" y="264" text-anchor="middle" font-size="13" fill="#5B5B5B">login OTP · fees · e-mail, backups</text>
+<line x1="220" y1="52" x2="270" y2="120" stroke="#5B5B5B" stroke-width="1.8" marker-end="url(#ah)"/><line x1="220" y1="150" x2="270" y2="150" stroke="#5B5B5B" stroke-width="1.8" marker-end="url(#ah)"/><line x1="220" y1="248" x2="270" y2="180" stroke="#5B5B5B" stroke-width="1.8" marker-end="url(#ah)"/>
+<line x1="490" y1="120" x2="540" y2="52" stroke="#5B5B5B" stroke-width="1.8" marker-end="url(#ah)"/><line x1="490" y1="150" x2="540" y2="150" stroke="#5B5B5B" stroke-width="1.8" marker-end="url(#ah)"/><line x1="490" y1="180" x2="540" y2="248" stroke="#5B5B5B" stroke-width="1.8" marker-end="url(#ah)"/>
+</svg>
+<div class="cap">Figure 1 — Everything the storefront needs to take an order. The single host in the middle is the only component without redundancy.</div>
+</div>
+<table class="compact"><thead><tr><th style="width:22%">Dependency</th><th>If it fails</th><th style="width:34%">Fallback</th></tr></thead><tbody>
+<tr><td>The host</td><td>Everything stops</td><td>Rebuild on a new machine from the backups (Scenario A)</td></tr>
+<tr><td>Hosting provider network or IP</td><td>Everything stops, data intact</td><td>Wait or rebuild elsewhere; DNS change</td></tr>
+<tr><td>DNS or certificate</td><td>Browsers refuse or cannot find the site</td><td>Registrar login; certbot renews automatically, manual renew if it did not</td></tr>
+<tr><td>Cloudflare R2</td><td>Product images missing; ordering still works</td><td>Wait; images are also in the 6-hourly snapshot's media volume</td></tr>
+<tr><td>CCAvenue</td><td>No online payment</td><td>Offline / pay-at-school orders can be recorded by staff; reconcile later</td></tr>
+<tr><td>Audit ERP</td><td>Orders queue up; status stops updating</td><td>Queue holds 5 attempts with backoff and a dead-letter table; replay from admin when back</td></tr>
+<tr><td>SMS gateway</td><td>No OTP login</td><td>Password login exists; staff can toggle the OTP bypass for a supervised window</td></tr>
+<tr><td>MyClassBoard</td><td>Fee console shows last night's data</td><td>Nightly import retries; no storefront impact</td></tr>
+<tr><td>Microsoft 365</td><td>No alert e-mails; backup mirror pauses (local copies continue)</td><td>Sync resumes on its own; logs on the host</td></tr>
+<tr><td>GitHub</td><td>Code push pauses</td><td>Bundles in the mirror carry the code</td></tr>
+</tbody></table>
+</section>
+
+<section class="sec">
+<div class="section-hd"><span class="num">03</span><h2>Targets: how much loss and downtime we accept</h2></div>
+<table><thead><tr><th style="width:26%">Function</th><th style="width:14%">RPO</th><th style="width:16%">RTO (business hours)</th><th>How the target is met</th></tr></thead><tbody>
+<tr><td>Storefront ordering and payment</td><td>5 min</td><td>4 h</td><td>Transaction-log streaming + 5-minute mirror; recovery kit rebuild; DNS switch</td></tr>
+<tr><td>Order flow to fulfilment</td><td>5 min</td><td>4 h (same rebuild)</td><td>Outbound queue is in the database, so it is restored with it; the ERP re-drains on the next tick</td></tr>
+<tr><td>Payment reconciliation</td><td>0 (source is CCAvenue)</td><td>24 h</td><td>Settlement files and the Status API rebuild any missing payment state</td></tr>
+<tr><td>Admin console</td><td>5 min</td><td>4 h</td><td>Same application</td></tr>
+<tr><td>Fee ledger</td><td>24 h (nightly import)</td><td>Next morning</td><td>Re-import from MyClassBoard; nothing unique is stored here</td></tr>
+<tr><td>Code and configuration</td><td>seconds (commit push) / 5 min (uncommitted, env)</td><td>minutes</td><td>GitHub + bundles + encrypted env copy</td></tr>
+</tbody></table>
+<div class="callout warn"><span class="t">What the targets do not cover</span><p>A failure at CCAvenue, the Audit ERP or the schools' own systems is outside Inventre's control; the fallbacks in Section 2.2 limit the damage but the recovery clock belongs to the partner. A deliberate attack that also destroys the Microsoft 365 backups would need the tenant's own recycle-bin and retention protections; enabling retention locks on the backup library is action D-06.</p></div>
+</section>
+
+<section class="sec">
+<div class="section-hd"><span class="num">04</span><h2>People: roles and contacts</h2></div>
+<p class="lead">Incidents fail on people, not scripts. Three roles, each with a deputy. Fill the blanks and keep this table in the password manager as well, since the server may be the thing that is down.</p>
+<table><thead><tr><th style="width:22%">Role</th><th style="width:26%">Primary</th><th style="width:26%">Deputy</th><th>Decides / does</th></tr></thead><tbody>
+<tr><td><strong>Incident owner</strong></td><td>Company owner — sunith@inventre.in</td><td><em>to be named</em></td><td>Declares the incident, approves the maintenance page, approves a rebuild or a point-in-time rollback, talks to schools, authorises spend (new server).</td></tr>
+<tr><td><strong>Technical lead</strong></td><td>Inventre Engineering (this role is currently filled through the AI-assisted engineering sessions with the owner)</td><td><em>to be named</em></td><td>Runs the playbook, takes snapshots before changing anything, keeps the timeline, restores service.</td></tr>
+<tr><td><strong>Communications lead</strong></td><td>Operations lead — <em>to be named</em></td><td><em>to be named</em></td><td>Tells schools, parents and the call centre what is happening and when to expect service; uses the templates in Section 7.</td></tr>
+<tr><td>Alert mailbox</td><td colspan="2">it@inventre.in (all automated alerts), plus sudheer@, sriram@ for stranded-order alerts</td><td>Someone must read it; set a phone notification for it.</td></tr>
+<tr><td>Escalation partners</td><td colspan="3">Audit ERP team (fulfilment host, 217.216.58.218) · CCAvenue merchant support (merchant id on file) · hosting provider support · Microsoft 365 admin · domain registrar</td></tr>
+</tbody></table>
+<h3>What each person must be able to reach without the server</h3>
+<ul>
+<li>The password manager entry <strong>Inventre recovery kit passphrase</strong>, and the encryption keys and snapshot passphrase stored with it.</li>
+<li>SharePoint: <em>Vendor Management Files AUDIT › Documents › Inventre Backups</em> (the <code>RESTORE</code> folder is readable; <code>prod</code> is encrypted).</li>
+<li>GitHub: <code>Sunith0801/Inventre-Website</code>.</li>
+<li>Hosting provider console, domain registrar, Cloudflare account, Microsoft 365 admin centre, CCAvenue merchant panel.</li>
+<li>This document and the runbooks (also in GitHub under <code>docs/</code>).</li>
+</ul>
+</section>
+
+<section class="sec">
+<div class="section-hd"><span class="num">05</span><h2>The backup system, as built</h2></div>
+<div class="figure">
+<svg viewBox="0 0 760 300" xmlns="http://www.w3.org/2000/svg" font-family="Inter, Liberation Sans, sans-serif"><defs><marker id="ah" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#5B5B5B"/></marker></defs>
+<rect x="15" y="20" width="230" height="260" rx="14" fill="#fff" stroke="#E47127" stroke-width="2"/><text x="31" y="48" font-size="17" font-weight="800" fill="#E47127">Production host</text>
+<rect x="30" y="64" width="200" height="46" rx="10" fill="#FAF7F2" stroke="#D6D0C6" stroke-width="1.5"/><text x="130" y="86" text-anchor="middle" font-size="14" font-weight="700">Postgres</text><text x="130" y="103" text-anchor="middle" font-size="12.5" fill="#5B5B5B">transaction log streamed continuously</text>
+<rect x="30" y="120" width="200" height="46" rx="10" fill="#FAF7F2" stroke="#D6D0C6" stroke-width="1.5"/><text x="130" y="142" text-anchor="middle" font-size="14" font-weight="700">Daily 00:00 / 00:10</text><text x="130" y="159" text-anchor="middle" font-size="12.5" fill="#5B5B5B">full backup · logical dump</text>
+<rect x="30" y="176" width="200" height="46" rx="10" fill="#FAF7F2" stroke="#D6D0C6" stroke-width="1.5"/><text x="130" y="198" text-anchor="middle" font-size="14" font-weight="700">Code + config</text><text x="130" y="215" text-anchor="middle" font-size="12.5" fill="#5B5B5B">every commit · env within 5 min</text>
+<rect x="30" y="232" width="200" height="40" rx="10" fill="#FEF3EC" stroke="#E47127" stroke-width="1.5"/><text x="130" y="257" text-anchor="middle" font-size="14" font-weight="700">Encrypt → sync every 5 min</text>
+<rect x="320" y="60" width="200" height="180" rx="14" fill="#fff" stroke="#D6D0C6" stroke-width="1.5"/><text x="420" y="90" text-anchor="middle" font-size="16" font-weight="800">Microsoft 365</text><text x="420" y="112" text-anchor="middle" font-size="13" fill="#5B5B5B">SharePoint library</text>
+<rect x="335" y="128" width="170" height="44" rx="10" fill="#FAF7F2" stroke="#D6D0C6" stroke-width="1.5"/><text x="420" y="147" text-anchor="middle" font-size="13.5" font-weight="700">prod/ (encrypted)</text><text x="420" y="164" text-anchor="middle" font-size="12" fill="#5B5B5B">wal · base · dumps · code · config</text>
+<rect x="335" y="182" width="170" height="44" rx="10" fill="#FAF7F2" stroke="#D6D0C6" stroke-width="1.5"/><text x="420" y="201" text-anchor="middle" font-size="13.5" font-weight="700">RESTORE/ (kit)</text><text x="420" y="218" text-anchor="middle" font-size="12" fill="#5B5B5B">scripts + one-passphrase secrets</text>
+<rect x="590" y="60" width="155" height="70" rx="10" fill="#FAF7F2" stroke="#D6D0C6" stroke-width="1.5"/><text x="667" y="90" text-anchor="middle" font-size="15" font-weight="700">GitHub</text><text x="667" y="112" text-anchor="middle" font-size="12.5" fill="#5B5B5B">all branches, every commit</text>
+<rect x="590" y="170" width="155" height="70" rx="10" fill="#FEF3EC" stroke="#E47127" stroke-width="1.5"/><text x="667" y="200" text-anchor="middle" font-size="15" font-weight="700">New server</text><text x="667" y="222" text-anchor="middle" font-size="12.5" fill="#5B5B5B">kit + passphrase → live</text>
+<line x1="245" y1="252" x2="320" y2="170" stroke="#5B5B5B" stroke-width="1.8" marker-end="url(#ah)"/><line x1="245" y1="200" x2="590" y2="95" stroke="#5B5B5B" stroke-width="1.8" marker-end="url(#ah)"/><line x1="520" y1="204" x2="590" y2="204" stroke="#5B5B5B" stroke-width="1.8" marker-end="url(#ah)"/>
+<text x="380" y="285" text-anchor="middle" font-size="13" fill="#5B5B5B">Weekly automatic restore test · e-mail on any failure or stale data</text>
+</svg>
+<div class="cap">Figure 2 — Data leaves the host within 5 minutes, encrypted. A new server needs only the RESTORE folder and one passphrase.</div>
+</div>
+<table class="compact"><thead><tr><th style="width:30%">Layer</th><th>Detail</th><th style="width:22%">Retention</th></tr></thead><tbody>
+<tr><td>Transaction-log streaming</td><td><code>pg_receivewal</code> as a systemd service; any-second recovery together with the daily full backup</td><td>31 days</td></tr>
+<tr><td>Full physical backup</td><td>00:00 IST, <code>pg_basebackup</code></td><td>30 days</td></tr>
+<tr><td>Logical dump</td><td>00:10 IST, <code>pg_dump</code>; the simple restore path</td><td>14 daily, monthly for 12 months</td></tr>
+<tr><td>Snapshot</td><td>Every 6 h: dump + encrypted configuration + media volume</td><td>7 days local, 30 remote</td></tr>
+<tr><td>Configuration</td><td><code>.env.deploy</code> re-encrypted within 5 minutes of a change</td><td>latest</td></tr>
+<tr><td>Code</td><td>Bundle of all branches on every commit, after every deploy and 00:20; GitHub push on every commit; uncommitted edits every 5 min</td><td>14 bundles; GitHub forever</td></tr>
+<tr><td>Off-host mirror</td><td>rclone every 5 min, client-side encrypted (names and contents), to SharePoint</td><td>mirrors local retention</td></tr>
+<tr><td>Recovery kit</td><td><code>RESTORE/</code>: bootstrap script, restore engine, README, all secrets under one passphrase; republished every sync</td><td>latest</td></tr>
+<tr><td>Proof</td><td>Sunday 03:30 restore of the newest dump into a throwaway database with a pass/fail e-mail; alerts when the mirror fails or the stream stops</td><td>—</td></tr>
+</tbody></table>
+</section>
+
+<section class="sec">
+<div class="section-hd"><span class="num">06</span><h2>Scenarios and playbooks</h2></div>
+<p class="lead">Each playbook starts the same way: <strong>declare, snapshot, then act</strong>. Nothing is rebooted, deleted or redeployed until the technical lead has written the first timeline line and, where the host is alive, taken a snapshot.</p>
+
+<h3>Scenario A — The server is lost (hardware, provider, ransomware, fire)</h3>
+<table class="compact"><thead><tr><th style="width:12%">Step</th><th>Action</th><th style="width:14%">Who</th><th style="width:12%">Time</th></tr></thead><tbody>
+<tr><td>A1</td><td>Declare the incident; put the maintenance notice up if any part of the old host still answers; send the first message (Section 7, template 1).</td><td>Owner, comms</td><td>0:00–0:15</td></tr>
+<tr><td>A2</td><td>Order a new Ubuntu server (4 vCPU, 16 GB, 200 GB) from the provider; note its IP.</td><td>Owner</td><td>0:15–0:30</td></tr>
+<tr><td>A3</td><td>Download the <code>RESTORE</code> folder from SharePoint, copy it to the new server, run <code>bash bootstrap-new-server.sh</code>, enter the recovery-kit passphrase. It fetches, restores code and configuration, replays the database to the last received segment and starts the app.</td><td>Technical lead</td><td>0:30–1:45</td></tr>
+<tr><td>A4</td><td>Check the counts the script prints (tables, orders, students, newest order time). If the newest order is older than expected, stop and investigate before opening to parents.</td><td>Technical lead</td><td>1:45–1:55</td></tr>
+<tr><td>A5</td><td>nginx + certificate, DNS A records to the new IP, cron files, WAL streaming service, mail relay, CCAvenue SFTP user. Rename the SharePoint <code>prod</code> folder to <code>prod-old-&lt;date&gt;</code> before the first sync from the new host.</td><td>Technical lead</td><td>1:55–2:30</td></tr>
+<tr><td>A6</td><td>Verify: health endpoint, security headers, a test login, a test order to the CCAvenue test page, the ERP drain log shows <code>sent</code>. Tell CCAvenue and the ERP team the new outbound IP if they allow-list.</td><td>Technical lead</td><td>2:30–3:00</td></tr>
+<tr><td>A7</td><td>Send the all-clear (template 3). Within two weeks: post-incident review, this document updated.</td><td>Comms, owner</td><td>3:00</td></tr>
+</tbody></table>
+<p class="small">RPO: about 5 minutes. RTO estimate: 3 hours including people time; technical part 60 to 90 minutes. Reference: <code>docs/runbooks/restore-from-m365.md</code>.</p>
+
+<h3>Scenario B — Bad data: a faulty deploy, a wrong bulk import, a deleted table</h3>
+<table class="compact"><thead><tr><th style="width:12%">Step</th><th>Action</th><th style="width:14%">Who</th><th style="width:12%">Time</th></tr></thead><tbody>
+<tr><td>B1</td><td>Stop the bleeding: roll the application back to the previous image tag (<code>docker tag … rollback-*</code>, redeploy, 1 minute) if a deploy caused it; disable the offending cron or import if a job caused it.</td><td>Technical lead</td><td>0:00–0:10</td></tr>
+<tr><td>B2</td><td>Decide the scope with the owner: a few rows (fix forward with a script), a table (restore that table from the last dump into a scratch database and copy back), or everything since a time (point-in-time restore).</td><td>Owner + technical lead</td><td>0:10–0:30</td></tr>
+<tr><td>B3</td><td>For point-in-time: the maintenance page goes up (orders placed during the window would be lost), the technical lead runs <code>restore-from-m365.sh restore-pitr "YYYY-MM-DD HH:MM"</code> on the <em>same</em> host into a fresh data volume, verifies counts, then switches the compose stack to it. Orders placed between the target time and the restore are re-entered from CCAvenue's records.</td><td>Technical lead</td><td>0:30–1:30</td></tr>
+<tr><td>B4</td><td>Verify, reopen, all-clear; record what was lost and re-entered.</td><td>Comms</td><td>1:30</td></tr>
+</tbody></table>
+
+<h3>Scenario C — Security compromise (repeat of June 2026)</h3>
+<table class="compact"><thead><tr><th style="width:12%">Step</th><th>Action</th><th style="width:14%">Who</th></tr></thead><tbody>
+<tr><td>C1</td><td>Do not wipe. Snapshot first (<code>scripts/snapshot-and-rotate.sh</code>), copy logs off-host, keep the timeline. Maintenance page up.</td><td>Technical lead</td></tr>
+<tr><td>C2</td><td>Contain: rotate every secret (<code>.env.deploy</code> values, database password, recovery-kit passphrase, GitHub key, Microsoft app secret), revoke all sessions by rotating the JWT secret without the previous-key window, block the attacker's source at the firewall.</td><td>Technical lead</td></tr>
+<tr><td>C3</td><td>Assess personal-data exposure (Data Protection document, Section 11) and start the 72-hour notification clock if data may have been accessed.</td><td>Owner</td></tr>
+<tr><td>C4</td><td>Rebuild rather than clean: treat it as Scenario A onto a fresh server from a backup taken <em>before</em> the intrusion (point-in-time restore to that moment if the intrusion touched data). Do not restore code from the compromised host's working tree; use GitHub or a bundle from before.</td><td>Technical lead</td></tr>
+<tr><td>C5</td><td>Post-incident review, credentials of every partner re-issued, this document updated.</td><td>Owner</td></tr>
+</tbody></table>
+
+<h3>Scenario D — A partner is down</h3>
+<table class="compact"><thead><tr><th style="width:18%">Partner</th><th>Symptom</th><th>Response</th></tr></thead><tbody>
+<tr><td>CCAvenue</td><td>Payments fail or callbacks stop; stuck "pending" orders</td><td>Do nothing destructive. The 5-minute reconcile heals when the gateway returns. If prolonged, staff record offline orders for urgent cases; message parents (template 4).</td></tr>
+<tr><td>Audit ERP</td><td>Drain log shows failures; stranded-order alert e-mail</td><td>Queue retries 5 times with backoff, then dead-letters. When the ERP is back: admin ERP bridge page → replay dead letters; run <code>erp-reconcile</code> by hand.</td></tr>
+<tr><td>SMS gateway ("insufficient balance" or outage)</td><td>Parents cannot log in</td><td>Recharge or wait; meanwhile promote password login; a supervisor may enable the OTP bypass for a short, logged window.</td></tr>
+<tr><td>MyClassBoard</td><td>Nightly import fails</td><td>Fee console shows yesterday; retry next night; no parent impact.</td></tr>
+<tr><td>Microsoft 365</td><td>Backup sync alert; no e-mails</td><td>Local copies continue; sync resumes automatically. If longer than a day, copy the archive to a second location by hand.</td></tr>
+</tbody></table>
+
+<h3>Scenario E — Key people unavailable</h3>
+<p>The deputy in Section 4 takes the role. Everything a deputy needs is in the password manager and SharePoint, not on any one laptop. If the technical lead is unavailable, the recovery kit's README is written so that any competent engineer, or an AI assistant given the folder and the passphrase, can complete Scenario A.</p>
+</section>
+
+<section class="sec">
+<div class="section-hd"><span class="num">07</span><h2>Communication during an incident</h2></div>
+<table><thead><tr><th style="width:22%">Audience</th><th style="width:22%">Channel</th><th>When</th><th style="width:30%">Owner</th></tr></thead><tbody>
+<tr><td>Parents</td><td>Maintenance page on inventre.in (nginx 503 gate, already built); SMS only if outage exceeds 4 hours in season</td><td>Immediately; then every 2 hours</td><td>Comms lead (technical lead flips the page)</td></tr>
+<tr><td>Schools</td><td>Phone call to the coordinator, then e-mail</td><td>Within 30 minutes if their ordering window is affected</td><td>Comms lead</td></tr>
+<tr><td>Call centre (Audit ERP team)</td><td>Group chat</td><td>Immediately, with the parent-facing line to use</td><td>Comms lead</td></tr>
+<tr><td>Partners (CCAvenue, ERP team)</td><td>Support ticket / call</td><td>When their allow-lists or credentials change</td><td>Technical lead</td></tr>
+</tbody></table>
+<h3>Templates (adapt, do not improvise)</h3>
+<ol>
+<li><strong>Initial:</strong> "Inventre's online store is temporarily unavailable. Your orders and payments are safe. We are restoring service and expect to be back by [time]. Payments already made will show correctly once we are back."</li>
+<li><strong>Update:</strong> "Update [time]: restoration is under way; the store will reopen by [new time]. If you paid and do not see your order after we reopen, it will appear within an hour; no action is needed."</li>
+<li><strong>All-clear:</strong> "The store is back online. Orders placed before [time] are intact. If you paid between [time] and [time] and your order is missing, reply to this message or call the school coordinator; we will complete it for you."</li>
+<li><strong>Payment partner outage:</strong> "Online payment is currently unavailable due to an issue at our payment provider. You can complete your order later; your cart is saved. Urgent orders can be placed through the school coordinator."</li>
+</ol>
+<div class="callout"><span class="t">Maintenance page</span><p>Already built: nginx serves a branded page with a 503 status when <code>$maint_on</code> is 1; admin and API paths stay live; staff bypass with a token. Copy the current page to nginx with <code>/root/maintenance/sync.sh</code>. Exact steps in the HLD (maintenance page and nginx 503 gate).</p></div>
+</section>
+
+<section class="sec">
+<div class="section-hd"><span class="num">08</span><h2>Degraded operation: keeping the business going</h2></div>
+<table><thead><tr><th style="width:30%">Situation</th><th>How the business continues while systems are restored</th></tr></thead><tbody>
+<tr><td>Storefront down in an ordering window</td><td>School coordinator collects orders on paper or a shared sheet (child name, enrolment, items, sizes); staff key them in as offline orders when the store is back (the manual offline-order script exists) and reconcile payment separately.</td></tr>
+<tr><td>Payments down</td><td>Accept pay-at-school or bank transfer for urgent orders; record as offline payments; the settlement reconcile heals gateway orders later.</td></tr>
+<tr><td>Fulfilment link down</td><td>Warehouse works from the admin console's order list or an Excel export until the queue drains.</td></tr>
+<tr><td>Login (OTP) down</td><td>Password login; supervised OTP bypass; call centre places orders on behalf of parents using view-as-parent is read-only, so orders are keyed as offline orders instead.</td></tr>
+<tr><td>Fee console down</td><td>Fee desk works directly in MyClassBoard; Inventre's console is a reporting layer.</td></tr>
+<tr><td>Engineering unavailable</td><td>Deputy follows the recovery kit README; the hosting provider's console can reboot the machine; the maintenance page can be toggled by anyone with SSH.</td></tr>
+</tbody></table>
+</section>
+
+<section class="sec">
+<div class="section-hd"><span class="num">09</span><h2>Testing and drills</h2></div>
+<table><thead><tr><th style="width:26%">Test</th><th style="width:16%">Frequency</th><th>What it proves</th><th style="width:22%">Status</th></tr></thead><tbody>
+<tr><td>Automatic restore of the newest dump</td><td>Weekly, Sunday 03:30</td><td>The dump is restorable; table and row counts are sane; e-mail to it@inventre.in</td><td><span class="pill ok">Scheduled</span> first run 2026-09-27</td></tr>
+<tr><td>Mirror integrity</td><td>Continuous</td><td>Sync succeeded; transaction log is fresh; e-mail on failure or staleness</td><td><span class="pill ok">Live</span></td></tr>
+<tr><td>Full rebuild drill (Scenario A on a throwaway server)</td><td>Quarterly; first one now</td><td>The recovery kit works end to end; measures the real RTO; finds gaps in this document</td><td><span class="pill bad">Not yet done</span> D-01</td></tr>
+<tr><td>Point-in-time restore drill (Scenario B on the dev database)</td><td>Quarterly</td><td>Replay to a chosen minute works; the team knows the command</td><td><span class="pill bad">Not yet done</span> D-02</td></tr>
+<tr><td>Tabletop: compromise + data-breach notification</td><td>Annual</td><td>People know the order of actions and the 72-hour clock</td><td><span class="pill bad">Not yet done</span> D-03</td></tr>
+<tr><td>Contact tree check</td><td>Quarterly</td><td>Every name in Section 4 answers; password-manager entries open</td><td><span class="pill bad">Not yet done</span></td></tr>
+</tbody></table>
+<h3>Drill record</h3>
+<table class="compact"><thead><tr><th>Date</th><th>Drill</th><th>Measured RTO</th><th>Data loss</th><th>Gaps found</th></tr></thead><tbody>
+<tr><td colspan="5" class="small">No drills recorded yet. The first full rebuild drill fills this row.</td></tr>
+</tbody></table>
+</section>
+
+<section class="sec">
+<div class="section-hd"><span class="num">10</span><h2>Findings and action plan</h2></div>
+<table class="register"><thead><tr><th style="width:8%">ID</th><th style="width:10%">Priority</th><th style="width:34%">Finding</th><th>Action</th><th style="width:7%">Effort</th><th style="width:12%">Owner</th></tr></thead><tbody>
+<tr><td>D-01</td><td><span class="pill bad">Now</span></td><td>The rebuild has never been run on a clean machine; RTO is an estimate</td><td>Provide a throwaway server; run Scenario A end to end with a stopwatch; fix whatever breaks; record the drill</td><td>M</td><td>Owner (server), Engineering</td></tr>
+<tr><td>D-02</td><td><span class="pill bad">Now</span></td><td>Point-in-time restore untested</td><td>Run <code>restore-pitr</code> against the dev database to a chosen minute; verify counts</td><td>S</td><td>Engineering</td></tr>
+<tr><td>D-03</td><td><span class="pill warn">High</span></td><td>No named deputies or communications lead</td><td>Fill Section 4; store the table in the password manager; phone notification on it@inventre.in</td><td>S</td><td>Owner</td></tr>
+<tr><td>D-04</td><td><span class="pill warn">High</span></td><td>Database password not yet rotated (also a security item)</td><td>Run the rotation script at a quiet moment</td><td>S</td><td>Owner</td></tr>
+<tr><td>D-05</td><td><span class="pill warn">High</span></td><td>Targets in Section 1 and 3 not yet approved</td><td>Owner approves or amends; the numbers then drive drill acceptance</td><td>S</td><td>Owner</td></tr>
+<tr><td>D-06</td><td><span class="pill warn">High</span></td><td>A deliberate deletion in SharePoint could remove the backups (recycle bin only)</td><td>Enable a retention policy or retention label on the backup library so files cannot be permanently deleted for 30 days; keep the deploy key's write scope minimal</td><td>S</td><td>Microsoft 365 admin</td></tr>
+<tr><td>D-07</td><td><span class="pill neutral">Medium</span></td><td>Single host; no warm standby</td><td>Decide after the first drill: if the measured RTO is acceptable, stay; if not, a second small host with a streaming replica cuts RTO to minutes</td><td>L</td><td>Owner</td></tr>
+<tr><td>D-08</td><td><span class="pill neutral">Medium</span></td><td>The maintenance page must be enabled by hand over SSH</td><td>Add a one-command toggle in the recovery kit and document who may flip it</td><td>S</td><td>Engineering</td></tr>
+<tr><td>D-09</td><td><span class="pill neutral">Medium</span></td><td>Offline-order fallback relies on a script and staff knowledge</td><td>Write the coordinator's paper form and the staff SOP for keying offline orders</td><td>S</td><td>Operations</td></tr>
+<tr><td>D-10</td><td><span class="pill neutral">Medium</span></td><td>Partner escalation contacts not centralised</td><td>Add merchant ids, support numbers and account owners to the password-manager entry</td><td>S</td><td>Owner</td></tr>
+</tbody></table>
+<p class="small">Sources: backup and restore scripts under <code>scripts/backup/</code>, runbooks under <code>docs/runbooks/</code>, the HLD and LLD v1.7, and the operational history recorded in this engineering programme (June 2026 compromise, September 2026 outages and fixes).</p>
+</section>
+</body></html>

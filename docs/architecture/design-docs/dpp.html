@@ -1,0 +1,289 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Inventre — Data Protection &amp; Privacy</title><link rel="stylesheet" href="style.css"></head><body>
+
+<div class="cover">
+  <div>
+    <span class="eyebrow">Governance · Data protection</span>
+    <h1>Inventre<br><em>Data Protection &amp; Privacy</em></h1>
+    <p class="sub">What personal data Inventre holds, why, where it flows, who can see it, how long it is kept, and what India's Digital Personal Data Protection Act 2023 requires of us, with the gaps and the plan to close them.</p>
+  </div>
+  <div class="band"></div>
+  <div>
+    <div class="meta">
+      <div><span>Document</span><b>DPP v1.0</b></div>
+      <div><span>Date</span><b>23 September 2026</b></div>
+      <div><span>Status</span><b>Baseline, for legal review</b></div>
+      <div><span>Owner</span><b>Inventre Engineering</b></div>
+    </div>
+    <p class="small" style="margin-top:4mm">Written from the production database schema, code and operations as they are today. The legal sections summarise the Act in plain language for engineers and managers; they are not legal advice and should be confirmed by counsel before being relied on externally.</p>
+  </div>
+</div>
+
+<div class="toc">
+  <h2>Contents</h2>
+  <ol>
+    <li><span>Summary and the decisions we need</span><span class="pg">3</span></li>
+    <li><span>Roles: who is responsible for what</span><span class="pg">5</span></li>
+    <li><span>What personal data we hold (inventory)</span><span class="pg">6</span></li>
+    <li><span>Where the data flows</span><span class="pg">9</span></li>
+    <li><span>Who can see it (access)</span><span class="pg">11</span></li>
+    <li><span>How long we keep it (retention)</span><span class="pg">12</span></li>
+    <li><span>How it is protected (security measures)</span><span class="pg">14</span></li>
+    <li><span>What the DPDP Act 2023 requires, and where we stand</span><span class="pg">15</span></li>
+    <li><span>Children's data</span><span class="pg">18</span></li>
+    <li><span>Rights of parents and how we serve them</span><span class="pg">19</span></li>
+    <li><span>Breach response</span><span class="pg">20</span></li>
+    <li><span>Findings and action plan</span><span class="pg">21</span></li>
+  </ol>
+  <h3>Revision history</h3>
+  <table class="hist compact"><thead><tr><th>Version</th><th>Date</th><th>Author</th><th>Change</th></tr></thead>
+  <tbody><tr><td>1.0</td><td>2026-09-23</td><td>Engineering</td><td>First baseline: inventory from the live schema, flows, access, retention as practised, DPDP gap assessment, action plan P-01 … P-14.</td></tr></tbody></table>
+</div>
+
+<section class="sec">
+<div class="section-hd"><span class="num">01</span><h2>Summary and the decisions we need</h2></div>
+<p class="lead">Inventre holds personal data about roughly 15,000 families: parents' phone numbers, names and addresses; children's names, schools, grades, dates of birth and sizes; order and payment records; and, through the fee ledger, the fee and receipt history of about 12,000 students across eight school branches. Almost all of it concerns children. Under the Digital Personal Data Protection Act 2023 (DPDP Act) Inventre is a <strong>Data Fiduciary</strong> for the storefront data and, for the fee ledger, acts on behalf of the schools.</p>
+<h3>Where we stand in one table</h3>
+<table><thead><tr><th style="width:34%">Area</th><th style="width:14%">Status</th><th>Plain-language meaning</th></tr></thead><tbody>
+<tr><td>Knowing what we hold</td><td><span class="pill ok">Done</span></td><td>Section 3 lists every table and field with personal data. Nothing is hidden.</td></tr>
+<tr><td>Security of the data</td><td><span class="pill ok">Good</span></td><td>Encrypted in transit, role-based access, audit trail, encrypted off-host backups, secrets rotated this month (see the HLD security section).</td></tr>
+<tr><td>Consent and notice to parents</td><td><span class="pill warn">Partial</span></td><td>Parents accept terms at first login (recorded), but there is no privacy notice that says in plain words what we collect and why, and no separate consent for a child's data.</td></tr>
+<tr><td>Retention</td><td><span class="pill bad">Gap</span></td><td>Nothing is ever deleted. OTP logs, old orders, leavers' records and photos accumulate indefinitely.</td></tr>
+<tr><td>Parents' rights (access, correction, erasure)</td><td><span class="pill warn">Partial</span></td><td>Parents can view and correct most of their own data in the app; there is no way to request erasure or a copy, and no named grievance officer.</td></tr>
+<tr><td>Breach handling</td><td><span class="pill warn">Partial</span></td><td>We detect and log; there is no written procedure for who tells whom within what time.</td></tr>
+<tr><td>Third parties (processors)</td><td><span class="pill warn">Partial</span></td><td>Seven external systems receive personal data. Only the payment gateway has a formal contract on record.</td></tr>
+<tr><td>Two concrete defects found while writing this</td><td><span class="pill bad">Gap</span></td><td>One-time passwords are stored in plain text in a log table, and photos parents upload for exchanges land in a publicly readable storage bucket. Both are fixable in a day (P-01, P-02).</td></tr>
+</tbody></table>
+<h3>Decisions the owner needs to take</h3>
+<ol>
+<li><strong>Appoint a grievance officer</strong> (a named person and an e-mail address) and publish it on the site. The Act requires this.</li>
+<li><strong>Approve the retention schedule</strong> in Section 6. Once approved, deletion becomes automatic.</li>
+<li><strong>Approve a privacy notice</strong> for the storefront and the fee console (draft outline in Section 8.3). Counsel should review it.</li>
+<li><strong>Decide the consent model for children's data</strong>: rely on the parent account as the verifiable parental consent, and document that reasoning (recommended), or introduce an explicit consent step.</li>
+<li><strong>Sign processor agreements</strong> with the Audit ERP operator and the SMS vendor, and confirm the terms already in place with CCAvenue, MyClassBoard, Cloudflare and Microsoft.</li>
+</ol>
+</section>
+
+<section class="sec">
+<div class="section-hd"><span class="num">02</span><h2>Roles: who is responsible for what</h2></div>
+<table><thead><tr><th style="width:26%">Role (DPDP term)</th><th style="width:30%">Who, for Inventre</th><th>Responsibility</th></tr></thead><tbody>
+<tr><td><strong>Data Principal</strong></td><td>The parent or guardian; for a child, the parent acts on the child's behalf</td><td>The person the data is about. Has rights of access, correction, erasure, grievance and nomination.</td></tr>
+<tr><td><strong>Data Fiduciary</strong></td><td>Inventre (the company operating inventre.in)</td><td>Decides why and how personal data is processed. Carries the obligations: notice, consent, security, breach notification, erasure, grievance handling, and for children, verifiable parental consent.</td></tr>
+<tr><td><strong>Data Fiduciary or Processor for the fee ledger</strong></td><td>The schools decide the purpose; Inventre imports and displays</td><td>For MyClassBoard fee and receipt data the school is the fiduciary and Inventre processes on its behalf. This should be written into the school agreements.</td></tr>
+<tr><td><strong>Data Processors</strong></td><td>Audit ERP operator, CCAvenue, Arihant Global (SMS), Microsoft 365 (SMTP, backups), Cloudflare R2 (media), GitHub (code only), MyClassBoard (source system)</td><td>Process on Inventre's instructions. Inventre remains answerable for them and needs written terms.</td></tr>
+<tr><td><strong>Grievance Officer</strong></td><td><span class="pill bad">Not yet appointed</span></td><td>Receives complaints and rights requests, answers within the statutory period, escalates to the owner.</td></tr>
+<tr><td><strong>Consent Manager</strong></td><td>Not used</td><td>An optional registered intermediary under the Act. Not needed for Inventre's scale today.</td></tr>
+</tbody></table>
+<div class="callout"><span class="t">Internal owners</span><p><strong>Accountable:</strong> the company owner (sunith@inventre.in). <strong>Operational:</strong> Inventre Engineering for systems and this document; the operations lead for handling requests from parents and schools; the fee-desk lead for the fee ledger. Alerts go to it@inventre.in.</p></div>
+</section>
+
+<section class="sec">
+<div class="section-hd"><span class="num">03</span><h2>What personal data we hold (inventory)</h2></div>
+<p class="lead">Every field below exists in the production database today (schema of 23 September 2026). Sensitivity: <span class="pill bad">High</span> could cause real harm if exposed (children's identifiers, contact details, financial records, credentials); <span class="pill warn">Medium</span> personal but low harm alone; <span class="pill neutral">Low</span> operational.</p>
+<h3>3.1 Parents and guardians</h3>
+<table class="compact"><thead><tr><th style="width:22%">Table</th><th>Personal fields</th><th style="width:10%">Level</th><th style="width:24%">Why we hold it</th></tr></thead><tbody>
+<tr><td><code>parents</code></td><td>phone (login identity), name, email, password hash, notes, tags, lifetime value, order count, last login, terms accepted (version + time), language</td><td><span class="pill bad">High</span></td><td>Account, login, order history, support</td></tr>
+<tr><td><code>guardians</code>, <code>student_guardian_links</code></td><td>guardian name, mobile, alternate number, email, date of birth, relation to the child, raw school-system record</td><td><span class="pill bad">High</span></td><td>Which adults may act for which child; login by any linked phone</td></tr>
+<tr><td><code>addresses</code>, <code>student_addresses</code></td><td>receiver name and phone, address lines, city, pincode, landmark, GSTIN and company name (B2B), raw school record</td><td><span class="pill bad">High</span></td><td>Delivery and invoicing</td></tr>
+<tr><td><code>communications</code>, <code>order_notifications</code></td><td>subject, body and recipient of every message sent to a parent</td><td><span class="pill warn">Medium</span></td><td>Proof of what was communicated</td></tr>
+<tr><td><code>contact_submissions</code>, <code>concerns</code>, <code>concern_messages</code></td><td>name, phone, email, free-text description, photos (URL), assigned staff</td><td><span class="pill warn">Medium</span></td><td>Support tickets and public contact form</td></tr>
+</tbody></table>
+<h3>3.2 Children (students)</h3>
+<table class="compact"><thead><tr><th style="width:22%">Table</th><th>Personal fields</th><th style="width:10%">Level</th><th style="width:24%">Why we hold it</th></tr></thead><tbody>
+<tr><td><code>students</code></td><td>full name (first, middle, last), school, class, section, grade, enrolment number, <strong>date of birth</strong>, <strong>blood group</strong>, gender, house colour, medium, curriculum, joining date, shoe / shirt / trouser sizes and size overrides, <strong>student e-mail and mobile</strong> (where the school recorded one), <strong>profile picture URL</strong>, verification flags, raw school-system record</td><td><span class="pill bad">High</span></td><td>Catalogue scoping (school + grade), sizing, order attribution, school roster sync</td></tr>
+<tr><td><code>student_siblings</code></td><td>links between children of one family</td><td><span class="pill warn">Medium</span></td><td>One account for all siblings</td></tr>
+<tr><td><code>mcb_students</code></td><td>the MyClassBoard roster record for each fee-paying student (name, enrolment, class, section, status, guardian contact, raw feed)</td><td><span class="pill bad">High</span></td><td>Fee ledger console</td></tr>
+</tbody></table>
+<div class="callout warn"><span class="t">Observation</span><p>Blood group, date of birth, student mobile and profile pictures are imported from the school systems but are <strong>not used by any storefront or admin feature</strong> we could find. Under the Act's purpose-limitation principle, data we do not need should not be collected. Recommendation P-05: stop importing these fields, and delete the existing values.</p></div>
+<h3>3.3 Orders, payments, fees</h3>
+<table class="compact"><thead><tr><th style="width:22%">Table</th><th>Personal fields</th><th style="width:10%">Level</th><th style="width:24%">Why we hold it</th></tr></thead><tbody>
+<tr><td><code>orders</code>, <code>order_items</code></td><td>who ordered what for which child, shipping and billing address snapshots, grade and school snapshots, notes, cancellation reason</td><td><span class="pill warn">Medium</span></td><td>Fulfilment, returns, accounts (GST law requires invoice records for 8 years)</td></tr>
+<tr><td><code>payments</code>, <code>invoices</code></td><td>gateway references, amounts, payment method, raw gateway response, customer GSTIN, invoice addresses. <strong>No card or bank details</strong>: payment happens on CCAvenue's page.</td><td><span class="pill warn">Medium</span></td><td>Reconciliation, GST invoicing</td></tr>
+<tr><td><code>returns</code>, <code>missing_item_claims</code></td><td>reason, free-text notes, <strong>photos uploaded by the parent</strong> (URL), pickup date, staff decisions</td><td><span class="pill warn">Medium</span></td><td>Exchange and missing-item handling</td></tr>
+<tr><td><code>mcb_fee_payments</code>, <code>mcb_fee_transactions</code></td><td>per student: fee heads billed, amounts due and paid, concessions, receipt numbers and dates</td><td><span class="pill bad">High</span></td><td>Fee ledger and receivables ageing for the schools (financial data about a family)</td></tr>
+<tr><td><code>reviews</code>, <code>wishlists</code>, <code>loyalty_ledger</code>, <code>gift_cards</code></td><td>parent id linked to opinions, saved items, points, gift card codes</td><td><span class="pill neutral">Low</span></td><td>Engagement features (barely used)</td></tr>
+</tbody></table>
+<h3>3.4 Logs and technical data</h3>
+<table class="compact"><thead><tr><th style="width:22%">Table / store</th><th>Personal fields</th><th style="width:10%">Level</th><th style="width:24%">Why we hold it</th></tr></thead><tbody>
+<tr><td><code>otp_logs</code></td><td>phone, purpose, <strong>the OTP code itself</strong>, gateway transaction id, error, IP address</td><td><span class="pill bad">High</span></td><td>Diagnosing SMS delivery. <strong>Storing the code is unnecessary and dangerous</strong> (P-01).</td></tr>
+<tr><td><code>activity_log</code>, <code>audit_log</code></td><td>which staff member changed what, with before/after values, IP address</td><td><span class="pill warn">Medium</span></td><td>Accountability for admin actions; contains parents' and children's data inside the diffs</td></tr>
+<tr><td><code>storefront_events</code></td><td>parent id, request path, error message and stack for failures</td><td><span class="pill neutral">Low</span></td><td>Reliability</td></tr>
+<tr><td>Redis</td><td>OTP codes (5-minute expiry), rate-limit counters keyed by phone and IP, cart mirror</td><td><span class="pill warn">Medium</span></td><td>Login flow; expires automatically</td></tr>
+<tr><td>Cloudflare R2 (media bucket)</td><td>product images (not personal) <strong>and parents' exchange / concern photos</strong></td><td><span class="pill warn">Medium</span></td><td>The bucket is publicly readable by URL (P-02)</td></tr>
+<tr><td>Backups (Microsoft 365, SharePoint)</td><td>everything above, encrypted before upload</td><td><span class="pill bad">High</span></td><td>Disaster recovery; only two keys unlock it</td></tr>
+<tr><td>Web server and application logs</td><td>IP addresses, request paths (may include order ids), user agents</td><td><span class="pill neutral">Low</span></td><td>Operations; rotated by the OS</td></tr>
+<tr><td><code>users</code> (staff)</td><td>staff name, email, password hash, role, last login</td><td><span class="pill warn">Medium</span></td><td>Admin accounts</td></tr>
+</tbody></table>
+<p class="small">Not held anywhere: card numbers, bank accounts, UPI ids, government identity numbers, biometric data, location tracking, behavioural advertising profiles.</p>
+</section>
+
+<section class="sec">
+<div class="section-hd"><span class="num">04</span><h2>Where the data flows</h2></div>
+<div class="figure">
+<svg viewBox="0 0 760 440" xmlns="http://www.w3.org/2000/svg" font-family="Inter, Liberation Sans, sans-serif"><defs><marker id="ah" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#5B5B5B"/></marker></defs>
+<rect x="20" y="40" width="170" height="70" rx="10" fill="#FAF7F2" stroke="#D6D0C6" stroke-width="1.5"/><text x="105" y="70" text-anchor="middle" font-size="16" font-weight="700" fill="#0A0A0A">Parents</text><text x="105" y="92" text-anchor="middle" font-size="13" fill="#5B5B5B">account, orders, photos</text>
+<rect x="20" y="140" width="170" height="70" rx="10" fill="#FAF7F2" stroke="#D6D0C6" stroke-width="1.5"/><text x="105" y="170" text-anchor="middle" font-size="16" font-weight="700" fill="#0A0A0A">Schools</text><text x="105" y="192" text-anchor="middle" font-size="13" fill="#5B5B5B">rosters (Excel, ERP)</text>
+<rect x="20" y="240" width="170" height="70" rx="10" fill="#FAF7F2" stroke="#D6D0C6" stroke-width="1.5"/><text x="105" y="270" text-anchor="middle" font-size="16" font-weight="700" fill="#0A0A0A">MyClassBoard</text><text x="105" y="292" text-anchor="middle" font-size="13" fill="#5B5B5B">fee ledger, receipts</text>
+<rect x="270" y="30" width="230" height="300" rx="14" fill="#fff" stroke="#E47127" stroke-width="2"/><text x="286" y="58" font-size="17" font-weight="800" fill="#E47127">Inventre (system of record)</text>
+<rect x="288" y="78" width="194" height="60" rx="10" fill="#FEF3EC" stroke="#E47127" stroke-width="1.5"/><text x="385" y="104" text-anchor="middle" font-size="15" font-weight="700">Postgres</text><text x="385" y="124" text-anchor="middle" font-size="13" fill="#5B5B5B">all personal data</text>
+<rect x="288" y="150" width="194" height="52" rx="10" fill="#FAF7F2" stroke="#D6D0C6" stroke-width="1.5"/><text x="385" y="173" text-anchor="middle" font-size="15" font-weight="700">Redis</text><text x="385" y="192" text-anchor="middle" font-size="13" fill="#5B5B5B">OTPs (5 min), rate limits</text>
+<rect x="288" y="214" width="194" height="52" rx="10" fill="#FAF7F2" stroke="#D6D0C6" stroke-width="1.5"/><text x="385" y="237" text-anchor="middle" font-size="15" font-weight="700">Cloudflare R2</text><text x="385" y="256" text-anchor="middle" font-size="13" fill="#5B5B5B">photos (public URL)</text>
+<rect x="288" y="278" width="194" height="40" rx="10" fill="#FAF7F2" stroke="#D6D0C6" stroke-width="1.5"/><text x="385" y="303" text-anchor="middle" font-size="14" font-weight="700">Logs · activity trail</text>
+<rect x="570" y="30" width="170" height="62" rx="10" fill="#FAF7F2" stroke="#D6D0C6" stroke-width="1.5"/><text x="655" y="56" text-anchor="middle" font-size="15" font-weight="700">Audit ERP</text><text x="655" y="76" text-anchor="middle" font-size="12.5" fill="#5B5B5B">orders, students, guardians, addresses</text>
+<rect x="570" y="104" width="170" height="62" rx="10" fill="#FAF7F2" stroke="#D6D0C6" stroke-width="1.5"/><text x="655" y="130" text-anchor="middle" font-size="15" font-weight="700">CCAvenue</text><text x="655" y="150" text-anchor="middle" font-size="12.5" fill="#5B5B5B">name, phone, e-mail, amount</text>
+<rect x="570" y="178" width="170" height="62" rx="10" fill="#FAF7F2" stroke="#D6D0C6" stroke-width="1.5"/><text x="655" y="204" text-anchor="middle" font-size="15" font-weight="700">SMS gateway</text><text x="655" y="224" text-anchor="middle" font-size="12.5" fill="#5B5B5B">phone + OTP text</text>
+<rect x="570" y="252" width="170" height="62" rx="10" fill="#FAF7F2" stroke="#D6D0C6" stroke-width="1.5"/><text x="655" y="278" text-anchor="middle" font-size="15" font-weight="700">Microsoft 365</text><text x="655" y="298" text-anchor="middle" font-size="12.5" fill="#5B5B5B">e-mail relay · encrypted backups</text>
+<rect x="570" y="326" width="170" height="62" rx="10" fill="#FAF7F2" stroke="#D6D0C6" stroke-width="1.5"/><text x="655" y="352" text-anchor="middle" font-size="15" font-weight="700">GitHub</text><text x="655" y="372" text-anchor="middle" font-size="12.5" fill="#5B5B5B">code only, no personal data</text>
+<line x1="190" y1="75" x2="270" y2="105" stroke="#5B5B5B" stroke-width="1.8" marker-end="url(#ah)"/><line x1="190" y1="175" x2="270" y2="125" stroke="#5B5B5B" stroke-width="1.8" marker-end="url(#ah)"/><line x1="190" y1="275" x2="270" y2="135" stroke="#5B5B5B" stroke-width="1.8" marker-end="url(#ah)"/>
+<line x1="500" y1="100" x2="570" y2="62" stroke="#5B5B5B" stroke-width="1.8" marker-end="url(#ah)"/><line x1="500" y1="110" x2="570" y2="135" stroke="#5B5B5B" stroke-width="1.8" marker-end="url(#ah)"/><line x1="500" y1="176" x2="570" y2="209" stroke="#5B5B5B" stroke-width="1.8" marker-end="url(#ah)"/><line x1="500" y1="260" x2="570" y2="283" stroke="#5B5B5B" stroke-width="1.8" marker-end="url(#ah)"/><line x1="500" y1="300" x2="570" y2="357" stroke="#5B5B5B" stroke-width="1.8" stroke-dasharray="6 5" marker-end="url(#ah)"/>
+<text x="380" y="380" text-anchor="middle" font-size="13" fill="#5B5B5B">Staff access: admin console (role-based), fee console (fee-desk accounts), support view-as-parent (read-only, minted by the Audit ERP)</text>
+<text x="380" y="405" text-anchor="middle" font-size="13" fill="#5B5B5B">Solid arrows carry personal data. Dashed: no personal data.</text>
+</svg>
+<div class="cap">Figure 1 — Personal data enters from parents, school rosters and MyClassBoard, lives in Inventre's Postgres, and leaves only to the seven processors shown. Nothing is sold or shared for advertising.</div>
+</div>
+<table class="compact"><thead><tr><th style="width:20%">Recipient</th><th>What is sent</th><th>Why</th><th style="width:22%">Terms on record</th></tr></thead><tbody>
+<tr><td>Audit ERP (in-house, separate host)</td><td>Orders with child's name, grade, school, enrolment; guardian names and phones; addresses; exchange, missing and concern requests</td><td>Fulfilment and call centre</td><td><span class="pill bad">None written</span> (same company group; still needs an internal data-sharing note)</td></tr>
+<tr><td>CCAvenue</td><td>Order id, amount, payer name, phone, e-mail, billing address</td><td>Payment</td><td>Merchant agreement (2026)</td></tr>
+<tr><td>Arihant Global (SMS)</td><td>Phone number and OTP text</td><td>Login</td><td><span class="pill warn">Commercial terms only</span></td></tr>
+<tr><td>Microsoft 365</td><td>E-mails to parents and staff (SMTP); encrypted backup files</td><td>Communication, disaster recovery</td><td>Microsoft Online Services terms (company tenant)</td></tr>
+<tr><td>Cloudflare R2</td><td>Uploaded photos; product images</td><td>Media storage and delivery</td><td>Cloudflare terms</td></tr>
+<tr><td>MyClassBoard</td><td>Inventre only <em>reads</em> from it; nothing is sent back</td><td>Fee ledger</td><td>Via the schools' contracts</td></tr>
+<tr><td>GitHub</td><td>Source code only</td><td>Code backup</td><td>GitHub terms; personal data is kept out by the repository hygiene test</td></tr>
+</tbody></table>
+<p class="small">No personal data leaves India except to Microsoft 365, Cloudflare and GitHub, whose data-centre regions are set by the tenant and account configuration. The DPDP Act permits transfers except to countries the government restricts by notification; none is restricted as of this writing. Confirm the Microsoft tenant's data location is India (it usually is for Indian tenants).</p>
+</section>
+
+<section class="sec">
+<div class="section-hd"><span class="num">05</span><h2>Who can see it (access)</h2></div>
+<table><thead><tr><th style="width:24%">Population</th><th style="width:30%">Mechanism</th><th>Sees</th></tr></thead><tbody>
+<tr><td>Parents</td><td>Storefront login (OTP or password), <code>inv_session</code> cookie</td><td>Only their own family: every read is scoped to the family graph; a co-guardian outside it gets a 404, never a different parent's data.</td></tr>
+<tr><td>Inventre operations (<code>super</code>, <code>ops</code>)</td><td>Admin console, per-page read/write permissions from roles plus per-user grants</td><td>All families and orders they are permitted to; every change is written to the activity log with before and after values.</td></tr>
+<tr><td>School administrators (<code>school_admin</code>)</td><td>Admin console, read-only, scoped to their school</td><td>Their school's students and orders only.</td></tr>
+<tr><td>Fee desk (<code>fees-viewer</code>, <code>fees-admin</code>)</td><td>Separate fee-console login and cookie; admin pages reject the fee cookie</td><td>Fee ledger, receipts, ageing for the schools in scope; no storefront or order data.</td></tr>
+<tr><td>Audit ERP call-centre agents</td><td>"View as parent": a short-lived read-only session minted by the ERP; every write is blocked at the edge; the mint is logged</td><td>Exactly what the parent sees, nothing more, to work a ticket.</td></tr>
+<tr><td>Engineering (root on the server)</td><td>SSH with keys only; production database reads are permitted for analysis, writes by the owner</td><td>Everything. This is the highest-risk access and the reason the host was hardened after the June 2026 compromise.</td></tr>
+<tr><td>Backups</td><td>Encrypted before upload; two keys plus a kit passphrase held by the owner</td><td>Anyone in the SharePoint site sees only opaque files.</td></tr>
+</tbody></table>
+<div class="callout"><span class="t">Least privilege in practice</span><p>All 39 admin sections carry a permission gate and 141 admin API routes require a named permission; an automated test fails the build if either regresses. Staff names are stripped from parent-facing tracking timelines. Fee-desk accounts cannot reach the admin console at all.</p></div>
+</section>
+
+<section class="sec">
+<div class="section-hd"><span class="num">06</span><h2>How long we keep it (retention)</h2></div>
+<p class="lead">Today nothing is deleted except expired carts and Redis keys. The Act requires erasure once the purpose is served, unless another law requires retention. The schedule below is a proposal for the owner to approve; once approved, Engineering implements it as scheduled jobs and it becomes automatic.</p>
+<table><thead><tr><th style="width:26%">Data</th><th style="width:16%">Today</th><th style="width:22%">Proposed</th><th>Basis</th></tr></thead><tbody>
+<tr><td>OTP codes in <code>otp_logs</code></td><td>Forever</td><td>Stop storing the code (P-01); keep phone, outcome and error for <strong>90 days</strong></td><td>Only needed to diagnose SMS delivery</td></tr>
+<tr><td>Redis OTP and rate-limit keys</td><td>5 min / 1 h</td><td>Unchanged</td><td>Already expires</td></tr>
+<tr><td>Orders, invoices, payments</td><td>Forever</td><td><strong>8 years</strong> from the financial year end, then anonymise the parent link and address</td><td>GST and Income-tax record-keeping</td></tr>
+<tr><td>Carts</td><td>7 days</td><td>Unchanged</td><td>Already automatic</td></tr>
+<tr><td>Parent accounts with no active student and no order in <strong>3 years</strong></td><td>Forever</td><td>Notify, then delete or anonymise after 30 days</td><td>Purpose served (children have left the schools)</td></tr>
+<tr><td>Students who left a school (roster shows leaver)</td><td>Forever, flagged</td><td>Keep for <strong>1 year</strong> after leaving for exchange and fee follow-up, then anonymise name and identifiers; orders keep an anonymised link</td><td>Purpose served</td></tr>
+<tr><td>Unused imported fields (date of birth, blood group, student mobile, picture)</td><td>Held</td><td>Delete now and stop importing (P-05)</td><td>Not needed for any purpose</td></tr>
+<tr><td>Exchange, missing and concern photos</td><td>Forever, public URL</td><td>Move to private storage (P-02); delete <strong>180 days</strong> after the request closes</td><td>Only needed while the case is open</td></tr>
+<tr><td>Activity and audit logs</td><td>Forever</td><td><strong>2 years</strong> online, then archive to the encrypted backup only</td><td>Accountability; contains personal data in diffs</td></tr>
+<tr><td>Fee ledger imports (<code>mcb_*</code>)</td><td>Refreshed nightly, never pruned</td><td>Keep current + <strong>3 academic years</strong>; older rows deleted</td><td>Schools' own retention governs; Inventre is a processor</td></tr>
+<tr><td>Communications and notifications</td><td>Forever</td><td><strong>2 years</strong></td><td>Proof of what was sent</td></tr>
+<tr><td>Web server logs</td><td>OS rotation (weeks)</td><td>Unchanged, <strong>90 days</strong> maximum</td><td>Operations</td></tr>
+<tr><td>Backups</td><td>30 days point-in-time, 14 daily, monthly, 12 months</td><td>Unchanged; deletions above propagate as backups age out</td><td>Disaster recovery</td></tr>
+</tbody></table>
+</section>
+
+<section class="sec">
+<div class="section-hd"><span class="num">07</span><h2>How it is protected (security measures)</h2></div>
+<div class="two">
+<div class="card"><h4>In transit</h4><ul><li>TLS everywhere (Let's Encrypt), HSTS, security headers verified after every deploy</li><li>Partner links signed (HMAC) or encrypted (CCAvenue AES); replication and internal links inside a private Docker network</li></ul></div>
+<div class="card"><h4>At rest</h4><ul><li>Passwords hashed with bcrypt; no card data ever stored</li><li>Backups encrypted on the server before leaving it; configuration encrypted inside snapshots</li><li>Database and Redis reachable only on the host; Redis password-protected</li></ul></div>
+<div class="card"><h4>Access control</h4><ul><li>Four separate session types; role and per-page permissions; family-graph scoping for parents</li><li>Read-only support impersonation with edge enforcement</li><li>Key-only SSH, fail2ban, firewall on Docker ports</li></ul></div>
+<div class="card"><h4>Accountability</h4><ul><li>Activity log for every admin change; OTP log; 5xx telemetry</li><li>Every production build carries its commit; a monitor detects a foreign build or lost security headers and e-mails</li><li>All production secrets rotated in September 2026 after the June compromise (database password pending)</li></ul></div>
+</div>
+<div class="callout warn"><span class="t">Known weaknesses relevant to personal data</span><p>(1) OTP codes are written to <code>otp_logs</code> in plain text (P-01). (2) Parents' photos are stored in a bucket that is readable by anyone who has the URL; the URLs are not guessable but are not protected either (P-02). (3) Root access on the server sees everything, and one root compromise happened in June 2026; the remediation is in the HLD, the remaining item is the database password rotation (P-03). (4) Brand-orange text contrast and other accessibility items are cosmetic and not privacy-relevant.</p></div>
+</section>
+
+<section class="sec">
+<div class="section-hd"><span class="num">08</span><h2>What the DPDP Act 2023 requires, and where we stand</h2></div>
+<p class="lead">The Digital Personal Data Protection Act 2023 is India's data-protection law. The Rules that bring most obligations into force were notified in November 2025 with a phased timeline; the substantive duties on fiduciaries apply from about eighteen months after notification. In practical terms Inventre should be compliant during 2027, and the work below takes months, so it starts now. Confirm the dates with counsel.</p>
+<table><thead><tr><th style="width:24%">Obligation (Act section)</th><th style="width:40%">What it means for Inventre</th><th style="width:12%">Status</th><th>Action</th></tr></thead><tbody>
+<tr><td><strong>Notice</strong> (s.5)</td><td>Before or when collecting data, tell the parent in plain language what we collect, why, how to exercise rights and complain.</td><td><span class="pill bad">Gap</span></td><td>P-06 privacy notice on the storefront, at login, and on the fee console</td></tr>
+<tr><td><strong>Consent</strong> (s.6)</td><td>Free, specific, informed, unambiguous, by clear affirmative action; as easy to withdraw as to give.</td><td><span class="pill warn">Partial</span></td><td>Terms acceptance is recorded (version + time). Add the notice reference and a withdrawal path (P-06, P-08)</td></tr>
+<tr><td><strong>Legitimate uses</strong> (s.7)</td><td>Some processing needs no consent: data the parent gives voluntarily for a purpose, legal obligations (GST records), medical emergencies.</td><td><span class="pill ok">Applies</span></td><td>Document which uses rely on this (orders placed voluntarily, tax records)</td></tr>
+<tr><td><strong>Security safeguards</strong> (s.8(5))</td><td>Reasonable measures to prevent breach.</td><td><span class="pill ok">Good</span></td><td>Section 7; close P-01, P-02, P-03</td></tr>
+<tr><td><strong>Breach notification</strong> (s.8(6))</td><td>Notify the Data Protection Board and each affected parent in the form and time the Rules prescribe (the Rules set 72 hours for the Board's detailed report).</td><td><span class="pill warn">Partial</span></td><td>P-09 written procedure (Section 11)</td></tr>
+<tr><td><strong>Erasure</strong> (s.8(7))</td><td>Delete personal data when consent is withdrawn or the purpose is served, and make processors delete it too.</td><td><span class="pill bad">Gap</span></td><td>P-04 retention jobs; P-07 processor terms</td></tr>
+<tr><td><strong>Grievance redressal</strong> (s.8(10), s.13)</td><td>Publish a contact; respond within the period the Rules set.</td><td><span class="pill bad">Gap</span></td><td>P-10 appoint and publish the grievance officer; route via the existing concern portal</td></tr>
+<tr><td><strong>Accuracy and completeness</strong> (s.8(3))</td><td>Where data is used to make decisions affecting the person, keep it accurate.</td><td><span class="pill ok">Good</span></td><td>Grade is canonical from the school roster; parents can correct their own details</td></tr>
+<tr><td><strong>Children</strong> (s.9)</td><td>Verifiable parental consent; no tracking, behavioural monitoring or targeted advertising directed at children.</td><td><span class="pill warn">Partial</span></td><td>Section 9; P-11</td></tr>
+<tr><td><strong>Rights of principals</strong> (s.11–14)</td><td>Access to a summary of data and processors; correction; erasure; grievance; nomination of a person to act for them.</td><td><span class="pill warn">Partial</span></td><td>Section 10; P-08 self-service export and erasure request</td></tr>
+<tr><td><strong>Processors</strong> (s.8(2))</td><td>Engage processors only under a valid contract.</td><td><span class="pill warn">Partial</span></td><td>P-07</td></tr>
+<tr><td><strong>Significant Data Fiduciary</strong> (s.10)</td><td>Extra duties (data protection officer, audits, impact assessments) if the government designates a class of fiduciaries as significant.</td><td><span class="pill neutral">Not designated</span></td><td>Watch for notifications covering ed-tech or children's data</td></tr>
+<tr><td><strong>Penalties</strong> (Schedule)</td><td>Up to ₹250 crore for failing security safeguards; ₹200 crore for breach-notification and children's-data failures.</td><td>—</td><td>Reason to close P-01, P-02, P-09 first</td></tr>
+</tbody></table>
+<h3>8.3 Privacy notice: what it must say (outline)</h3>
+<ul>
+<li>Who we are and how to reach the grievance officer.</li>
+<li>What we collect: parent contact details; child's name, school, grade, sizes; delivery address; order and payment records (never card details); photos you upload for an exchange.</li>
+<li>Why: to show the right school kit, deliver it, invoice it, support you, and, for the fee console, to show the school's fee ledger on its behalf.</li>
+<li>Who else sees it: the fulfilment team (Audit ERP), the payment gateway, the SMS provider, and Microsoft for e-mail and backups.</li>
+<li>How long we keep it: the schedule in Section 6, in one sentence each.</li>
+<li>Your rights: see, correct, delete, complain, nominate; how to do each; that withdrawing consent stops future processing but does not undo past orders we must keep for tax law.</li>
+<li>For children: the parent account is the consent; how a parent removes a child.</li>
+</ul>
+</section>
+
+<section class="sec">
+<div class="section-hd"><span class="num">09</span><h2>Children's data</h2></div>
+<p class="lead">Every student record is a child's record. Section 9 of the Act adds three duties: obtain <strong>verifiable consent of the parent</strong> before processing a child's data, do not <strong>track or behaviourally monitor</strong> children, and do not direct <strong>targeted advertising</strong> at them. Inventre's design already fits well; what is missing is the documentation and two small controls.</p>
+<table><thead><tr><th style="width:30%">Requirement</th><th>How Inventre meets it today</th><th style="width:26%">To do</th></tr></thead><tbody>
+<tr><td>Verifiable parental consent</td><td>Children never log in. The only account is the parent's, verified by a one-time password to the phone the school holds for that parent, and the parent accepts the terms at first login (version and time recorded). Rosters come from the school, which has its own relationship with the parent.</td><td>P-11: write this reasoning down as the consent basis; add the child-specific wording to the notice; record consent per child when a new child is added to an account</td></tr>
+<tr><td>No tracking or behavioural monitoring</td><td>No analytics or advertising scripts on the storefront; the only client-side storage is the active child, a "seen order status" marker and unsaved drafts; server logs are technical.</td><td>Keep it that way: add an architecture test that fails if a third-party script tag appears in the storefront layout (P-12)</td></tr>
+<tr><td>No targeted advertising</td><td>None exists. Recommendations on the product page are price-nearest, not behavioural.</td><td>State it in the notice</td></tr>
+<tr><td>Data minimisation for children</td><td>Grade, school, sizes and name are needed. Date of birth, blood group, student mobile and picture are imported but unused.</td><td>P-05: stop importing and delete</td></tr>
+<tr><td>School as the source</td><td>Rosters arrive from the school's system or from Excel sheets sent by the school.</td><td>P-07: the school agreement should state that the school has the parents' consent to share the roster with Inventre for the kit programme</td></tr>
+</tbody></table>
+</section>
+
+<section class="sec">
+<div class="section-hd"><span class="num">10</span><h2>Rights of parents and how we serve them</h2></div>
+<table><thead><tr><th style="width:22%">Right</th><th>Today</th><th style="width:34%">Target</th></tr></thead><tbody>
+<tr><td>Access (a summary of the data and the processors)</td><td>Parents see their profile, children, addresses, orders and requests in the app. No downloadable summary.</td><td>P-08: "Download my data" in the account page (JSON and a readable PDF); the processors list comes from Section 4</td></tr>
+<tr><td>Correction</td><td>Name, e-mail, phone (with re-verification), addresses and children's sizes are editable. School and grade come from the roster and are corrected through the school or support.</td><td>Say so in the notice; support handles roster corrections within the grievance window</td></tr>
+<tr><td>Erasure</td><td>Not offered. Support can disable an account; nothing is deleted.</td><td>P-08: "Delete my account" request; Engineering runs the anonymisation job after the retention checks (tax records stay, identifiers go)</td></tr>
+<tr><td>Withdraw consent</td><td>Not offered.</td><td>Same path as erasure; stops all processing that is not legally required</td></tr>
+<tr><td>Grievance</td><td>Concern portal and support e-mail exist; no named officer, no published response time.</td><td>P-10: publish the officer and the response time; tag privacy complaints in the concern portal so they are tracked</td></tr>
+<tr><td>Nomination</td><td>Not offered.</td><td>Add a "nominated contact" field to the parent profile (low priority)</td></tr>
+</tbody></table>
+</section>
+
+<section class="sec">
+<div class="section-hd"><span class="num">11</span><h2>Breach response</h2></div>
+<p class="lead">A personal-data breach is any unauthorised access, disclosure, loss or alteration of personal data. This is the procedure; it is short on purpose so it is followed under pressure.</p>
+<table><thead><tr><th style="width:14%">When</th><th style="width:26%">Who</th><th>Does what</th></tr></thead><tbody>
+<tr><td>Hour 0</td><td>Whoever notices (monitor e-mail, staff, parent, partner)</td><td>Tells the owner and it@inventre.in. Nothing is deleted or rebooted before the Engineering lead has taken a snapshot (the 6-hourly snapshot script can be run by hand).</td></tr>
+<tr><td>Hour 0–2</td><td>Engineering lead</td><td>Contains: rotate the affected secret, revoke sessions if needed, block the source, put the maintenance page up if the storefront itself is compromised. Records a timeline in a shared note.</td></tr>
+<tr><td>Hour 2–24</td><td>Engineering lead + owner</td><td>Scopes: which tables, how many families, which children's data, whether photos or fee data are involved. Uses the activity log, server logs and database queries. Decides whether personal data was actually exposed.</td></tr>
+<tr><td>Within 72 hours</td><td>Owner (or grievance officer)</td><td>Notifies the Data Protection Board in the prescribed form with the facts known so far, then the detailed report within the period the Rules set. Keeps counsel informed.</td></tr>
+<tr><td>Without undue delay</td><td>Owner + operations lead</td><td>Notifies each affected parent (SMS or e-mail, in plain language): what happened, what data, what we did, what they should do (for example change their password), whom to contact. Informs the affected schools first.</td></tr>
+<tr><td>Within 2 weeks</td><td>Engineering lead</td><td>Root cause and fixes written up; this document and the HLD register updated; a drill scheduled.</td></tr>
+</tbody></table>
+<div class="callout"><span class="t">Precedent</span><p>The June–July 2026 root compromise was contained (backdoor removed, key-only SSH enforced, watchdogs added, secrets rotated in September). No evidence of data exfiltration was found, but under the Act the same event today would require an assessment against the notification duty. This procedure exists so that assessment is fast and documented next time.</p></div>
+</section>
+
+<section class="sec">
+<div class="section-hd"><span class="num">12</span><h2>Findings and action plan</h2></div>
+<p class="lead">Ordered by risk. Effort: S under a day, M under a week, L longer. Engineering can do every technical item; the owner's decisions in Section 1 unblock the rest.</p>
+<table class="register"><thead><tr><th style="width:8%">ID</th><th style="width:10%">Priority</th><th style="width:34%">Finding</th><th>Action</th><th style="width:7%">Effort</th><th style="width:12%">Owner</th></tr></thead><tbody>
+<tr><td>P-01</td><td><span class="pill bad">Now</span></td><td>OTP codes stored in plain text in <code>otp_logs</code>, forever</td><td>Stop writing the code; keep phone, purpose, outcome, error; purge existing codes; 90-day retention job</td><td>S</td><td>Engineering</td></tr>
+<tr><td>P-02</td><td><span class="pill bad">Now</span></td><td>Parents' exchange and concern photos in a publicly readable bucket</td><td>Move uploads to a private bucket or prefix; serve through a signed URL that only the parent, admins and the ERP can obtain; delete 180 days after case closure</td><td>M</td><td>Engineering</td></tr>
+<tr><td>P-03</td><td><span class="pill bad">Now</span></td><td>Database password not yet rotated after the 2026 compromise</td><td>Owner runs the prepared rotation script</td><td>S</td><td>Owner</td></tr>
+<tr><td>P-04</td><td><span class="pill warn">High</span></td><td>No retention or erasure anywhere</td><td>Owner approves Section 6; Engineering implements nightly anonymisation and deletion jobs with a dry-run report first</td><td>M</td><td>Owner then Engineering</td></tr>
+<tr><td>P-05</td><td><span class="pill warn">High</span></td><td>Unused sensitive child fields imported (date of birth, blood group, student mobile, picture)</td><td>Drop from importers and schema; null existing values</td><td>S</td><td>Engineering</td></tr>
+<tr><td>P-06</td><td><span class="pill warn">High</span></td><td>No privacy notice</td><td>Draft from Section 8.3; counsel review; publish at /privacy, link from login, footer and fee console; record the notice version with terms acceptance</td><td>M</td><td>Owner, counsel, Engineering</td></tr>
+<tr><td>P-07</td><td><span class="pill warn">High</span></td><td>Processor terms missing or informal (Audit ERP, SMS vendor); school agreements silent on roster sharing</td><td>Internal data-sharing note with the ERP team; data-processing clause with the SMS vendor; add roster-sharing and fee-processing clauses to school agreements</td><td>M</td><td>Owner</td></tr>
+<tr><td>P-08</td><td><span class="pill warn">High</span></td><td>No self-service access copy or erasure request</td><td>Account page: "Download my data" and "Delete my account"; requests tracked in the concern portal; anonymisation job from P-04</td><td>M</td><td>Engineering</td></tr>
+<tr><td>P-09</td><td><span class="pill warn">High</span></td><td>No written breach procedure</td><td>Adopt Section 11; pre-write the Board and parent notification templates; run one tabletop drill</td><td>S</td><td>Owner, Engineering</td></tr>
+<tr><td>P-10</td><td><span class="pill warn">High</span></td><td>No grievance officer</td><td>Appoint, publish name/e-mail on the site and in the notice, set the response target</td><td>S</td><td>Owner</td></tr>
+<tr><td>P-11</td><td><span class="pill neutral">Medium</span></td><td>Consent basis for children's data not documented</td><td>Record the reasoning in this document's next revision; per-child consent timestamp when a child is added</td><td>S</td><td>Engineering, counsel</td></tr>
+<tr><td>P-12</td><td><span class="pill neutral">Medium</span></td><td>Nothing prevents a future analytics or advertising script on the storefront</td><td>Architecture test: no third-party script tags in storefront layouts; note in the design docs</td><td>S</td><td>Engineering</td></tr>
+<tr><td>P-13</td><td><span class="pill neutral">Medium</span></td><td>Activity-log diffs carry personal data indefinitely</td><td>2-year online retention, then archive-only</td><td>S</td><td>Engineering</td></tr>
+<tr><td>P-14</td><td><span class="pill neutral">Medium</span></td><td>Data location of the Microsoft 365 tenant and R2 bucket not confirmed</td><td>Check tenant region and bucket location; record here</td><td>S</td><td>Engineering</td></tr>
+</tbody></table>
+<p class="small">Sources: production schema <code>db/schema.ts</code> and migrations, <code>server/</code> code, deployment and backup configuration as of 2026-09-23; Digital Personal Data Protection Act 2023 and the DPDP Rules 2025 as generally understood at the date of writing. Legal interpretation to be confirmed by counsel.</p>
+</section>
+</body></html>
