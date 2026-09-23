@@ -48,7 +48,9 @@ const nextConfig = {
   // production build for reasons unrelated to the code. The gate that matters
   // is the deterministic one in the deploy preflight.
   //
-  // eslint: there is no ESLint config in this repo at all; `next lint` offers
+  // eslint: eslint.config.mjs exists and `npm run lint` runs in CI; the build
+  // does not repeat it (it would double the build time for the same result).
+  // Historical note — this comment once said the config did not exist.
   // to create one. Enabling it is a separate piece of work, not a flag flip.
   typescript: { ignoreBuildErrors: true },
   eslint: { ignoreDuringBuilds: true },
@@ -63,6 +65,8 @@ const nextConfig = {
   // Compress with Brotli at the edge instead — smaller, faster
   compress: true,
   poweredByHeader: false,
+  // `images` is kept for next/image adoption; today every storefront image
+  // is a plain <img> served from R2 (see F-12 in the HLD register).
   images: {
     formats: ["image/avif", "image/webp"],
     remotePatterns: [

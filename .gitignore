@@ -159,3 +159,8 @@ db_backups/
 # scripts/deploy.sh regenerate it at build time, and scripts/start.sh runs the
 # generated copy at /app/db/migrate.js — nothing reads the tracked one.
 db/migrate.js
+
+# Business deliverables never live at the repo root (F-20); they go to /root/deliverables
+/*.xlsx
+/*.pdf
+/*.docx
