@@ -118,6 +118,65 @@ type Coverage = {
 /** A real MCB receipt line, fetched live when a student is expanded. See
  *  app/api/admin/mcb/fees/receipts/route.ts for why this cannot come from
  *  the receivables table we already hold. */
+type AgeCell = { balance: number; students: number };
+type AgeRow = { name: string; code?: string | null; firstDue: string | null; total: number; buckets: Record<string, AgeCell> };
+type Ageing = {
+  asOf: string;
+  buckets: Record<string, AgeCell & { installments: number }>;
+  total: number;
+  schools: AgeRow[];
+  heads: AgeRow[];
+  installments: AgeRow[];
+  left: { balance: number; students: number };
+};
+/** Bucket order is the order of the tiles, the bar and the matrix columns:
+ *  future first, then older and older. Tone steps from Billed-blue (not a
+ *  problem yet) through deepening Outstanding-orange — one role, darkening,
+ *  rather than a fifth accent. */
+const AGE_BUCKETS: { key: string; label: string; short: string; since: string; tone: string }[] = [
+  { key: "not_due", label: "Not due yet", short: "Not due", since: "", tone: "future" },
+  { key: "d0_30", label: "Overdue under a month", short: "< 1 month", since: "under a month", tone: "a1" },
+  { key: "d31_60", label: "Overdue 1 to 2 months", short: "1–2 months", since: "over a month", tone: "a2" },
+  { key: "d61_90", label: "Overdue 2 to 3 months", short: "2–3 months", since: "over two months", tone: "a3" },
+  { key: "d91_180", label: "Overdue 3 to 6 months", short: "3–6 months", since: "over three months", tone: "a4" },
+  { key: "d180p", label: "Overdue more than 6 months", short: "6+ months", since: "over six months", tone: "a5" },
+  { key: "no_due", label: "No due date given by MCB", short: "No date", since: "", tone: "none" },
+]
+
+type Collection = {
+  asOf: string;
+  buckets: Record<string, AgeCell & { installments: number; avgDaysLate: number | null }>;
+  total: number;
+  schools: AgeRow[];
+  heads: AgeRow[];
+  installments: AgeRow[];
+  partial: { balance: number; students: number };
+};
+type CollStudent = {
+  enrolment: string; student: string; branch: string; code: string | null;
+  className: string; section: string; lines: string; installments: number;
+  lastPaid: string | null; daysLate: number | null; avgDaysLate: number | null; balance: number;
+};
+type CollList = { bucket: string; page: number; pageSize: number; total: number; balance: number; rows: CollStudent[] };
+/** Collection buckets: green for money that arrived by the due date, then
+ *  the same darkening orange as the receivables cards for later and later. */
+const COLL_BUCKETS: { key: string; label: string; short: string; tone: string }[] = [
+  { key: "on_time", label: "Paid by the due date", short: "On time", tone: "in" },
+  { key: "l1_30", label: "Paid under a month late", short: "< 1 month", tone: "a1" },
+  { key: "l31_60", label: "Paid 1 to 2 months late", short: "1–2 months", tone: "a2" },
+  { key: "l61_90", label: "Paid 2 to 3 months late", short: "2–3 months", tone: "a3" },
+  { key: "l91_180", label: "Paid 3 to 6 months late", short: "3–6 months", tone: "a4" },
+  { key: "l180p", label: "Paid over 6 months late", short: "6+ months", tone: "a5" },
+  { key: "unmatched", label: "Paid, receipt not matched", short: "No receipt", tone: "none" },
+];
+
+type AgeStudent = {
+  enrolment: string; student: string; branch: string; code: string | null;
+  className: string; section: string; heads: string; lines: string;
+  installments: number; oldestDue: string | null; daysOverdue: number | null; balance: number;
+};
+type AgeList = { bucket: string; page: number; pageSize: number; total: number; balance: number; rows: AgeStudent[] };
+
 type Receipt = {
   receiptNo: string | null; paidDate: string | null; amount: number;
   mode: string | null; feeType: string | null; transactionId: string | null;
@@ -198,6 +257,20 @@ export default function FeeConsole({
   const [receipts, setReceipts] = useState<Record<string, ReceiptState>>({});
   const [allHeads, setAllHeads] = useState(false);
   const [coverage, setCoverage] = useState<Coverage | null>(null);
+  const [ageing, setAgeing] = useState<Ageing | null>(null);
+  const [ageBy, setAgeBy] = useState<"schools" | "heads" | "installments">("schools");
+  const [ageBucket, setAgeBucket] = useState<string | null>(null);
+  const [agePage, setAgePage] = useState(1);
+  const [ageQInput, setAgeQInput] = useState("");
+  const [ageQ, setAgeQ] = useState("");
+  const [ageList, setAgeList] = useState<AgeList | null>(null);
+  const [collection, setCollection] = useState<Collection | null>(null);
+  const [collBy, setCollBy] = useState<"schools" | "heads" | "installments">("schools");
+  const [collBucket, setCollBucket] = useState<string | null>(null);
+  const [collPage, setCollPage] = useState(1);
+  const [collQInput, setCollQInput] = useState("");
+  const [collQ, setCollQ] = useState("");
+  const [collList, setCollList] = useState<CollList | null>(null);
   const [busy, setBusy] = useState(0);
   /** Bumped when the tab regains focus, so a dashboard left open overnight
    *  reloads its figures instead of quietly showing yesterday's. */
@@ -278,6 +351,79 @@ export default function FeeConsole({
     );
     return () => { dead = true; };
   }, [scope, ayParam, tick]);  
+
+  // Receivables ageing follows (year, scope) too.
+  useEffect(() => {
+    let dead = false;
+    setAgeing(null);
+    track(
+      fetch(`/api/admin/mcb/fees?view=ageing&school=${encodeURIComponent(scope)}${ayParam}`)
+        .then((r) => r.json())
+        .then((d) => {
+          if (!dead) setAgeing(d?.buckets ? d : null);
+        })
+        .catch(() => {})
+    );
+    return () => { dead = true; };
+  }, [scope, ayParam, tick]);
+
+  // Collection ageing follows (year, scope) as well.
+  useEffect(() => {
+    let dead = false;
+    setCollection(null);
+    track(
+      fetch(`/api/admin/mcb/fees?view=collection&school=${encodeURIComponent(scope)}${ayParam}`)
+        .then((r) => r.json())
+        .then((d) => { if (!dead) setCollection(d?.buckets ? d : null); })
+        .catch(() => {})
+    );
+    return () => { dead = true; };
+  }, [scope, ayParam, tick]);
+
+  // Bucket search debounce.
+  useEffect(() => {
+    const t = setTimeout(() => { setAgeQ(ageQInput.trim()); setAgePage(1); }, 300);
+    return () => clearTimeout(t);
+  }, [ageQInput]);
+  useEffect(() => {
+    const t = setTimeout(() => { setCollQ(collQInput.trim()); setCollPage(1); }, 300);
+    return () => clearTimeout(t);
+  }, [collQInput]);
+
+  // A new scope or year drops the open bucket — its figures no longer apply.
+  useEffect(() => { setAgeBucket(null); setAgePage(1); setCollBucket(null); setCollPage(1); }, [scope, ayParam]);
+
+  // Who paid in the clicked collection bucket.
+  useEffect(() => {
+    if (!collBucket) { setCollList(null); return; }
+    let dead = false;
+    track(
+      fetch(
+        `/api/admin/mcb/fees?view=collection&school=${encodeURIComponent(scope)}${ayParam}` +
+        `&bucket=${collBucket}&page=${collPage}${collQ ? `&q=${encodeURIComponent(collQ)}` : ""}`
+      )
+        .then((r) => r.json())
+        .then((d) => { if (!dead) setCollList(d?.rows ? d : null); })
+        .catch(() => {})
+    );
+    return () => { dead = true; };
+  }, [scope, ayParam, collBucket, collPage, collQ, tick]);
+
+  // Who owes in the clicked bucket.
+  useEffect(() => {
+    if (!ageBucket) { setAgeList(null); return; }
+    let dead = false;
+    track(
+      fetch(
+        `/api/admin/mcb/fees?view=ageing&school=${encodeURIComponent(scope)}${ayParam}` +
+        `&bucket=${ageBucket}&page=${agePage}${ageQ ? `&q=${encodeURIComponent(ageQ)}` : ""}`
+      )
+        .then((r) => r.json())
+        .then((d) => { if (!dead) setAgeList(d?.rows ? d : null); })
+        .catch(() => {})
+    );
+    return () => { dead = true; };
+  }, [scope, ayParam, ageBucket, agePage, ageQ, tick]);
 
   // The ledger.
   useEffect(() => {
@@ -423,8 +569,9 @@ export default function FeeConsole({
   /** True while the selected year still has instalments left to raise. */
   const partYear = Boolean(coverage && coverage.billedCount < coverage.expectedCount);
   /* Name them while they still fit; past three, a count reads better than
-     a run-on list. (The old copy said "All five schools" — there are seven
-     since the Pune branches were added, so this counts rather than states.) */
+     a run-on list. Both this and the intro line COUNT rather than state a
+     number: the copy has gone stale twice already as branches were added
+     (five → seven with Pune, → eight with Agra). */
   const scopeLabel = useMemo(() => {
     if (!selected.length) return `All ${schools.length} schools`;
     const names = schools.filter((s) => selected.includes(s.code)).map((s) => s.name);
@@ -455,8 +602,8 @@ export default function FeeConsole({
             <em>Who has not.</em>
           </h1>
           <p className="fx-sub">
-            Every billed installment across the five MCB schools — what was charged, what was
-            conceded, what came in, and what is still outstanding.
+            Every billed installment across the {schools.length} MCB schools — what was charged,
+            what was conceded, what came in, and what is still outstanding.
           </p>
         </div>
         <div className="fx-top-right">
@@ -622,9 +769,77 @@ export default function FeeConsole({
         })}
       </section>
 
+      {/* ── receivables ageing ───────────────────────────────────── */}
+      <div className="fx-sec">
+        <h2>02 — Fee ageing</h2>
+        <span className="kicker">
+          {scopeLabel} · how long the unpaid fees have been overdue
+          {ageing ? ` · as of ${fmtDate(ageing.asOf)}` : ""}
+        </span>
+        <span className="fx-exports">
+          <a
+            className="fx-csv"
+            href={`/api/admin/mcb/fees?view=ageing&format=xlsx&school=${encodeURIComponent(scope)}${ayParam}`}
+            title="Excel — one row per unpaid installment with its due date, days overdue and bucket"
+          >
+            Ageing Excel ↓
+          </a>
+        </span>
+      </div>
+      <AgeingPanel
+        ageing={ageing}
+        by={ageBy}
+        setBy={setAgeBy}
+        bucket={ageBucket}
+        setBucket={(k) => { setAgeBucket(k); setAgePage(1); setAgeQInput(""); }}
+        list={ageList}
+        page={agePage}
+        setPage={setAgePage}
+        qInput={ageQInput}
+        setQInput={setAgeQInput}
+        exportBase={`/api/admin/mcb/fees?view=ageing&format=xlsx&school=${encodeURIComponent(scope)}${ayParam}`}
+        consolidated={selected.length === 0}
+        onSchool={(code) => focusSchool(code)}
+        onHead={(h) => selectHead(h)}
+      />
+
+      {/* ── collection ageing ────────────────────────────────────── */}
+      <div className="fx-sec">
+        <h2>03 — Collection ageing</h2>
+        <span className="kicker">
+          {scopeLabel} · how long after the due date the paid fees came in
+          {collection ? ` · as of ${fmtDate(collection.asOf)}` : ""}
+        </span>
+        <span className="fx-exports">
+          <a
+            className="fx-csv"
+            href={`/api/admin/mcb/fees?view=collection&format=xlsx&school=${encodeURIComponent(scope)}${ayParam}`}
+            title="Excel — one row per paid installment with its due date, paid date and days late"
+          >
+            Collection Excel ↓
+          </a>
+        </span>
+      </div>
+      <CollectionPanel
+        data={collection}
+        by={collBy}
+        setBy={setCollBy}
+        bucket={collBucket}
+        setBucket={(k) => { setCollBucket(k); setCollPage(1); setCollQInput(""); }}
+        list={collList}
+        page={collPage}
+        setPage={setCollPage}
+        qInput={collQInput}
+        setQInput={setCollQInput}
+        consolidated={selected.length === 0}
+        onSchool={(code) => focusSchool(code)}
+        onHead={(h) => selectHead(h)}
+        exportBase={`/api/admin/mcb/fees?view=collection&format=xlsx&school=${encodeURIComponent(scope)}${ayParam}`}
+      />
+
       {/* ── fee-type index ───────────────────────────────────────── */}
       <div className="fx-sec">
-        <h2>02 — Fee type</h2>
+        <h2>04 — Fee type</h2>
         <span className="kicker">
           {heads ? `${heads.length} types billed` : "loading"} · ordered by amount billed
         </span>
@@ -690,7 +905,7 @@ export default function FeeConsole({
 
       {/* ── ledger ───────────────────────────────────────────────── */}
       <div className="fx-sec">
-        <h2>03 — {head ?? "Ledger"}</h2>
+        <h2>05 — {head ?? "Ledger"}</h2>
         <span className="kicker">
           {scopeLabel}
           {students ? ` · ${n0(students.totals.students)} students billed` : ""}
@@ -1133,6 +1348,490 @@ function ReceiptsPanel({
    like collapse and is nothing of the sort — 2026-27 is 36% AHEAD on the
    same five instalments. A number that invites the wrong conclusion needs
    its denominator on the page, not in someone's head. */
+function AgeingPanel({
+  ageing, by, setBy, consolidated, onSchool, onHead,
+  bucket, setBucket, list, page, setPage, qInput, setQInput, exportBase,
+}: {
+  ageing: Ageing | null;
+  by: "schools" | "heads" | "installments";
+  setBy: (b: "schools" | "heads" | "installments") => void;
+  consolidated: boolean;
+  onSchool: (code: string) => void;
+  onHead: (head: string) => void;
+  bucket: string | null;
+  setBucket: (k: string | null) => void;
+  list: AgeList | null;
+  page: number;
+  setPage: (p: number) => void;
+  qInput: string;
+  setQInput: (v: string) => void;
+  exportBase: string;
+}) {
+  if (!ageing) {
+    return <section className="fx-age"><div className="fx-empty">Working out how old the dues are…</div></section>;
+  }
+  const total = ageing.total;
+  if (total <= 0) {
+    return (
+      <section className="fx-age">
+        <div className="fx-empty">Nothing is outstanding here. Every instalment due so far has been paid.</div>
+      </section>
+    );
+  }
+  const amt = (k: string) => ageing.buckets[k]?.balance ?? 0;
+  const overdue = AGE_BUCKETS.filter((b) => b.tone.startsWith("a")).reduce((a, b) => a + amt(b.key), 0);
+  const notDue = amt("not_due");
+  const oldest = AGE_BUCKETS.filter((b) => b.tone.startsWith("a") && amt(b.key) > 0).pop();
+  // Cards read left to right from the newest debt to the oldest, the way an
+  // ageing report is laid out; only buckets that hold money appear.
+  const cards = AGE_BUCKETS.filter((b) => amt(b.key) > 0);
+  const biggest = Math.max(...cards.map((b) => amt(b.key)));
+  const cols = cards;
+  // A one-school scope broken down by school is a single row repeating the
+  // headline — skip to fee type instead.
+  const effBy = !consolidated && by === "schools" ? "heads" : by;
+  const table = ageing[effBy];
+  const open = bucket ? AGE_BUCKETS.find((b) => b.key === bucket) : null;
+  const pages = list ? Math.max(1, Math.ceil(list.total / list.pageSize)) : 1;
+
+  return (
+    <section className="fx-age">
+      <p className="fx-age-lead">
+        <b className="is-out">{inrShort(overdue)}</b> is overdue
+        {oldest && oldest.key !== "d0_30" ? <>, some of it for {oldest.since}</> : null}.
+        {notDue > 0 ? (
+          <> Another <b className="is-bill">{inrShort(notDue)}</b> is billed but not due yet.</>
+        ) : null}
+        <span className="fx-age-hint"> Click a card to see who owes it.</span>
+      </p>
+
+      <div className="fx-age-cards">
+        {cards.map((b) => {
+          const v = amt(b.key);
+          const c = ageing.buckets[b.key];
+          const on = bucket === b.key;
+          return (
+            <button
+              key={b.key}
+              className="fx-age-card"
+              data-tone={b.tone}
+              data-on={on ? "1" : "0"}
+              onClick={() => setBucket(on ? null : b.key)}
+            >
+              <div className="fx-age-card-label">{b.label}</div>
+              <div className="fx-age-card-amt">{inrShort(v)}</div>
+              <div className="fx-age-card-bar"><i style={{ width: `${(v / biggest) * 100}%` }} /></div>
+              <div className="fx-age-card-meta">{pctLabel(v, total)} · {n0(c.students)} students</div>
+            </button>
+          );
+        })}
+      </div>
+
+      {open ? (
+        <div className="fx-age-detail" data-tone={open.tone}>
+          <div className="fx-age-detail-head">
+            <div>
+              <div className="kicker">{open.label}</div>
+              <div className="fx-age-detail-sum">
+                {list ? <>{n0(list.total)} students owe <b>{inrShort(list.balance)}</b></> : "Loading…"}
+              </div>
+            </div>
+            <input
+              className="fx-input"
+              placeholder="Search name or enrolment"
+              value={qInput}
+              onChange={(e) => setQInput(e.target.value)}
+            />
+            <span className="fx-exports">
+              <a className="fx-csv" href={`${exportBase}&bucket=${open.key}`}
+                 title="Excel — one row per unpaid instalment in this bucket">
+                This bucket Excel ↓
+              </a>
+              <button className="fx-page" onClick={() => setBucket(null)}>Close</button>
+            </span>
+          </div>
+          <div className="fx-tablewrap">
+            <table className="fx-table fx-age-list">
+              <colgroup>
+                <col style={{ width: "26%" }} />
+                <col style={{ width: "12%" }} />
+                <col />
+                <col style={{ width: "12%" }} />
+                <col style={{ width: "13%" }} />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th>Student</th>
+                  <th>Class</th>
+                  <th>Unpaid instalments</th>
+                  <th>Oldest due</th>
+                  <th className="num">Owes</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(list?.rows ?? []).map((r) => (
+                  <tr key={r.enrolment}>
+                    <td>
+                      <div className="fx-age-stu">{r.student}</div>
+                      <div className="fx-age-sub mono">{r.enrolment}{consolidated && r.code ? ` · ${r.code}` : ""}</div>
+                    </td>
+                    <td>{shortGrade(r.className)}{r.section ? ` ${r.section}` : ""}</td>
+                    <td className="fx-age-lines" title={r.lines}>{r.lines}</td>
+                    <td>
+                      {fmtDate(r.oldestDue)}
+                      {r.daysOverdue != null && r.daysOverdue > 0 ? (
+                        <div className="fx-age-sub">{n0(r.daysOverdue)} days ago</div>
+                      ) : null}
+                    </td>
+                    <td className="num fx-owe">{inr(r.balance)}</td>
+                  </tr>
+                ))}
+                {list && list.rows.length === 0 ? (
+                  <tr><td colSpan={5}><div className="fx-empty">No one matches.</div></td></tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+          {list && pages > 1 ? (
+            <div className="fx-pager">
+              <button className="fx-page" disabled={page <= 1} onClick={() => setPage(page - 1)}>← Previous</button>
+              <span className="kicker">Page {page} of {n0(pages)}</span>
+              <button className="fx-page" disabled={page >= pages} onClick={() => setPage(page + 1)}>Next →</button>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
+      <p className="fx-age-note">
+        Counted per instalment: a student who has missed three months appears in three rows.
+        {ageing.left.balance > 0 ? (
+          <> Not counted: {inrShort(ageing.left.balance)} owed by {n0(ageing.left.students)} students who have left the school.</>
+        ) : null}
+      </p>
+
+      <div className="fx-age-by">
+        <span className="kicker">See the same by</span>
+        {(consolidated
+          ? (["schools", "heads", "installments"] as const)
+          : (["heads", "installments"] as const)
+        ).map((k) => (
+          <button key={k} className="fx-chip" data-on={effBy === k ? "1" : "0"} onClick={() => setBy(k)}>
+            {k === "schools" ? "School" : k === "heads" ? "Fee type" : "Instalment"}
+          </button>
+        ))}
+      </div>
+
+      <div className="fx-tablewrap">
+        <table className="fx-table fx-age-table">
+          <colgroup>
+            <col style={{ width: "28%" }} />
+            {cols.map((b) => <col key={b.key} />)}
+            <col />
+          </colgroup>
+          <thead>
+            <tr>
+              <th>{effBy === "schools" ? "School" : effBy === "heads" ? "Fee type" : "Instalment"}</th>
+              {cols.map((b) => (
+                <th key={b.key} className="num" data-tone={b.tone}>{b.short}</th>
+              ))}
+              <th className="num">Total due</th>
+            </tr>
+          </thead>
+          <tbody>
+            {table.map((r) => {
+              const name =
+                effBy === "schools" && r.code ? (
+                  <button className="fx-age-link" onClick={() => onSchool(r.code!)}>{r.name}</button>
+                ) : effBy === "heads" ? (
+                  <button className="fx-age-link" onClick={() => onHead(r.name)}>{r.name}</button>
+                ) : (
+                  <span>{r.name}{r.firstDue ? <span className="fx-age-due">due {fmtDate(r.firstDue)}</span> : null}</span>
+                );
+              return (
+                <tr key={r.name}>
+                  <td className="fx-age-name">{name}</td>
+                  {cols.map((b) => {
+                    const c = r.buckets[b.key];
+                    return (
+                      <td key={b.key} className="num" data-tone={c ? b.tone : undefined}
+                          title={c ? `${n0(c.students)} students` : undefined}>
+                        {c ? inrShort(c.balance) : <span className="fx-age-nil">—</span>}
+                      </td>
+                    );
+                  })}
+                  <td className="num fx-owe">{inrShort(r.total)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+          {table.length > 1 ? (
+            <tfoot>
+              <tr>
+                <td>All</td>
+                {cols.map((b) => (
+                  <td key={b.key} className="num" data-tone={b.tone}>{inrShort(amt(b.key))}</td>
+                ))}
+                <td className="num fx-owe">{inrShort(total)}</td>
+              </tr>
+            </tfoot>
+          ) : null}
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function CollectionPanel({
+  data, by, setBy, consolidated, onSchool, onHead,
+  bucket, setBucket, list, page, setPage, qInput, setQInput, exportBase,
+}: {
+  data: Collection | null;
+  by: "schools" | "heads" | "installments";
+  setBy: (b: "schools" | "heads" | "installments") => void;
+  consolidated: boolean;
+  onSchool: (code: string) => void;
+  onHead: (head: string) => void;
+  bucket: string | null;
+  setBucket: (k: string | null) => void;
+  list: CollList | null;
+  page: number;
+  setPage: (p: number) => void;
+  qInput: string;
+  setQInput: (v: string) => void;
+  exportBase: string;
+}) {
+  if (!data) {
+    return <section className="fx-age"><div className="fx-empty">Working out how quickly fees were paid…</div></section>;
+  }
+  const total = data.total;
+  if (total <= 0) {
+    return (
+      <section className="fx-age">
+        <div className="fx-empty">No instalment has been paid in full yet in this scope.</div>
+      </section>
+    );
+  }
+  const amt = (k: string) => data.buckets[k]?.balance ?? 0;
+  const onTime = amt("on_time");
+  const unmatched = amt("unmatched");
+  const matched = total - unmatched;
+  const lateKeys = COLL_BUCKETS.filter((b) => b.tone.startsWith("a"));
+  const late = lateKeys.reduce((a, b) => a + amt(b.key), 0);
+  // Weighted average lateness across the late buckets, from the per-bucket
+  // averages the API returns.
+  let lateInst = 0, lateDays = 0;
+  for (const b of lateKeys) {
+    const c = data.buckets[b.key];
+    if (c && c.avgDaysLate != null) { lateInst += c.installments; lateDays += c.avgDaysLate * c.installments; }
+  }
+  const avgLate = lateInst > 0 ? Math.round(lateDays / lateInst) : null;
+  const cards = COLL_BUCKETS.filter((b) => amt(b.key) > 0);
+  const biggest = Math.max(...cards.map((b) => amt(b.key)));
+  const cols = cards;
+  const effBy = !consolidated && by === "schools" ? "heads" : by;
+  const table = data[effBy];
+  const open = bucket ? COLL_BUCKETS.find((b) => b.key === bucket) : null;
+  const pages = list ? Math.max(1, Math.ceil(list.total / list.pageSize)) : 1;
+
+  return (
+    <section className="fx-age">
+      <p className="fx-age-lead">
+        {matched > 0 ? (
+          <>
+            <b className="is-in">{pctLabel(onTime, matched)}</b> of the fees paid arrived by the due date
+            {late > 0 && avgLate != null ? <>. The rest came in <b className="is-out">{n0(avgLate)} days</b> late on average</> : null}.
+          </>
+        ) : (
+          <>None of the paid instalments could be matched to a receipt yet.</>
+        )}
+        <span className="fx-age-hint"> Click a card to see who paid when.</span>
+      </p>
+
+      <div className="fx-age-cards">
+        {cards.map((b) => {
+          const v = amt(b.key);
+          const c = data.buckets[b.key];
+          const on = bucket === b.key;
+          return (
+            <button
+              key={b.key}
+              className="fx-age-card"
+              data-tone={b.tone}
+              data-on={on ? "1" : "0"}
+              onClick={() => setBucket(on ? null : b.key)}
+            >
+              <div className="fx-age-card-label">{b.label}</div>
+              <div className="fx-age-card-amt">{inrShort(v)}</div>
+              <div className="fx-age-card-bar"><i style={{ width: `${(v / biggest) * 100}%` }} /></div>
+              <div className="fx-age-card-meta">
+                {pctLabel(v, total)} · {n0(c.students)} students
+                {c.avgDaysLate != null && b.tone.startsWith("a") ? ` · avg ${n0(c.avgDaysLate)} days` : ""}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
+      {open ? (
+        <div className="fx-age-detail" data-tone={open.tone}>
+          <div className="fx-age-detail-head">
+            <div>
+              <div className="kicker">{open.label}</div>
+              <div className="fx-age-detail-sum">
+                {list ? <>{n0(list.total)} students paid <b className="is-in">{inrShort(list.balance)}</b></> : "Loading…"}
+              </div>
+            </div>
+            <input
+              className="fx-input"
+              placeholder="Search name or enrolment"
+              value={qInput}
+              onChange={(e) => setQInput(e.target.value)}
+            />
+            <span className="fx-exports">
+              <a className="fx-csv" href={`${exportBase}&bucket=${open.key}`}
+                 title="Excel — one row per paid instalment in this bucket">
+                This bucket Excel ↓
+              </a>
+              <button className="fx-page" onClick={() => setBucket(null)}>Close</button>
+            </span>
+          </div>
+          <div className="fx-tablewrap">
+            <table className="fx-table fx-age-list">
+              <colgroup>
+                <col style={{ width: "26%" }} />
+                <col style={{ width: "10%" }} />
+                <col />
+                <col style={{ width: "12%" }} />
+                <col style={{ width: "11%" }} />
+                <col style={{ width: "12%" }} />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th>Student</th>
+                  <th>Class</th>
+                  <th>Instalments paid</th>
+                  <th>Last paid on</th>
+                  <th className="num">Days late</th>
+                  <th className="num">Paid</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(list?.rows ?? []).map((r) => (
+                  <tr key={r.enrolment}>
+                    <td>
+                      <div className="fx-age-stu">{r.student}</div>
+                      <div className="fx-age-sub mono">{r.enrolment}{consolidated && r.code ? ` · ${r.code}` : ""}</div>
+                    </td>
+                    <td>{shortGrade(r.className)}{r.section ? ` ${r.section}` : ""}</td>
+                    <td className="fx-age-lines" title={r.lines}>{r.lines}</td>
+                    <td>{fmtDate(r.lastPaid)}</td>
+                    <td className="num">
+                      {r.daysLate == null ? "—" : r.daysLate <= 0 ? <span className="fx-paid">on time</span> : n0(r.daysLate)}
+                      {r.avgDaysLate != null && r.installments > 1 && r.daysLate != null && r.daysLate > 0 ? (
+                        <div className="fx-age-sub">avg {n0(r.avgDaysLate)}</div>
+                      ) : null}
+                    </td>
+                    <td className="num fx-paid">{inr(r.balance)}</td>
+                  </tr>
+                ))}
+                {list && list.rows.length === 0 ? (
+                  <tr><td colSpan={6}><div className="fx-empty">No one matches.</div></td></tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+          {list && pages > 1 ? (
+            <div className="fx-pager">
+              <button className="fx-page" disabled={page <= 1} onClick={() => setPage(page - 1)}>← Previous</button>
+              <span className="kicker">Page {page} of {n0(pages)}</span>
+              <button className="fx-page" disabled={page >= pages} onClick={() => setPage(page + 1)}>Next →</button>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
+      <p className="fx-age-note">
+        Counted per fully paid instalment, dated by its latest MCB receipt.
+        {unmatched > 0 ? (
+          <> {inrShort(unmatched)} was paid but has no receipt line we could match, so its timing is unknown.</>
+        ) : null}
+        {data.partial.balance > 0 ? (
+          <> Not counted: {inrShort(data.partial.balance)} of part-payments on instalments still open.</>
+        ) : null}
+      </p>
+
+      <div className="fx-age-by">
+        <span className="kicker">See the same by</span>
+        {(consolidated
+          ? (["schools", "heads", "installments"] as const)
+          : (["heads", "installments"] as const)
+        ).map((k) => (
+          <button key={k} className="fx-chip" data-on={effBy === k ? "1" : "0"} onClick={() => setBy(k)}>
+            {k === "schools" ? "School" : k === "heads" ? "Fee type" : "Instalment"}
+          </button>
+        ))}
+      </div>
+
+      <div className="fx-tablewrap">
+        <table className="fx-table fx-age-table">
+          <colgroup>
+            <col style={{ width: "28%" }} />
+            {cols.map((b) => <col key={b.key} />)}
+            <col />
+          </colgroup>
+          <thead>
+            <tr>
+              <th>{effBy === "schools" ? "School" : effBy === "heads" ? "Fee type" : "Instalment"}</th>
+              {cols.map((b) => (
+                <th key={b.key} className="num" data-tone={b.tone}>{b.short}</th>
+              ))}
+              <th className="num">Total paid</th>
+            </tr>
+          </thead>
+          <tbody>
+            {table.map((r) => {
+              const name =
+                effBy === "schools" && r.code ? (
+                  <button className="fx-age-link" onClick={() => onSchool(r.code!)}>{r.name}</button>
+                ) : effBy === "heads" ? (
+                  <button className="fx-age-link" onClick={() => onHead(r.name)}>{r.name}</button>
+                ) : (
+                  <span>{r.name}{r.firstDue ? <span className="fx-age-due">due {fmtDate(r.firstDue)}</span> : null}</span>
+                );
+              return (
+                <tr key={r.name}>
+                  <td className="fx-age-name">{name}</td>
+                  {cols.map((b) => {
+                    const c = r.buckets[b.key];
+                    return (
+                      <td key={b.key} className="num" data-tone={c ? b.tone : undefined}
+                          title={c ? `${n0(c.students)} students` : undefined}>
+                        {c ? inrShort(c.balance) : <span className="fx-age-nil">—</span>}
+                      </td>
+                    );
+                  })}
+                  <td className="num fx-paid">{inrShort(r.total)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+          {table.length > 1 ? (
+            <tfoot>
+              <tr>
+                <td>All</td>
+                {cols.map((b) => (
+                  <td key={b.key} className="num" data-tone={b.tone}>{inrShort(amt(b.key))}</td>
+                ))}
+                <td className="num fx-paid">{inrShort(total)}</td>
+              </tr>
+            </tfoot>
+          ) : null}
+        </table>
+      </div>
+    </section>
+  );
+}
+
 function CoverageStrip({ coverage, ay }: { coverage: Coverage | null; ay: string | null }) {
   if (!coverage || coverage.installments.length === 0) return null;
   const { billedCount, expectedCount, priorAy } = coverage;

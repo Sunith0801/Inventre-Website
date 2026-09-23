@@ -221,57 +221,134 @@ CREATE TABLE IF NOT EXISTS public.student_siblings (
 
 DO $$
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'companies_pkey') THEN
+  -- Guard on the TABLE having a primary key, not on the constraint NAME:
+  -- prod carries legacy ERP names for some of these (grades ->
+  -- erp_grades_pkey, guardians -> erp_guardians_pkey), so a name check
+  -- passes and the ALTER then fails with 42P16 "multiple primary keys".
+  IF to_regclass('public.companies') IS NOT NULL AND NOT EXISTS (
+       SELECT 1 FROM pg_constraint
+        WHERE contype = 'p' AND conrelid = to_regclass('public.companies')
+     ) THEN
     ALTER TABLE ONLY public.companies
       ADD CONSTRAINT companies_pkey PRIMARY KEY (id);
   END IF;
 
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'grades_pkey') THEN
+  -- Guard on the TABLE having a primary key, not on the constraint NAME:
+  -- prod carries legacy ERP names for some of these (grades ->
+  -- erp_grades_pkey, guardians -> erp_guardians_pkey), so a name check
+  -- passes and the ALTER then fails with 42P16 "multiple primary keys".
+  IF to_regclass('public.grades') IS NOT NULL AND NOT EXISTS (
+       SELECT 1 FROM pg_constraint
+        WHERE contype = 'p' AND conrelid = to_regclass('public.grades')
+     ) THEN
     ALTER TABLE ONLY public.grades
       ADD CONSTRAINT grades_pkey PRIMARY KEY (id);
   END IF;
 
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'guardians_pkey') THEN
+  -- Guard on the TABLE having a primary key, not on the constraint NAME:
+  -- prod carries legacy ERP names for some of these (grades ->
+  -- erp_grades_pkey, guardians -> erp_guardians_pkey), so a name check
+  -- passes and the ALTER then fails with 42P16 "multiple primary keys".
+  IF to_regclass('public.guardians') IS NOT NULL AND NOT EXISTS (
+       SELECT 1 FROM pg_constraint
+        WHERE contype = 'p' AND conrelid = to_regclass('public.guardians')
+     ) THEN
     ALTER TABLE ONLY public.guardians
       ADD CONSTRAINT guardians_pkey PRIMARY KEY (id);
   END IF;
 
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'payment_schedules_pkey') THEN
+  -- Guard on the TABLE having a primary key, not on the constraint NAME:
+  -- prod carries legacy ERP names for some of these (grades ->
+  -- erp_grades_pkey, guardians -> erp_guardians_pkey), so a name check
+  -- passes and the ALTER then fails with 42P16 "multiple primary keys".
+  IF to_regclass('public.payment_schedules') IS NOT NULL AND NOT EXISTS (
+       SELECT 1 FROM pg_constraint
+        WHERE contype = 'p' AND conrelid = to_regclass('public.payment_schedules')
+     ) THEN
     ALTER TABLE ONLY public.payment_schedules
       ADD CONSTRAINT payment_schedules_pkey PRIMARY KEY (id);
   END IF;
 
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'product_grades_product_id_grade_pk') THEN
+  -- Guard on the TABLE having a primary key, not on the constraint NAME:
+  -- prod carries legacy ERP names for some of these (grades ->
+  -- erp_grades_pkey, guardians -> erp_guardians_pkey), so a name check
+  -- passes and the ALTER then fails with 42P16 "multiple primary keys".
+  IF to_regclass('public.product_grades') IS NOT NULL AND NOT EXISTS (
+       SELECT 1 FROM pg_constraint
+        WHERE contype = 'p' AND conrelid = to_regclass('public.product_grades')
+     ) THEN
     ALTER TABLE ONLY public.product_grades
       ADD CONSTRAINT product_grades_product_id_grade_pk PRIMARY KEY (product_id, grade);
   END IF;
 
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'school_coordinators_pkey') THEN
+  -- Guard on the TABLE having a primary key, not on the constraint NAME:
+  -- prod carries legacy ERP names for some of these (grades ->
+  -- erp_grades_pkey, guardians -> erp_guardians_pkey), so a name check
+  -- passes and the ALTER then fails with 42P16 "multiple primary keys".
+  IF to_regclass('public.school_coordinators') IS NOT NULL AND NOT EXISTS (
+       SELECT 1 FROM pg_constraint
+        WHERE contype = 'p' AND conrelid = to_regclass('public.school_coordinators')
+     ) THEN
     ALTER TABLE ONLY public.school_coordinators
       ADD CONSTRAINT school_coordinators_pkey PRIMARY KEY (id);
   END IF;
 
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'school_grade_mappings_pkey') THEN
+  -- Guard on the TABLE having a primary key, not on the constraint NAME:
+  -- prod carries legacy ERP names for some of these (grades ->
+  -- erp_grades_pkey, guardians -> erp_guardians_pkey), so a name check
+  -- passes and the ALTER then fails with 42P16 "multiple primary keys".
+  IF to_regclass('public.school_grade_mappings') IS NOT NULL AND NOT EXISTS (
+       SELECT 1 FROM pg_constraint
+        WHERE contype = 'p' AND conrelid = to_regclass('public.school_grade_mappings')
+     ) THEN
     ALTER TABLE ONLY public.school_grade_mappings
       ADD CONSTRAINT school_grade_mappings_pkey PRIMARY KEY (id);
   END IF;
 
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'school_uniform_mappings_pkey') THEN
+  -- Guard on the TABLE having a primary key, not on the constraint NAME:
+  -- prod carries legacy ERP names for some of these (grades ->
+  -- erp_grades_pkey, guardians -> erp_guardians_pkey), so a name check
+  -- passes and the ALTER then fails with 42P16 "multiple primary keys".
+  IF to_regclass('public.school_uniform_mappings') IS NOT NULL AND NOT EXISTS (
+       SELECT 1 FROM pg_constraint
+        WHERE contype = 'p' AND conrelid = to_regclass('public.school_uniform_mappings')
+     ) THEN
     ALTER TABLE ONLY public.school_uniform_mappings
       ADD CONSTRAINT school_uniform_mappings_pkey PRIMARY KEY (id);
   END IF;
 
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'student_addresses_pkey') THEN
+  -- Guard on the TABLE having a primary key, not on the constraint NAME:
+  -- prod carries legacy ERP names for some of these (grades ->
+  -- erp_grades_pkey, guardians -> erp_guardians_pkey), so a name check
+  -- passes and the ALTER then fails with 42P16 "multiple primary keys".
+  IF to_regclass('public.student_addresses') IS NOT NULL AND NOT EXISTS (
+       SELECT 1 FROM pg_constraint
+        WHERE contype = 'p' AND conrelid = to_regclass('public.student_addresses')
+     ) THEN
     ALTER TABLE ONLY public.student_addresses
       ADD CONSTRAINT student_addresses_pkey PRIMARY KEY (id);
   END IF;
 
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'student_guardian_links_pkey') THEN
+  -- Guard on the TABLE having a primary key, not on the constraint NAME:
+  -- prod carries legacy ERP names for some of these (grades ->
+  -- erp_grades_pkey, guardians -> erp_guardians_pkey), so a name check
+  -- passes and the ALTER then fails with 42P16 "multiple primary keys".
+  IF to_regclass('public.student_guardian_links') IS NOT NULL AND NOT EXISTS (
+       SELECT 1 FROM pg_constraint
+        WHERE contype = 'p' AND conrelid = to_regclass('public.student_guardian_links')
+     ) THEN
     ALTER TABLE ONLY public.student_guardian_links
       ADD CONSTRAINT student_guardian_links_pkey PRIMARY KEY (id);
   END IF;
 
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'student_siblings_pkey') THEN
+  -- Guard on the TABLE having a primary key, not on the constraint NAME:
+  -- prod carries legacy ERP names for some of these (grades ->
+  -- erp_grades_pkey, guardians -> erp_guardians_pkey), so a name check
+  -- passes and the ALTER then fails with 42P16 "multiple primary keys".
+  IF to_regclass('public.student_siblings') IS NOT NULL AND NOT EXISTS (
+       SELECT 1 FROM pg_constraint
+        WHERE contype = 'p' AND conrelid = to_regclass('public.student_siblings')
+     ) THEN
     ALTER TABLE ONLY public.student_siblings
       ADD CONSTRAINT student_siblings_pkey PRIMARY KEY (id);
   END IF;

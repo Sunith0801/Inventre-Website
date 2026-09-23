@@ -24,6 +24,7 @@ const SCHOOLS: { school_code: string; mcb_branch: string; name: string }[] = [
   { school_code: "WMAWF", mcb_branch: "Winmore Academy Whitefield", name: "Winmore Whitefield" },
   { school_code: "CAGSM", mcb_branch: "Crimson Anisha Global School Marunji", name: "Crimson Anisha Marunji" },
   { school_code: "CAGSU", mcb_branch: "Crimson Anisha Global School Undri", name: "Crimson Anisha Undri" },
+  { school_code: "CWSAG", mcb_branch: "Crimson World School Agra", name: "Crimson World Agra" },
 ];
 
 // Schools where the export should surface the MCB Ref/Adm code

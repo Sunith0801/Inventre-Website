@@ -38,6 +38,15 @@ import { getFeesViewer, viewerHas } from "@/server/fees-auth";
  *   view=schools   → per-school rollup + academic-year list  (level 1)
  *   view=heads     → per-fee-type rollup for one school      (level 2)
  *   view=students  → per-student rows + installment detail   (level 3)
+ *   view=collection → collection ageing: every FULLY PAID instalment,
+ *                    bucketed by how many days after its DueDate the money
+ *                    actually arrived. The paid date comes from the receipts
+ *                    table, matched per (student, year) on the receipt's
+ *                    fee type, which MCB writes as "<head> (<installment>)".
+ *   view=ageing    → receivables ageing: every unpaid instalment bucketed
+ *                    by how far past its DueDate it is today, rolled up by
+ *                    bucket, school and fee head. `format=xlsx` streams the
+ *                    instalment-level rows behind it.
  * `format=csv` on view=students streams the unpaginated installment-level
  * list for ops.
  */
@@ -54,6 +63,10 @@ const SCHOOLS: { code: string; name: string; branch: string; branchId: number }[
   // branches), the importer was just pinned to the original five.
   { code: "CAGSM", name: "Crimson Anisha Marunji", branch: "Crimson Anisha Global School Marunji", branchId: 102 },
   { code: "CAGSU", name: "Crimson Anisha Undri", branch: "Crimson Anisha Global School Undri", branchId: 103 },
+  // Agra. Added 2026-09-10 — ledger only: this is a Crimson WORLD branch
+  // (the two Anisha campuses are Marunji + Undri), and it has no Inventre
+  // schools row, so it is deliberately absent from BRANCH_TO_SCHOOL_CODE.
+  { code: "CWSAG", name: "Crimson World Agra", branch: "Crimson World School Agra", branchId: 236 },
 ];
 
 /**
@@ -145,6 +158,7 @@ function base(where: SQL) {
       f.raw->>'BranchName'                              AS branch,
       f.raw->>'AcademicYear'                            AS academic_year,
       f.raw->>'InstallmentName'                         AS installment,
+      f.raw->>'FeeType'                                 AS fee_type_raw,
       f.raw->>'ClassName'                               AS class_name,
       f.raw->>'Section'                                 AS section,
       f.raw->>'StudentName'                             AS student_name,
@@ -166,8 +180,8 @@ export async function GET(req: NextRequest) {
   }
 
   const u = req.nextUrl.searchParams;
-  const view = ["schools", "heads", "students", "coverage"].includes(u.get("view") ?? "")
-    ? (u.get("view") as "schools" | "heads" | "students" | "coverage")
+  const view = ["schools", "heads", "students", "coverage", "ageing", "collection"].includes(u.get("view") ?? "")
+    ? (u.get("view") as "schools" | "heads" | "students" | "coverage" | "ageing" | "collection")
     : "schools";
 
   // Academic year is free text in MCB ("2026-2027"); validate by shape and
@@ -491,6 +505,440 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "unknown school in scope" }, { status: 400 });
   }
   const schoolFilter = inScope;
+
+  // ── Collection ageing ──────────────────────────────────────────────
+  // The other side of the coin: of the money that DID come in, how long
+  // after the due date did it arrive? Unit = a fully paid instalment; its
+  // paid date is the latest receipt line that matches it. The match is by
+  // name — MCB writes a receipt's fee type as "<head> (<installment>)",
+  // e.g. "Tuition fee (August)", which is exactly ledger fee_head +
+  // InstallmentName; the ledger's own FeeType ("Tuition fee August") is
+  // accepted as a second key. Anything that finds no receipt is reported
+  // as "unmatched" rather than guessed.
+  if (view === "collection") {
+    const COLL_KEYS = ["on_time", "l1_30", "l31_60", "l61_90", "l91_180", "l180p", "unmatched"];
+    const bucketParam = (u.get("bucket") ?? "").trim();
+    const bucket = COLL_KEYS.includes(bucketParam) ? bucketParam : null;
+    const bucketFilter = bucket ? sql`bucket = ${bucket}` : sql`true`;
+    // Match key = letters and digits only, so "Tuition fee (August)" on the
+    // receipt and "Tuition fee" + "August" on the ledger (or the ledger's
+    // own "Tuition fee August") all collapse to "tuitionfeeaugust".
+    const normKey = (expr: SQL) => sql`regexp_replace(lower(${expr}), '[^a-z0-9]', '', 'g')`;
+    const receipts = sql`
+      SELECT t.enrolment_number, t.academic_year,
+             ${normKey(sql`t.fee_type`)}                AS k,
+             max(t.paid_date)                           AS paid_on
+      FROM mcb_fee_transactions t
+      WHERE ${inScopeReceipts} AND t.paid_date IS NOT NULL AND t.fee_type IS NOT NULL
+        ${ay ? sql`AND t.academic_year = ${ay}` : sql``}
+      GROUP BY 1, 2, 3
+    `;
+    const paidLines = sql`
+      SELECT b.*, (b.gross - b.concession) AS net,
+             r.paid_on,
+             (r.paid_on - b.due_date) AS days_late,
+             CASE
+               WHEN r.paid_on IS NULL OR b.due_date IS NULL THEN 'unmatched'
+               WHEN r.paid_on <= b.due_date THEN 'on_time'
+               WHEN r.paid_on - b.due_date <= 30 THEN 'l1_30'
+               WHEN r.paid_on - b.due_date <= 60 THEN 'l31_60'
+               WHEN r.paid_on - b.due_date <= 90 THEN 'l61_90'
+               WHEN r.paid_on - b.due_date <= 180 THEN 'l91_180'
+               ELSE 'l180p'
+             END AS bucket
+      FROM (${base(sql`${schoolFilter} AND ${ayFilter}`)}) b
+      LEFT JOIN (${receipts}) r
+        ON r.enrolment_number = b.enrolment_number
+       AND r.academic_year = b.academic_year
+       AND r.k = ${normKey(sql`b.fee_head || coalesce(b.installment, '')`)}
+      WHERE b.paid > 0 AND b.gross - b.concession > 0 AND b.paid >= b.gross - b.concession
+    `;
+    const label: Record<string, string> = {
+      on_time: "Paid on or before due date", l1_30: "1-30 days late", l31_60: "31-60 days late",
+      l61_90: "61-90 days late", l91_180: "91-180 days late", l180p: "Over 180 days late",
+      unmatched: "No receipt matched",
+    };
+
+    if (u.get("format") === "xlsx") {
+      const res = await db.execute(sql`
+        SELECT * FROM (${paidLines}) o WHERE ${bucketFilter}
+        ORDER BY days_late DESC NULLS LAST, paid DESC, student_name
+      `);
+      const rows = rowsOf<Record<string, unknown>>(res).map((r) => [
+        String(r.enrolment_number ?? ""),
+        (r.student_name as string) ?? "",
+        (r.branch as string) ?? "",
+        (r.class_name as string) ?? "",
+        (r.section as string) ?? "",
+        (r.fee_head as string) ?? "",
+        (r.installment as string) ?? "",
+        dateCell(r.due_date),
+        dateCell(r.paid_on),
+        r.days_late == null ? "" : num(r.days_late),
+        label[String(r.bucket)] ?? String(r.bucket),
+        num2(r.net),
+        num2(r.paid),
+        (r.academic_year as string) ?? "",
+      ]);
+      const buf = workbook(
+        "Collection",
+        ["Enrolment", "Student", "School", "Class", "Section", "Fee head",
+         "Installment", "Due date", "Paid on", "Days late", "Bucket",
+         "Net billed", "Paid", "Academic year"],
+        rows,
+        [11, 12]
+      );
+      const slug = ["mcb", "collection", scopeCode, ay ?? "all-years", bucket ?? "all-buckets"]
+        .join("-").replace(/[^A-Za-z0-9-]+/g, "_");
+      return xlsxResponse(buf, `${slug}.xlsx`);
+    }
+
+    if (bucket) {
+      const page = Math.max(1, Number(u.get("page") ?? 1) || 1);
+      const bq = (u.get("q") ?? "").trim().slice(0, 80);
+      const qFilter = bq
+        ? sql`(student_name ILIKE ${"%" + bq + "%"} OR enrolment_number ILIKE ${"%" + bq + "%"})`
+        : sql`true`;
+      const perStudent = sql`
+        SELECT enrolment_number,
+               max(student_name)                                 AS student_name,
+               max(branch)                                       AS branch,
+               max(class_name)                                   AS class_name,
+               max(section)                                      AS section,
+               string_agg(fee_head || ' (' || coalesce(installment, '?') || ')', ', '
+                          ORDER BY due_date NULLS LAST)          AS lines,
+               count(*)::int                                     AS installments,
+               max(paid_on)                                      AS last_paid,
+               max(days_late)                                    AS days_late,
+               round(avg(days_late))                             AS avg_days_late,
+               sum(paid)                                         AS paid
+        FROM (${paidLines}) o
+        WHERE ${bucketFilter} AND ${qFilter}
+        GROUP BY enrolment_number
+      `;
+      const [rowsRes, countRes] = await Promise.all([
+        db.execute(sql`
+          SELECT * FROM (${perStudent}) t
+          ORDER BY days_late DESC NULLS LAST, paid DESC, student_name
+          LIMIT ${PAGE_SIZE} OFFSET ${(page - 1) * PAGE_SIZE}
+        `),
+        db.execute(sql`SELECT count(*)::int AS n, coalesce(sum(paid), 0) AS paid FROM (${perStudent}) t`),
+      ]);
+      const c = rowsOf<Record<string, unknown>>(countRes)[0];
+      return NextResponse.json({
+        bucket, page, pageSize: PAGE_SIZE, total: num(c?.n), balance: num(c?.paid),
+        rows: rowsOf<Record<string, unknown>>(rowsRes).map((r) => ({
+          enrolment: String(r.enrolment_number ?? ""),
+          student: (r.student_name as string) ?? "",
+          branch: (r.branch as string) ?? "",
+          code: SCHOOLS.find((x) => x.branch === r.branch)?.code ?? null,
+          className: (r.class_name as string) ?? "",
+          section: (r.section as string) ?? "",
+          lines: (r.lines as string) ?? "",
+          installments: num(r.installments),
+          lastPaid: r.last_paid ? String(r.last_paid).slice(0, 10) : null,
+          daysLate: r.days_late == null ? null : num(r.days_late),
+          avgDaysLate: r.avg_days_late == null ? null : num(r.avg_days_late),
+          balance: num(r.paid),
+        })),
+      });
+    }
+
+    const [byBucket, bySchool, byHead, byInst, partial] = await Promise.all([
+      db.execute(sql`
+        SELECT bucket, sum(paid) AS paid, count(*)::int AS installments,
+               count(DISTINCT enrolment_number)::int AS students,
+               round(avg(days_late))::int AS avg_days_late
+        FROM (${paidLines}) o GROUP BY bucket
+      `),
+      db.execute(sql`
+        SELECT branch, bucket, sum(paid) AS paid, count(DISTINCT enrolment_number)::int AS students
+        FROM (${paidLines}) o GROUP BY branch, bucket
+      `),
+      db.execute(sql`
+        SELECT fee_head, bucket, sum(paid) AS paid, count(DISTINCT enrolment_number)::int AS students
+        FROM (${paidLines}) o GROUP BY fee_head, bucket
+      `),
+      db.execute(sql`
+        SELECT installment, bucket, min(due_date) AS first_due, sum(paid) AS paid,
+               count(DISTINCT enrolment_number)::int AS students
+        FROM (${paidLines}) o GROUP BY installment, bucket
+      `),
+      // Part-paid instalments are not "collected" yet, so they sit outside
+      // the buckets; say how much so the total still reconciles.
+      db.execute(sql`
+        SELECT coalesce(sum(paid), 0) AS paid, count(DISTINCT enrolment_number)::int AS students
+        FROM (${base(sql`${schoolFilter} AND ${ayFilter}`)}) b
+        WHERE b.paid > 0 AND b.paid < b.gross - b.concession
+      `),
+    ]);
+    type Cell = { balance: number; students: number };
+    const pivot = (rows: Record<string, unknown>[], key: string) => {
+      const m = new Map<string, { buckets: Record<string, Cell>; total: number; firstDue: string | null }>();
+      for (const r of rows) {
+        const k = String(r[key] ?? "—");
+        const e = m.get(k) ?? { buckets: {}, total: 0, firstDue: null };
+        e.buckets[String(r.bucket)] = { balance: num(r.paid), students: num(r.students) };
+        e.total += num(r.paid);
+        if (r.first_due) {
+          const d = String(r.first_due).slice(0, 10);
+          if (!e.firstDue || d < e.firstDue) e.firstDue = d;
+        }
+        m.set(k, e);
+      }
+      return [...m.entries()].map(([name, e]) => ({ name, firstDue: e.firstDue, total: e.total, buckets: e.buckets }));
+    };
+    const buckets: Record<string, Cell & { installments: number; avgDaysLate: number | null }> = {};
+    for (const r of rowsOf<Record<string, unknown>>(byBucket)) {
+      buckets[String(r.bucket)] = {
+        balance: num(r.paid), students: num(r.students), installments: num(r.installments),
+        avgDaysLate: r.avg_days_late == null ? null : num(r.avg_days_late),
+      };
+    }
+    const p = rowsOf<Record<string, unknown>>(partial)[0];
+    return NextResponse.json({
+      asOf: new Date().toISOString().slice(0, 10),
+      school: { code: scopeCode, name: scopeName },
+      academicYear: ay,
+      buckets,
+      total: Object.values(buckets).reduce((a, b) => a + b.balance, 0),
+      schools: pivot(rowsOf(bySchool), "branch")
+        .map((row) => {
+          const sc = SCHOOLS.find((x) => x.branch === row.name);
+          return { ...row, code: sc?.code ?? null, name: sc?.name ?? row.name };
+        })
+        .sort((a, b) => b.total - a.total),
+      heads: pivot(rowsOf(byHead), "fee_head").sort((a, b) => b.total - a.total),
+      installments: pivot(rowsOf(byInst), "installment").sort((a, b) =>
+        String(a.firstDue ?? "9999").localeCompare(String(b.firstDue ?? "9999"))
+      ),
+      partial: { balance: num(p?.paid), students: num(p?.students) },
+    });
+  }
+
+  // ── Receivables ageing ─────────────────────────────────────────────
+  // Outstanding money, bucketed by how long it has been due. The unit is
+  // the INSTALMENT ("Tuition fee (August)"), because that is what carries
+  // a DueDate in MCB — so a student with three months unpaid sits in three
+  // buckets, not one, and the buckets add up to the outstanding figure in
+  // the band above. "Today" is IST: due dates are calendar dates on the
+  // school's clock, and a UTC midnight would age everything a day early.
+  //
+  // Leavers follow the console's rule: their balance is uncollectable, so
+  // it is reported beside the buckets, never inside them.
+  if (view === "ageing") {
+    const today = sql`(now() AT TIME ZONE 'Asia/Kolkata')::date`;
+    // Days past due; negative = not yet due; NULL = MCB gave no due date.
+    const bucketCase = sql`
+      CASE
+        WHEN due_date IS NULL THEN 'no_due'
+        WHEN due_date > ${today} THEN 'not_due'
+        WHEN ${today} - due_date <= 30 THEN 'd0_30'
+        WHEN ${today} - due_date <= 60 THEN 'd31_60'
+        WHEN ${today} - due_date <= 90 THEN 'd61_90'
+        WHEN ${today} - due_date <= 180 THEN 'd91_180'
+        ELSE 'd180p'
+      END`;
+    const openLines = sql`
+      SELECT b.*,
+             (b.gross - b.concession - b.paid)   AS balance,
+             (${today} - b.due_date)              AS days_overdue,
+             ${bucketCase}                        AS bucket
+      FROM (${base(sql`${schoolFilter} AND ${ayFilter}`)}) b
+      WHERE b.gross - b.concession - b.paid > 0
+    `;
+
+    // A bucket key narrows both the Excel and the drill-down list.
+    const BUCKET_KEYS = ["not_due", "d0_30", "d31_60", "d61_90", "d91_180", "d180p", "no_due"];
+    const bucketParam = (u.get("bucket") ?? "").trim();
+    const bucket = BUCKET_KEYS.includes(bucketParam) ? bucketParam : null;
+    const bucketFilter = bucket ? sql`bucket = ${bucket}` : sql`true`;
+
+    if (u.get("format") === "xlsx") {
+      const res = await db.execute(sql`
+        SELECT * FROM (${openLines}) o
+        WHERE ${chaseable} AND ${bucketFilter}
+        ORDER BY days_overdue DESC NULLS LAST, balance DESC, student_name
+      `);
+      const label: Record<string, string> = {
+        not_due: "Not yet due", d0_30: "0-30 days", d31_60: "31-60 days",
+        d61_90: "61-90 days", d91_180: "91-180 days", d180p: "Over 180 days",
+        no_due: "No due date",
+      };
+      const rows = rowsOf<Record<string, unknown>>(res).map((r) => [
+        String(r.enrolment_number ?? ""),
+        (r.student_name as string) ?? "",
+        (r.branch as string) ?? "",
+        (r.class_name as string) ?? "",
+        (r.section as string) ?? "",
+        (r.fee_head as string) ?? "",
+        (r.installment as string) ?? "",
+        dateCell(r.due_date),
+        r.days_overdue == null ? "" : num(r.days_overdue),
+        label[String(r.bucket)] ?? String(r.bucket),
+        num2(r.gross),
+        num2(r.concession),
+        num2(num(r.gross) - num(r.concession)),
+        num2(r.paid),
+        num2(r.balance),
+        (r.academic_year as string) ?? "",
+      ]);
+      const buf = workbook(
+        "Ageing",
+        ["Enrolment", "Student", "School", "Class", "Section", "Fee head",
+         "Installment", "Due date", "Days overdue", "Bucket", "Billed (gross)",
+         "Concession", "Net billed", "Paid", "Balance", "Academic year"],
+        rows,
+        [10, 11, 12, 13, 14]
+      );
+      const slug = ["mcb", "ageing", scopeCode, ay ?? "all-years", bucket ?? "all-buckets"]
+        .join("-").replace(/[^A-Za-z0-9-]+/g, "_");
+      return xlsxResponse(buf, `${slug}.xlsx`);
+    }
+
+    // Drill-down: who owes in ONE bucket, one row per student with that
+    // student's instalments in the bucket folded in. Sorted by amount so
+    // the desk chases the biggest first.
+    if (bucket) {
+      const page = Math.max(1, Number(u.get("page") ?? 1) || 1);
+      const bq = (u.get("q") ?? "").trim().slice(0, 80);
+      const qFilter = bq
+        ? sql`(student_name ILIKE ${"%" + bq + "%"} OR enrolment_number ILIKE ${"%" + bq + "%"})`
+        : sql`true`;
+      const perStudent = sql`
+        SELECT enrolment_number,
+               max(student_name)                                 AS student_name,
+               max(branch)                                       AS branch,
+               max(class_name)                                   AS class_name,
+               max(section)                                      AS section,
+               string_agg(DISTINCT fee_head, ', ' ORDER BY fee_head) AS heads,
+               string_agg(fee_head || ' (' || coalesce(installment, '?') || ')', ', '
+                          ORDER BY due_date NULLS LAST)          AS lines,
+               count(*)::int                                     AS installments,
+               min(due_date)                                     AS oldest_due,
+               max(days_overdue)                                 AS days_overdue,
+               sum(balance)                                      AS balance
+        FROM (${openLines}) o
+        WHERE ${chaseable} AND ${bucketFilter} AND ${qFilter}
+        GROUP BY enrolment_number
+      `;
+      const [rowsRes, countRes] = await Promise.all([
+        db.execute(sql`
+          SELECT * FROM (${perStudent}) t
+          ORDER BY balance DESC, student_name
+          LIMIT ${PAGE_SIZE} OFFSET ${(page - 1) * PAGE_SIZE}
+        `),
+        db.execute(sql`
+          SELECT count(*)::int AS n, coalesce(sum(balance), 0) AS balance
+          FROM (${perStudent}) t
+        `),
+      ]);
+      const c = rowsOf<Record<string, unknown>>(countRes)[0];
+      return NextResponse.json({
+        bucket,
+        page,
+        pageSize: PAGE_SIZE,
+        total: num(c?.n),
+        balance: num(c?.balance),
+        rows: rowsOf<Record<string, unknown>>(rowsRes).map((r) => ({
+          enrolment: String(r.enrolment_number ?? ""),
+          student: (r.student_name as string) ?? "",
+          branch: (r.branch as string) ?? "",
+          code: SCHOOLS.find((x) => x.branch === r.branch)?.code ?? null,
+          className: (r.class_name as string) ?? "",
+          section: (r.section as string) ?? "",
+          heads: (r.heads as string) ?? "",
+          lines: (r.lines as string) ?? "",
+          installments: num(r.installments),
+          oldestDue: r.oldest_due ? String(r.oldest_due).slice(0, 10) : null,
+          daysOverdue: r.days_overdue == null ? null : num(r.days_overdue),
+          balance: num(r.balance),
+        })),
+      });
+    }
+
+    const [byBucket, bySchool, byHead, byInst, left] = await Promise.all([
+      db.execute(sql`
+        SELECT bucket,
+               sum(balance)                               AS balance,
+               count(*)::int                              AS installments,
+               count(DISTINCT enrolment_number)::int      AS students
+        FROM (${openLines}) o WHERE ${chaseable}
+        GROUP BY bucket
+      `),
+      db.execute(sql`
+        SELECT branch, bucket,
+               sum(balance)                               AS balance,
+               count(DISTINCT enrolment_number)::int      AS students
+        FROM (${openLines}) o WHERE ${chaseable}
+        GROUP BY branch, bucket
+      `),
+      db.execute(sql`
+        SELECT fee_head, bucket,
+               sum(balance)                               AS balance,
+               count(DISTINCT enrolment_number)::int      AS students
+        FROM (${openLines}) o WHERE ${chaseable}
+        GROUP BY fee_head, bucket
+      `),
+      // Per instalment name (the "term"): ordered by when it fell due, so
+      // the table reads as a fee calendar rather than alphabetically.
+      db.execute(sql`
+        SELECT installment, bucket,
+               min(due_date)                              AS first_due,
+               sum(balance)                               AS balance,
+               count(DISTINCT enrolment_number)::int      AS students
+        FROM (${openLines}) o WHERE ${chaseable}
+        GROUP BY installment, bucket
+      `),
+      db.execute(sql`
+        SELECT coalesce(sum(balance), 0)                  AS balance,
+               count(DISTINCT enrolment_number)::int      AS students
+        FROM (${openLines}) o WHERE has_left
+      `),
+    ]);
+
+    type Cell = { balance: number; students: number };
+    const pivot = (rows: Record<string, unknown>[], key: string) => {
+      const m = new Map<string, { buckets: Record<string, Cell>; total: number; firstDue: string | null }>();
+      for (const r of rows) {
+        const k = String(r[key] ?? "—");
+        const e = m.get(k) ?? { buckets: {}, total: 0, firstDue: null };
+        e.buckets[String(r.bucket)] = { balance: num(r.balance), students: num(r.students) };
+        e.total += num(r.balance);
+        if (r.first_due) {
+          const d = String(r.first_due).slice(0, 10);
+          if (!e.firstDue || d < e.firstDue) e.firstDue = d;
+        }
+        m.set(k, e);
+      }
+      return [...m.entries()].map(([name, e]) => ({ name, firstDue: e.firstDue, total: e.total, buckets: e.buckets }));
+    };
+    const bucketRows = rowsOf<Record<string, unknown>>(byBucket);
+    const buckets: Record<string, Cell & { installments: number }> = {};
+    for (const r of bucketRows) {
+      buckets[String(r.bucket)] = {
+        balance: num(r.balance), students: num(r.students), installments: num(r.installments),
+      };
+    }
+    const schoolsPivot = pivot(rowsOf(bySchool), "branch").map((row) => {
+      const s = SCHOOLS.find((x) => x.branch === row.name);
+      return { ...row, code: s?.code ?? null, name: s?.name ?? row.name };
+    });
+    const leftRow = rowsOf<Record<string, unknown>>(left)[0];
+    return NextResponse.json({
+      asOf: new Date().toISOString().slice(0, 10),
+      school: { code: scopeCode, name: scopeName },
+      academicYear: ay,
+      buckets,
+      total: Object.values(buckets).reduce((a, b) => a + b.balance, 0),
+      schools: schoolsPivot.sort((a, b) => b.total - a.total),
+      heads: pivot(rowsOf(byHead), "fee_head").sort((a, b) => b.total - a.total),
+      installments: pivot(rowsOf(byInst), "installment").sort((a, b) =>
+        String(a.firstDue ?? "9999").localeCompare(String(b.firstDue ?? "9999"))
+      ),
+      left: { balance: num(leftRow?.balance), students: num(leftRow?.students) },
+    });
+  }
 
   // ── Level 2: fee types for one school ──────────────────────────────
   if (view === "heads") {

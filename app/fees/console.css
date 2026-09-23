@@ -150,6 +150,15 @@
 }
 .fx-band > div {
   position: relative;
+  /* Grid items default to min-width:auto, so a track can never shrink below
+     its min-content. `.fx-note` is nowrap, so the longest note ("1,952
+     students owe money · excludes …") set the floor for its column and
+     pushed the 4th card off-screen at ~1280px — and its own
+     text-overflow:ellipsis could never fire. min-width:0 lets the track
+     shrink and hands the ellipsis back its job. */
+  min-width: 0;
+  /* Size the figure against THIS card, not the viewport (see .fx-figure). */
+  container-type: inline-size;
   padding: 16px 18px 18px;
   background: var(--tone-soft, var(--paper-2));
   border-top: 3px solid var(--tone, var(--ink));
@@ -161,6 +170,14 @@
 .fx-band .kicker { color: var(--tone); opacity: 0.85; font-weight: 500; }
 .fx-figure {
   font-size: clamp(34px, 4.2vw, 54px);
+}
+/* A band figure is bounded by its card, so scaling it on viewport width
+   overshoots between the 900px breakpoint and ~1400px: at 1280 the card is
+   ~256px of usable width while 4.2vw asks for 54px, and "₹107.70 Cr" wrapped
+   onto two lines. cqw measures the card, so 1440+ is unchanged (still capped
+   at 54px) and only the genuinely narrow cards step down. */
+.fx-band .fx-figure {
+  font-size: clamp(28px, 16cqw, 54px);
   font-weight: 800;
   letter-spacing: -0.04em;
   line-height: 1;
@@ -1200,3 +1217,159 @@
 }
 .fx-pw-eye:hover, .fx-pw-eye[aria-pressed="true"] { color: var(--ink); }
 .fx-login-card .fu-submit { margin-top: 6px; align-self: flex-start; }
+
+/* ── receivables ageing ──────────────────────────────────────────────
+   One role, darkening: "not yet due" is Billed-blue (nothing to chase),
+   every overdue bucket is Outstanding-orange mixed further into ink the
+   older it gets. No fifth accent — see fees-dashboard-colour-roles. */
+.fx-age {
+  --age-future: var(--c-bill);
+  --age-a1: var(--c-out);
+  --age-a2: color-mix(in srgb, var(--c-out) 85%, var(--ink));
+  --age-a3: color-mix(in srgb, var(--c-out) 68%, var(--ink));
+  --age-a4: color-mix(in srgb, var(--c-out) 50%, var(--ink));
+  --age-a5: color-mix(in srgb, var(--c-out) 32%, var(--ink));
+  --age-none: var(--muted);
+  padding: 18px 0 8px;
+}
+.fx-age [data-tone="future"] { --tone: var(--age-future); }
+.fx-age [data-tone="a1"]     { --tone: var(--age-a1); }
+.fx-age [data-tone="a2"]     { --tone: var(--age-a2); }
+.fx-age [data-tone="a3"]     { --tone: var(--age-a3); }
+.fx-age [data-tone="a4"]     { --tone: var(--age-a4); }
+.fx-age [data-tone="a5"]     { --tone: var(--age-a5); }
+.fx-age [data-tone="none"]   { --tone: var(--age-none); }
+.fx-age [data-tone="in"]     { --tone: var(--c-in); }
+.fx-age-lead b.is-in { color: var(--c-in); }
+.fx-age-detail-sum b.is-in { color: var(--c-in); }
+
+.fx-age-lead {
+  margin: 0 0 18px;
+  font-size: clamp(20px, 2.2vw, 28px);
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+  max-width: 40ch;
+}
+.fx-age-lead b { font-weight: 800; font-variant-numeric: tabular-nums; }
+.fx-age-lead b.is-out { color: var(--c-out); }
+.fx-age-lead b.is-bill { color: var(--c-bill); }
+
+.fx-age-hint { color: var(--muted); font-size: 0.6em; font-weight: 400; }
+
+/* Hero cards, one per bucket. Same anatomy as the school cards: tone strip
+   on the left, ink-filled when open. */
+.fx-age-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  border-top: 1px solid var(--faint);
+  border-bottom: 1px solid var(--faint);
+}
+.fx-age-card {
+  all: unset;
+  box-sizing: border-box;
+  cursor: pointer;
+  min-width: 0;
+  padding: 16px 14px 14px 12px;
+  border-right: 1px solid var(--faint);
+  border-left: 3px solid var(--tone);
+  transition: background 0.12s;
+}
+.fx-age-card:last-child { border-right: 0; }
+.fx-age-card:hover { background: var(--paper-2); }
+.fx-age-card[data-on="1"] { background: var(--ink); color: var(--paper); border-left-color: var(--ink); }
+.fx-age-card-label { font-size: 12.5px; font-weight: 600; color: var(--tone); }
+.fx-age-card-amt {
+  margin-top: 8px;
+  font-family: var(--font-plex-mono), monospace;
+  font-size: clamp(22px, 2vw, 28px);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  color: var(--tone);
+  white-space: nowrap;
+}
+.fx-age-card-bar { height: 7px; margin-top: 10px; background: var(--paper-2); }
+.fx-age-card-bar i { display: block; height: 100%; background: var(--tone); min-width: 3px; }
+.fx-age-card-meta { margin-top: 8px; font-size: 12.5px; color: var(--muted); }
+.fx-age-card[data-on="1"] .fx-age-card-label,
+.fx-age-card[data-on="1"] .fx-age-card-amt { color: var(--paper); }
+.fx-age-card[data-on="1"] .fx-age-card-meta { color: rgba(247, 243, 236, 0.62); }
+.fx-age-card[data-on="1"] .fx-age-card-bar { background: rgba(247, 243, 236, 0.2); }
+.fx-age-card[data-on="1"] .fx-age-card-bar i { background: var(--paper); }
+
+/* The drill-down under the open card. */
+.fx-age-detail {
+  margin-top: 16px;
+  padding: 14px 0 6px 16px;
+  border-left: 3px solid var(--tone);
+}
+.fx-age-detail-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.fx-age-detail-head .kicker { color: var(--tone); }
+.fx-age-detail-sum { margin-top: 4px; font-size: 15px; }
+.fx-age-detail-sum b { color: var(--c-out); font-weight: 800; font-variant-numeric: tabular-nums; }
+.fx-age-detail .fx-exports { gap: 12px; }
+.fx-age-detail .fx-input { min-width: 240px; }
+.fx-age-stu { font-weight: 600; }
+.fx-age-sub { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+.fx-age-lines { font-size: 13px; color: var(--muted); white-space: nowrap; }
+.fx-pager { display: flex; align-items: center; gap: 14px; padding: 12px 0 6px; }
+@media (max-width: 640px) {
+  .fx-age-cards { grid-template-columns: repeat(2, 1fr); }
+  .fx-age-card:nth-child(2n) { border-right: 0; }
+  .fx-age-list { table-layout: auto; min-width: 640px; }
+  .fx-age-list td, .fx-age-list th { overflow: visible; text-overflow: clip; }
+}
+
+.fx-age-note {
+  margin: 14px 0 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--muted);
+  max-width: 96ch;
+}
+.fx-age-note b { color: var(--ink); font-weight: 700; }
+
+.fx-age-by {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 18px 0 10px;
+}
+.fx-age-by .kicker { margin-right: 4px; }
+
+.fx-age-table th.num[data-tone],
+.fx-age-table td.num[data-tone] { color: var(--tone); }
+.fx-age-table td.num[data-tone] { font-weight: 600; }
+.fx-age-table tfoot td {
+  padding: 10px 10px;
+  border-top: 2px solid var(--ink);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.fx-age-table tfoot td.num { text-align: right; font-family: var(--font-plex-mono), monospace; }
+.fx-age-nil { color: var(--faint-2); font-weight: 400; }
+.fx-age-link {
+  all: unset;
+  cursor: pointer;
+  border-bottom: 1px solid var(--faint-2);
+}
+.fx-age-link:hover { border-bottom-color: var(--ink); }
+.fx-age-due {
+  font-family: var(--font-plex-mono), monospace;
+  font-size: 11px;
+  color: var(--muted);
+  margin-left: 6px;
+}
+@media (max-width: 640px) {
+  /* Seven money columns cannot share 390px: let the matrix keep its natural
+     width and scroll inside .fx-tablewrap rather than truncating figures. */
+  .fx-age-table { table-layout: auto; min-width: 640px; }
+  .fx-age-table td, .fx-age-table th { overflow: visible; text-overflow: clip; }
+}

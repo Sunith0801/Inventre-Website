@@ -10,8 +10,9 @@
  *   MCB_API_BASE              https://api.myclassboard.com
  *   MCB_API_KEY               required (api_key header)
  *   MCB_TOKEN_ID              required (TokenID query param)
- *   MCB_BRANCH_IDS            "52,70,230,225,226,102,103"  (St Andrews × 2, St
- *                             Michaels, Winmore × 2 — see GET_Branches)
+ *   MCB_BRANCH_IDS            "52,70,230,225,226,102,103,236"  (St Andrews × 2,
+ *                             St Michaels, Winmore × 2, Crimson Anisha × 2,
+ *                             Crimson World Agra — see GET_Branches)
  *   MCB_ORGANISATION_ID       39
  *   MCB_ACADEMIC_YEAR_IDS     "17,18"  (2025-26 and 2026-27 only)
  *   MCB_FEE_WINDOW_DAYS       35       (rolling window for the nightly run)
@@ -33,7 +34,7 @@ import postgres from "postgres";
 const MCB_API_BASE = process.env.MCB_API_BASE || "https://api.myclassboard.com";
 const MCB_API_KEY = process.env.MCB_API_KEY || "";
 const MCB_TOKEN_ID = process.env.MCB_TOKEN_ID || "";
-const MCB_BRANCH_IDS = (process.env.MCB_BRANCH_IDS || "52,70,230,225,226,102,103")
+const MCB_BRANCH_IDS = (process.env.MCB_BRANCH_IDS || "52,70,230,225,226,102,103,236")
   .split(",")
   .map((s) => s.trim())
   .filter(Boolean);

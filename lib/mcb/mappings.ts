@@ -25,6 +25,15 @@ const BRANCH_TO_SCHOOL_CODE: Record<string, string> = {
   "Winmore Academy Whitefield": "WMAWF",
 };
 
+/**
+ * Deliberately NOT here: "Crimson World School Agra" (MCB branch 236, added
+ * to the fee ledger 2026-09-10). It is a ledger-only branch — /fees keys off
+ * the MCB branch NAME, not this table — and Agra has no `schools` row in
+ * Inventre, so there is nothing to map it to. Leaving it out makes
+ * `grantAccess` refuse loudly if anyone ever tries to promote an Agra
+ * student to a storefront login, which is the correct outcome until a
+ * school row exists. See [[mcb-agra-branch]].
+ */
 export function mcbBranchToSchoolCode(branchName: string | null | undefined): string | null {
   if (!branchName) return null;
   return BRANCH_TO_SCHOOL_CODE[branchName] ?? null;
