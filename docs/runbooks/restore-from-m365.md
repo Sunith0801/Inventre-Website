@@ -75,7 +75,7 @@ without rclone, so simplest is to paste the script from this runbook's sibling
 attachment, and in the GitHub repository).
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ItInventre/Inventre/main/scripts/backup/restore-from-m365.sh -o /root/restore-from-m365.sh
+curl -fsSL https://raw.githubusercontent.com/Sunith0801/Inventre-Website/main/scripts/backup/restore-from-m365.sh -o /root/restore-from-m365.sh
 chmod +x /root/restore-from-m365.sh
 ```
 
