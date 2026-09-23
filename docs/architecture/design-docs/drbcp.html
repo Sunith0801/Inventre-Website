@@ -9,7 +9,7 @@
   <div class="band"></div>
   <div>
     <div class="meta">
-      <div><span>Document</span><b>DR-BCP v1.2</b></div>
+      <div><span>Document</span><b>DR-BCP v1.3</b></div>
       <div><span>Date</span><b>24 September 2026</b></div>
       <div><span>Status</span><b>Baseline; first restore drill recorded</b></div>
       <div><span>Owner</span><b>Inventre Engineering</b></div>
@@ -36,7 +36,8 @@
   <table class="hist compact"><thead><tr><th>Version</th><th>Date</th><th>Author</th><th>Change</th></tr></thead>
   <tbody><tr><td>1.0</td><td>2026-09-23</td><td>Engineering</td><td>First baseline after the backup pipeline and recovery kit went live; targets proposed, playbooks written, drill schedule set.</td></tr>
 <tr><td>1.1</td><td>2026-09-24</td><td>Engineering</td><td>Point-in-time restore drill run on the production host into a throwaway container (D-02); one-command maintenance switch (D-08); restore script gains a volume override; new finding D-11 (nginx bypass token readable).</td></tr>
-<tr><td>1.2</td><td>2026-09-24</td><td>Engineering</td><td>D-11 closed: the maintenance bypass token moved out of the world-readable site file into a root-only include.</td></tr></tbody></table>
+<tr><td>1.2</td><td>2026-09-24</td><td>Engineering</td><td>D-11 closed: the maintenance bypass token moved out of the world-readable site file into a root-only include.</td></tr>
+  <tr><td>1.3</td><td>2026-09-24</td><td>Engineering</td><td>Clean-VM rebuild drill staged on the production host (D-01); SharePoint retention runbook (D-06); standby recommendation (D-07); offline-order SOP and paper form (D-09); partner-contact checklist (D-10); new finding D-12.</td></tr></tbody></table>
 </div>
 
 <section class="sec">
@@ -255,16 +256,17 @@
 <section class="sec">
 <div class="section-hd"><span class="num">10</span><h2>Findings and action plan</h2></div>
 <table class="register"><thead><tr><th style="width:8%">ID</th><th style="width:10%">Priority</th><th style="width:27%">Finding</th><th style="width:36%">Action</th><th style="width:7%">Effort</th><th style="width:12%">Owner</th></tr></thead><tbody>
-<tr><td>D-01</td><td><span class="pill bad">Now</span></td><td>The rebuild has never been run on a clean machine; RTO is an estimate</td><td>Provide a throwaway server; run Scenario A end to end with a stopwatch; fix whatever breaks; record the drill</td><td>M</td><td>Owner (server), Engineering</td></tr>
+<tr><td>D-01</td><td><span class="pill bad">Now</span></td><td>The rebuild has never been run on a clean machine; RTO is an estimate</td><td>A clean Ubuntu 24.04 guest (KVM, 4 vCPU / 8 GB / 80 GB) is booted on the production host, isolated from it; the timed driver <code>/root/drill-vm/run-drill.sh</code> copies the RESTORE folder in and runs the kit with the passphrase. Handling the passphrase is reserved to the owner, so the owner starts it; the log records the real RTO. Record the result here and remove the guest afterwards</td><td>M</td><td>Owner (start), Engineering</td></tr>
 <tr><td>D-02</td><td><span class="pill ok">Closed</span></td><td>Point-in-time restore untested</td><td>Drilled 2026-09-24 with <code>scripts/backup/pitr-drill.sh</code> into a throwaway container on the production host; counts verified; repeat quarterly</td><td>S</td><td>Engineering</td></tr>
 <tr><td>D-03</td><td><span class="pill warn">High</span></td><td>No named deputies or communications lead</td><td>Fill Section 4; store the table in the password manager; phone notification on it@inventre.in</td><td>S</td><td>Owner</td></tr>
 <tr><td>D-04</td><td><span class="pill warn">High</span></td><td>Database password not yet rotated (also a security item)</td><td>Run the rotation script at a quiet moment</td><td>S</td><td>Owner</td></tr>
 <tr><td>D-05</td><td><span class="pill warn">High</span></td><td>Targets in Section 1 and 3 not yet approved</td><td>Owner approves or amends; the numbers then drive drill acceptance</td><td>S</td><td>Owner</td></tr>
-<tr><td>D-06</td><td><span class="pill warn">High</span></td><td>A deliberate deletion in SharePoint could remove the backups (recycle bin only)</td><td>Enable a retention policy or retention label on the backup library so files cannot be permanently deleted for 30 days; keep the deploy key's write scope minimal</td><td>S</td><td>Microsoft 365 admin</td></tr>
-<tr><td>D-07</td><td><span class="pill neutral">Medium</span></td><td>Single host; no warm standby</td><td>Decide after the first drill: if the measured RTO is acceptable, stay; if not, a second small host with a streaming replica cuts RTO to minutes</td><td>L</td><td>Owner</td></tr>
+<tr><td>D-06</td><td><span class="pill warn">High</span></td><td>A deliberate deletion in SharePoint could remove the backups (recycle bin only)</td><td>Step-by-step runbook written: <code>docs/runbooks/sharepoint-backup-retention-lock.md</code> (Purview retention policy on the site, 30 days, verify via the Preservation Hold library; policies do not block the agent's writes). Microsoft 365 admin applies it</td><td>S</td><td>Microsoft 365 admin</td></tr>
+<tr><td>D-07</td><td><span class="pill neutral">Medium</span></td><td>Single host; no warm standby</td><td>Written recommendation in <code>docs/runbooks/dr-decisions-and-contacts.md</code>: stay single-host with the current kit and revisit after the D-01 drill, unless the business needs RTO under 15 minutes (then a second small host with a streaming replica). Owner signs the decision</td><td>L</td><td>Owner</td></tr>
 <tr><td>D-08</td><td><span class="pill ok">Closed</span></td><td>The maintenance page must be enabled by hand over SSH</td><td>Done 2026-09-24: <code>bash scripts/maintenance.sh on|off|status</code>; runbook <code>docs/runbooks/maintenance-page.md</code> says who may flip it</td><td>S</td><td>Engineering</td></tr>
-<tr><td>D-09</td><td><span class="pill neutral">Medium</span></td><td>Offline-order fallback relies on a script and staff knowledge</td><td>Write the coordinator's paper form and the staff SOP for keying offline orders</td><td>S</td><td>Operations</td></tr>
-<tr><td>D-10</td><td><span class="pill neutral">Medium</span></td><td>Partner escalation contacts not centralised</td><td>Add merchant ids, support numbers and account owners to the password-manager entry</td><td>S</td><td>Owner</td></tr>
+<tr><td>D-09</td><td><span class="pill ok">Closed</span></td><td>Offline-order fallback relied on a script and staff knowledge</td><td>Done 2026-09-24: <code>docs/runbooks/offline-orders-sop.md</code> (checklist, who decides, keying via /admin/orders/new, enrolment + phone matching, reconciliation) and the printable A4 form <code>docs/runbooks/offline-order-form.html</code></td><td>S</td><td>Operations</td></tr>
+<tr><td>D-10</td><td><span class="pill neutral">Medium</span></td><td>Partner escalation contacts not centralised</td><td>Blank-field checklist of what to store per partner is in <code>docs/runbooks/dr-decisions-and-contacts.md</code>; owner fills the password-manager entry</td><td>S</td><td>Owner</td></tr>
+<tr><td>D-12</td><td><span class="pill neutral">Medium</span></td><td>Orders keyed on <code>/admin/orders/new</code> are not sent to the Audit ERP automatically and cannot carry Magic Box selections (found while writing the offline SOP)</td><td>Either enqueue the order event from that page or keep the SOP's manual step (<code>scripts/reemit-one-order.ts</code>) — decide; changes an existing flow</td><td>S</td><td>Engineering</td></tr>
 <tr><td>D-11</td><td><span class="pill ok">Closed</span></td><td>The maintenance bypass token was written in plain text in <code>/etc/nginx/sites-available/inventre</code>, which is world-readable (mode 644)</td><td>Done 2026-09-24: the token now lives only in <code>/etc/nginx/inventre-maint-token.conf</code> (mode 600, root) as nginx map variables; the site file references the variables and contains no secret; tested and reloaded</td><td>S</td><td>Engineering</td></tr>
 </tbody></table>
 <p class="small">Sources: backup and restore scripts under <code>scripts/backup/</code>, runbooks under <code>docs/runbooks/</code>, the HLD and LLD v1.8, Data Protection v1.2, and the operational history recorded in this engineering programme (June 2026 compromise, September 2026 outages and fixes).</p>

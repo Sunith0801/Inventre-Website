@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Inventre offline order form</title>
+<style>
+  @page { size: A4 portrait; margin: 12mm 12mm 12mm 12mm; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #fff; color: #000; }
+  body { font-family: Arial, Helvetica, sans-serif; font-size: 10.5pt; line-height: 1.25; }
+  .page { width: 186mm; min-height: 0; margin: 0 auto; padding: 0; display: flex; flex-direction: column; }
+  h1 { font-size: 16pt; margin: 0 0 2mm 0; letter-spacing: 0.02em; }
+  .sub { font-size: 9pt; margin: 0 0 4mm 0; }
+  .head { width: 100%; border-collapse: collapse; margin-bottom: 4mm; }
+  .head td { padding: 1.5mm 2mm; border: 1px solid #000; vertical-align: bottom; height: 10mm; }
+  .head td span { display: block; font-size: 8pt; text-transform: uppercase; letter-spacing: 0.06em; }
+  .notes { font-size: 8.5pt; margin: 0 0 3mm 0; padding: 0 0 0 4mm; }
+  .notes li { margin: 0 0 0.5mm 0; }
+  table.orders { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  table.orders th, table.orders td { border: 1px solid #000; padding: 1.2mm 1.5mm; vertical-align: top; }
+  table.orders th { font-size: 8pt; text-transform: uppercase; letter-spacing: 0.05em; text-align: left; font-weight: bold; background: #fff; }
+  table.orders th small { display: block; font-weight: normal; text-transform: none; letter-spacing: 0; font-size: 7.5pt; }
+  table.orders td { height: 21mm; font-size: 9pt; }
+  table.orders td.n { text-align: center; font-weight: bold; }
+  .tick { display: inline-block; width: 3.2mm; height: 3.2mm; border: 1px solid #000; vertical-align: middle; margin-right: 1mm; }
+  .line { display: block; border-bottom: 1px solid #000; height: 5mm; margin-top: 1.5mm; }
+  .tally { width: 100%; border-collapse: collapse; margin-top: 3mm; }
+  .tally td { border: 1px solid #000; padding: 1.5mm 2mm; height: 7mm; vertical-align: bottom; font-size: 9pt; }
+  .tally td span { display: block; font-size: 8pt; text-transform: uppercase; letter-spacing: 0.06em; }
+  .footer { margin-top: 3mm; padding-top: 3mm; border-top: 2px solid #000; font-size: 10pt; }
+  .footer .keyed { margin-top: 3mm; font-size: 10pt; }
+  .footer .keyed .blank { display: inline-block; border-bottom: 1px solid #000; min-width: 28mm; height: 4mm; }
+  .footer .keyed .blank.long { min-width: 42mm; }
+  .fine { font-size: 7.5pt; margin-top: 2mm; }
+  @media print { .noprint { display: none; } }
+  .noprint { font-size: 9pt; margin: 4mm 0; padding: 2mm; border: 1px dashed #000; }
+</style>
+</head>
+<body>
+<div class="page">
+  <p class="noprint">Print this page on A4 (portrait). Use one sheet per six orders. Do not write OTPs, passwords or card numbers on this form.</p>
+
+  <h1>Inventre — Offline order form</h1>
+  <p class="sub">For use only when the school coordinator has been told by Inventre that online ordering or online payment is unavailable. Orders on this sheet are keyed into Inventre by staff afterwards; the parent receives the normal order confirmation then. Sheet no. ______ of ______</p>
+
+  <table class="head">
+    <tr>
+      <td style="width:40%"><span>School</span>&nbsp;</td>
+      <td style="width:22%"><span>Date</span>&nbsp;</td>
+      <td style="width:38%"><span>Coordinator (name and phone)</span>&nbsp;</td>
+    </tr>
+  </table>
+
+  <ul class="notes">
+    <li>One student per row; a sibling is a separate row. Write the <strong>enrolment number</strong> and the <strong>guardian's 10-digit mobile</strong> exactly: staff match the order on these two, not on the name.</li>
+    <li>Items: write each piece and its size (e.g. "Track Pant 32", "Shirt 34"); for a Magic Box write the box name and every component size; for a book kit write "Bookkit" and the grade.</li>
+    <li>Amount = what was actually collected. Payment mode: tick cash or UPI and write the UPI transaction reference. The guardian signs for the order and the amount.</li>
+  </ul>
+
+  <table class="orders">
+    <thead>
+      <tr>
+        <th style="width:5%">#</th>
+        <th style="width:19%">Student name<small>as on school record</small></th>
+        <th style="width:12%">Enrolment no.<small>Class / section below</small></th>
+        <th style="width:14%">Guardian phone<small>10 digits</small></th>
+        <th style="width:22%">Items<small>kit / uniform sizes / magic box</small></th>
+        <th style="width:10%">Amount (₹)</th>
+        <th style="width:10%">Payment<small>cash / UPI ref</small></th>
+        <th style="width:8%">Signature</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td class="n">1</td><td></td><td><span class="line"></span><span class="line"></span></td><td></td><td></td><td></td><td><span class="tick"></span>Cash<br><span class="tick"></span>UPI<span class="line"></span></td><td></td></tr>
+      <tr><td class="n">2</td><td></td><td><span class="line"></span><span class="line"></span></td><td></td><td></td><td></td><td><span class="tick"></span>Cash<br><span class="tick"></span>UPI<span class="line"></span></td><td></td></tr>
+      <tr><td class="n">3</td><td></td><td><span class="line"></span><span class="line"></span></td><td></td><td></td><td></td><td><span class="tick"></span>Cash<br><span class="tick"></span>UPI<span class="line"></span></td><td></td></tr>
+      <tr><td class="n">4</td><td></td><td><span class="line"></span><span class="line"></span></td><td></td><td></td><td></td><td><span class="tick"></span>Cash<br><span class="tick"></span>UPI<span class="line"></span></td><td></td></tr>
+      <tr><td class="n">5</td><td></td><td><span class="line"></span><span class="line"></span></td><td></td><td></td><td></td><td><span class="tick"></span>Cash<br><span class="tick"></span>UPI<span class="line"></span></td><td></td></tr>
+      <tr><td class="n">6</td><td></td><td><span class="line"></span><span class="line"></span></td><td></td><td></td><td></td><td><span class="tick"></span>Cash<br><span class="tick"></span>UPI<span class="line"></span></td><td></td></tr>
+    </tbody>
+  </table>
+
+  <table class="tally">
+    <tr>
+      <td style="width:25%"><span>Total cash on this sheet (₹)</span>&nbsp;</td>
+      <td style="width:25%"><span>Total UPI on this sheet (₹)</span>&nbsp;</td>
+      <td style="width:25%"><span>Sheet total (₹)</span>&nbsp;</td>
+      <td style="width:25%"><span>Coordinator initials</span>&nbsp;</td>
+    </tr>
+  </table>
+
+  <div class="footer">
+    <div><strong>Office use only.</strong> Match each row on enrolment + guardian phone before keying. Held rows (no match): note the reason beside the row and return to the coordinator.</div>
+    <div class="keyed">
+      Keyed into Inventre by <span class="blank"></span> on <span class="blank"></span> (order no. <span class="blank long"></span>)
+    </div>
+    <div class="keyed">
+      Row 1 ______________ &nbsp; Row 2 ______________ &nbsp; Row 3 ______________ &nbsp; Row 4 ______________ &nbsp; Row 5 ______________ &nbsp; Row 6 ______________
+    </div>
+    <p class="fine">Inventre · docs/runbooks/offline-order-form.html · DR-BCP action D-09 · Personal data on this sheet is collected for order fulfilment only; file with the incident record and shred after the retention period in the Data Protection document.</p>
+  </div>
+</div>
+</body>
+</html>

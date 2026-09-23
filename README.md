@@ -10,7 +10,7 @@ ERPNext (production fulfilment) in sync.
 - **Live prod**: <https://inventre.in>
 - **Staging**: <https://test.inventre.in>
 - **Architecture**: `docs/architecture/Inventre-HLD-v1.8.pdf` (high-level) and `docs/architecture/Inventre-LLD-v1.8.pdf` (low-level); sources in `docs/architecture/design-docs/`. Superseded plans live in `docs/history/`.
-- **Governance**: `docs/governance/Inventre-Data-Protection-v1.2.pdf` (personal data inventory, DPDP Act 2023 gap assessment, action plan) and `docs/governance/Inventre-DR-BCP-v1.2.pdf` (recovery targets, roles, playbooks, drills).
+- **Governance**: `docs/governance/Inventre-Data-Protection-v1.3.pdf` (personal data inventory, DPDP Act 2023 gap assessment, action plan) and `docs/governance/Inventre-DR-BCP-v1.3.pdf` (recovery targets, roles, playbooks, drills).
 
 ---
 
