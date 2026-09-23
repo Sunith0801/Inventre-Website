@@ -10,11 +10,15 @@
 
 export const PRIVACY_VERSION = "2026-09-24";
 
+// Read at runtime on the server (this module is server-only: /privacy page and
+// the data export). Plain env names, so a change needs a container restart,
+// not a rebuild; .env* is excluded from the Docker build context anyway.
 export const GRIEVANCE_OFFICER = {
   name:
+    process.env.GRIEVANCE_OFFICER_NAME ||
     process.env.NEXT_PUBLIC_GRIEVANCE_OFFICER_NAME ||
     "Grievance Officer (to be appointed)",
-  email: process.env.NEXT_PUBLIC_GRIEVANCE_OFFICER_EMAIL || "privacy@inventre.in",
+  email: process.env.GRIEVANCE_OFFICER_EMAIL || process.env.NEXT_PUBLIC_GRIEVANCE_OFFICER_EMAIL || "privacy@inventre.in",
   /** Target response time, in working days. */
   responseDays: 7,
 } as const;
