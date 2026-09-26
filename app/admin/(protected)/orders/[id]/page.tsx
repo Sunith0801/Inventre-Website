@@ -16,6 +16,8 @@ import {
 } from "@/db/schema";
 import { OrderStatusForm } from "@/components/admin/OrderStatusForm";
 import { OrderShippingCard } from "@/components/admin/OrderShippingCard";
+import { OrderReturnsWindowCard } from "@/components/admin/OrderReturnsWindowCard";
+import { classifyReturnItems, computeReturnsWindow } from "@/server/return-line-eligibility";
 import { OrderActions } from "@/components/admin/OrderActions";
 import { RecordHistory } from "@/components/admin/RecordHistory";
 import { DeleteOrderButton } from "@/components/admin/DeleteOrderButton";
@@ -95,6 +97,32 @@ export default async function AdminOrderDetailPage({
         .limit(1),
     ]);
   const [parent] = parents_;
+
+  // Rule-based Exchange / Missing window (same computation the storefront
+  // button gate uses). Best-effort: a failure here must not break the page.
+  let returnsStandard: {
+    expiresAt: string | null;
+    expired: boolean;
+    allDelivered: boolean;
+  } | null = null;
+  try {
+    const cls = await classifyReturnItems(
+      order.id,
+      order.orderNumber,
+      order.status === "delivered",
+      order.deliveredAt ?? null,
+    );
+    if ([...cls.values()].some((e) => e.delivered)) {
+      const w = computeReturnsWindow(cls);
+      returnsStandard = {
+        expiresAt: w.expiresAt ? w.expiresAt.toISOString() : null,
+        expired: w.expired,
+        allDelivered: w.allDelivered,
+      };
+    }
+  } catch {
+    returnsStandard = null;
+  }
   const [school] = schools_;
   const [student] = students_;
   const [existingInvoice] = invoices_;
@@ -444,6 +472,20 @@ export default async function AdminOrderDetailPage({
             orderId={order.id}
             address={addr}
             accountPhone={parent?.phone ?? ""}
+          />
+
+          {/* Exchange / Missing request window — the 7-day rule as the
+              storefront computes it, plus the admin exception (extend the
+              window for this order). */}
+          <OrderReturnsWindowCard
+            orderId={order.id}
+            standard={returnsStandard}
+            override={{
+              until: order.returnsOverrideUntil?.toISOString() ?? null,
+              note: order.returnsOverrideNote ?? null,
+              by: order.returnsOverrideBy ?? null,
+              at: order.returnsOverrideAt?.toISOString() ?? null,
+            }}
           />
 
           {/* Payment Details — sectioned: a hero status pill at the top,

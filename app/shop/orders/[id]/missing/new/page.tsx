@@ -19,7 +19,7 @@ import {
   getLockedComponentSignatures,
   lockStateForUnit,
   classifyReturnItems,
-  computeReturnsWindow,
+  computeReturnsWindowForOrder,
   getBookkitParcelDelivered,
   getPendingComponentVariantIds,
 } from "@/server/return-line-eligibility";
@@ -127,7 +127,7 @@ export default async function NewMissingClaimPage({
   // 7-day window from the day the LAST item arrived (2026-09-16): past the
   // cut-off the form is replaced by a popup, same as the button gate hides
   // the entry point.
-  const returnsWindow = computeReturnsWindow(itemElig);
+  const returnsWindow = await computeReturnsWindowForOrder(orderId, itemElig);
   if (returnsWindow.expired && returnsWindow.expiresAt) {
     return (
       <RequestWindowClosedNotice

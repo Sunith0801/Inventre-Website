@@ -22,7 +22,7 @@ type OrderItem = {
   paymentStatusRaw: string | null;
   /** Exchange / Missing request window — null while items are still on the
    *  way or the order isn't delivered. */
-  returnsWindow: { expiresAt: string | null; expired: boolean } | null;
+  returnsWindow: { expiresAt: string | null; expired: boolean; extended?: boolean } | null;
 };
 
 type StudentGroup = {
@@ -248,7 +248,7 @@ export default function OrdersPage() {
                               >
                                 {o.returnsWindow.expired
                                   ? `Exchange / missing closed on ${formatWindowDate(windowLastDay(o.returnsWindow.expiresAt))}`
-                                  : `Exchange / missing until ${formatWindowDate(windowLastDay(o.returnsWindow.expiresAt))}`}
+                                  : `Exchange / missing until ${formatWindowDate(windowLastDay(o.returnsWindow.expiresAt))}${o.returnsWindow.extended ? " (extended)" : ""}`}
                               </p>
                             )}
                             {(() => {

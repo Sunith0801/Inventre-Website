@@ -8,6 +8,7 @@ import { isExchangeTester } from "@/server/exchange-gate";
 import {
   classifyReturnItems,
   computeReturnsWindow,
+  applyReturnsOverride,
 } from "@/server/return-line-eligibility";
 
 export async function GET() {
@@ -23,7 +24,7 @@ export async function GET() {
   // per-item picture and get no window.
   const windowByOrderNo = new Map<
     string,
-    { expiresAt: string | null; expired: boolean }
+    { expiresAt: string | null; expired: boolean; extended: boolean }
   >();
   const deliveredNos = list
     .filter((o) => o.status === "delivered")
@@ -35,6 +36,7 @@ export async function GET() {
         orderNumber: orders.orderNumber,
         status: orders.status,
         deliveredAt: orders.deliveredAt,
+        returnsOverrideUntil: orders.returnsOverrideUntil,
       })
       .from(orders)
       .where(inArray(orders.orderNumber, deliveredNos));
@@ -47,11 +49,15 @@ export async function GET() {
             true,
             o.deliveredAt ?? null,
           );
-          const w = computeReturnsWindow(cls);
+          const w = applyReturnsOverride(
+            computeReturnsWindow(cls),
+            o.returnsOverrideUntil ?? null,
+          );
           if (w.expiresAt) {
             windowByOrderNo.set(o.orderNumber, {
               expiresAt: w.expiresAt.toISOString(),
               expired: w.expired,
+              extended: w.extended,
             });
           }
         } catch {

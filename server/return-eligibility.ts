@@ -2,7 +2,7 @@ import "server-only";
 import { getParentOrderDetailFromErp } from "@/server/erp-customer-orders";
 import {
   classifyReturnItems,
-  computeReturnsWindow,
+  computeReturnsWindowForOrder,
   type ReturnsWindow,
 } from "@/server/return-line-eligibility";
 
@@ -73,5 +73,5 @@ export async function getReturnsWindowForOrder(
   const deliveredAt =
     localDeliveredAt ?? (detail.deliveredAt ? new Date(detail.deliveredAt) : null);
   const cls = await classifyReturnItems(orderId, orderNumber, orderDelivered, deliveredAt);
-  return computeReturnsWindow(cls);
+  return computeReturnsWindowForOrder(orderId, cls);
 }

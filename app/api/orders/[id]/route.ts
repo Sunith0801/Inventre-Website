@@ -13,7 +13,7 @@ import {
   isExchangeScopeRelaxed,
   isExchangeOwnershipRelaxed,
 } from "@/server/exchange-gate";
-import { classifyReturnItems, computeReturnsWindow } from "@/server/return-line-eligibility";
+import { classifyReturnItems, computeReturnsWindowForOrder } from "@/server/return-line-eligibility";
 
 // Schools whose exchange collection happens at the Inventre store, not the
 // school office. The order-page exchange banner uses this to swap "school"
@@ -66,6 +66,8 @@ export async function GET(
     expiresAt: string | null;
     expired: boolean;
     allDelivered: boolean;
+    /** Window kept open by an admin override (school-recommended exception). */
+    extended: boolean;
   } | null = null;
   let activeExchange:
     | {
@@ -203,11 +205,14 @@ export async function GET(
       // 7-day window from the day the LAST item arrived (2026-09-16). Once it
       // has passed the buttons go away; the order page shows the cut-off date
       // either way via `returnsWindow`.
-      const win = computeReturnsWindow(cls);
+      // An admin may have extended the window for this order (exception
+      // recommended by the school) — computeReturnsWindowForOrder folds that in.
+      const win = await computeReturnsWindowForOrder(local.id, cls);
       returnsWindow = {
         expiresAt: win.expiresAt ? win.expiresAt.toISOString() : null,
         expired: win.expired,
         allDelivered: win.allDelivered,
+        extended: win.extended,
       };
       canExchange = hasDeliveredItem && !win.expired;
       canMissing = hasDeliveredItem && !win.expired;

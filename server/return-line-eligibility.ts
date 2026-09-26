@@ -353,6 +353,9 @@ export interface ReturnsWindow {
   /** Exclusive cut-off instant; null = no expiry (yet). */
   expiresAt: Date | null;
   expired: boolean;
+  /** True when an admin override (orders.returns_override_until) is what
+   *  keeps the window open past the standard 7-day rule. */
+  extended: boolean;
 }
 
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
@@ -367,6 +370,7 @@ export function computeReturnsWindow(
     lastDeliveredAt: null,
     expiresAt: null,
     expired: false,
+    extended: false,
   };
   if (items.length === 0) return open;
   if (!items.every((e) => e.delivered)) return open;
@@ -389,7 +393,68 @@ export function computeReturnsWindow(
     lastDeliveredAt: last,
     expiresAt,
     expired: now.getTime() >= expiresAt.getTime(),
+    extended: false,
   };
+}
+
+/**
+ * Admin override (2026-09-26): `orders.returns_override_until` re-opens the
+ * window for one order past the standard rule (school-recommended
+ * exceptions). The override only ever EXTENDS — a standard window that is
+ * still open with no expiry (items on the way) stays as it is, and an
+ * override earlier than the natural cut-off changes nothing. Once the
+ * override instant itself has passed the window is closed again.
+ */
+export function applyReturnsOverride(
+  win: ReturnsWindow,
+  overrideUntil: Date | null | undefined,
+  now: Date = new Date(),
+): ReturnsWindow {
+  if (!overrideUntil || !win.expiresAt) return win;
+  if (overrideUntil.getTime() <= win.expiresAt.getTime()) return win;
+  const expired = now.getTime() >= overrideUntil.getTime();
+  return {
+    ...win,
+    expiresAt: overrideUntil,
+    expired,
+    // A lapsed override just closes the window at its own date — it is
+    // not "extended" any more.
+    extended: !expired,
+  };
+}
+
+/** Exclusive IST cut-off for a chosen LAST calendar day ("YYYY-MM-DD"). */
+export function overrideCutoffForLastDay(lastDay: string): Date | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(lastDay);
+  if (!m) return null;
+  const [y, mo, d] = [+m[1], +m[2], +m[3]];
+  // Reject a rolled-over date (Date.UTC would happily turn 13-99 into next
+  // spring): the chosen day must round-trip exactly.
+  const probe = new Date(Date.UTC(y, mo - 1, d));
+  if (
+    probe.getUTCFullYear() !== y ||
+    probe.getUTCMonth() !== mo - 1 ||
+    probe.getUTCDate() !== d
+  )
+    return null;
+  return new Date(Date.UTC(y, mo - 1, d + 1) - IST_OFFSET_MS);
+}
+
+/** Standard window + the order's admin override, read from `orders`. */
+export async function computeReturnsWindowForOrder(
+  orderId: string,
+  cls: Map<string, ItemEligibility>,
+  now: Date = new Date(),
+): Promise<ReturnsWindow> {
+  const win = computeReturnsWindow(cls, now);
+  if (!win.expiresAt) return win;
+  const r = rows<{ returns_override_until: string | null }>(
+    await db.execute(
+      sql`SELECT returns_override_until FROM orders WHERE id = ${orderId}::uuid LIMIT 1`,
+    ),
+  );
+  const until = r[0]?.returns_override_until;
+  return applyReturnsOverride(win, until ? new Date(until) : null, now);
 }
 
 export async function classifyReturnItems(

@@ -57,6 +57,7 @@ export default function OrderDetailPage() {
     expiresAt: string | null;
     expired: boolean;
     allDelivered: boolean;
+    extended?: boolean;
   } | null>(null);
   const [activeExchange, setActiveExchange] = useState<{
     id: string;
@@ -503,7 +504,9 @@ export default function OrderDetailPage() {
             <p className="mt-2 text-[12.5px] text-ink-500">
               {returnsWindow.expired
                 ? `Exchange / missing-item requests closed on ${formatWindowDate(windowLastDay(returnsWindow.expiresAt))} (${RETURNS_WINDOW_DAYS} days from delivery).`
-                : `Exchange / missing-item requests can be raised until ${formatWindowDate(windowLastDay(returnsWindow.expiresAt))} (${RETURNS_WINDOW_DAYS} days from delivery).`}
+                : returnsWindow.extended
+                  ? `Exchange / missing-item requests can be raised until ${formatWindowDate(windowLastDay(returnsWindow.expiresAt))} (extended for this order).`
+                  : `Exchange / missing-item requests can be raised until ${formatWindowDate(windowLastDay(returnsWindow.expiresAt))} (${RETURNS_WINDOW_DAYS} days from delivery).`}
             </p>
           )}
           <ul className="mt-4 space-y-3">

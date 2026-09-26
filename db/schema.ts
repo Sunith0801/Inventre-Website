@@ -1146,6 +1146,14 @@ export const orders = pgTable(
     gstCategory: text("gst_category").notNull().default("Unregistered"),
     displayStatus: text("display_status"), // admin-overridable status text
     deliveryDate: date("delivery_date"), // target ship-by date
+    // ─── Exchange / Missing window override (migration 0082) ──────
+    /** Admin-granted extension of the 7-day post-delivery request window.
+     *  Exclusive cut-off instant (IST midnight after the chosen last day);
+     *  NULL = the standard rule applies. See computeReturnsWindow. */
+    returnsOverrideUntil: timestamp("returns_override_until", { withTimezone: true }),
+    returnsOverrideNote: text("returns_override_note"),
+    returnsOverrideBy: text("returns_override_by"),
+    returnsOverrideAt: timestamp("returns_override_at", { withTimezone: true }),
     companyId: uuid("company_id"), // FK declared in relations
     // ─── ERP bridge (poll worker) ─────────────────────────────────
     erpSoName: text("erp_so_name"),
