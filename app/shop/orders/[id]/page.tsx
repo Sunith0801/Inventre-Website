@@ -505,7 +505,7 @@ export default function OrderDetailPage() {
               {returnsWindow.expired
                 ? `Exchange / missing-item requests closed on ${formatWindowDate(windowLastDay(returnsWindow.expiresAt))} (${RETURNS_WINDOW_DAYS} days from delivery).`
                 : returnsWindow.extended
-                  ? `Exchange / missing-item requests can be raised until ${formatWindowDate(windowLastDay(returnsWindow.expiresAt))} (extended for this order).`
+                  ? `Exchange / missing-item requests are open for this order (the usual ${RETURNS_WINDOW_DAYS}-day period ended on ${formatWindowDate(windowLastDay(returnsWindow.expiresAt))}).`
                   : `Exchange / missing-item requests can be raised until ${formatWindowDate(windowLastDay(returnsWindow.expiresAt))} (${RETURNS_WINDOW_DAYS} days from delivery).`}
             </p>
           )}

@@ -15,7 +15,6 @@ import {
   erpOutboundQueue,
 } from "@/db/schema";
 import { requirePermission, isResponse, assertSchoolAccess } from "@/server/admin-guard";
-import { overrideCutoffForLastDay } from "@/server/return-line-eligibility";
 import { logAdminActivity, diffFields } from "@/server/activity";
 import { notifyOrderStatus } from "@/server/notify/notifications";
 import {
@@ -67,15 +66,11 @@ const PatchBody = z.object({
     .string()
     .regex(/^\d{10}$/, "Enter a 10-digit mobile number")
     .optional(),
-  // Exchange / Missing window override (2026-09-26): the LAST calendar day
-  // (IST, "YYYY-MM-DD") on which the parent may still raise a request, or
-  // null to remove the extension and fall back to the 7-day rule. The
-  // storefront button gate, form pages and submit handlers all read it.
-  returnsOverrideLastDay: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/, "Pick a date")
-    .nullable()
-    .optional(),
+  // Exchange / Missing checkbox (2026-09-26): true = the parent may raise
+  // requests for this order even after the 7-day window closed; false =
+  // back to the normal rule. The storefront button gate, form pages and
+  // submit handlers all read it.
+  returnsOverrideEnabled: z.boolean().optional(),
   returnsOverrideNote: z.string().max(500).nullable().optional(),
 });
 
@@ -178,27 +173,16 @@ export async function PATCH(
   if (body.billingAddress !== undefined) update.billingAddress = body.billingAddress;
   if (body.tags !== undefined) update.tags = body.tags;
   if (body.displayStatus !== undefined) update.displayStatus = body.displayStatus;
-  if (body.returnsOverrideLastDay !== undefined) {
-    if (body.returnsOverrideLastDay === null) {
-      update.returnsOverrideUntil = null;
-      update.returnsOverrideNote = null;
-      update.returnsOverrideBy = null;
-      update.returnsOverrideAt = null;
-    } else {
-      const cutoff = overrideCutoffForLastDay(body.returnsOverrideLastDay);
-      if (!cutoff) {
-        return NextResponse.json({ error: "Invalid date" }, { status: 400 });
-      }
-      if (cutoff.getTime() <= now.getTime()) {
-        return NextResponse.json(
-          { error: "Pick today or a future date — the window must stay open." },
-          { status: 400 }
-        );
-      }
-      update.returnsOverrideUntil = cutoff;
+  if (body.returnsOverrideEnabled !== undefined) {
+    update.returnsOverrideEnabled = body.returnsOverrideEnabled;
+    if (body.returnsOverrideEnabled) {
       update.returnsOverrideNote = body.returnsOverrideNote?.trim() || null;
       update.returnsOverrideBy = guard.email;
       update.returnsOverrideAt = now;
+    } else {
+      update.returnsOverrideNote = null;
+      update.returnsOverrideBy = null;
+      update.returnsOverrideAt = null;
     }
   }
 
@@ -328,8 +312,8 @@ export async function PATCH(
     if (body.displayStatus !== undefined) after.displayStatus = body.displayStatus;
     if (body.shippingAddress !== undefined) after.shippingAddress = body.shippingAddress;
     if (body.billingAddress !== undefined) after.billingAddress = body.billingAddress;
-    if (body.returnsOverrideLastDay !== undefined) {
-      after.returnsOverrideUntil = update.returnsOverrideUntil ?? null;
+    if (body.returnsOverrideEnabled !== undefined) {
+      after.returnsOverrideEnabled = body.returnsOverrideEnabled;
       after.returnsOverrideNote = update.returnsOverrideNote ?? null;
     }
     // Account-phone change is diffed off its own before/after pair since it
@@ -349,8 +333,8 @@ export async function PATCH(
       shippingAddress: "Shipping Address",
       billingAddress: "Billing Address",
       accountPhone: "Account Mobile",
-      returnsOverrideUntil: "Exchange/Missing window extended until",
-      returnsOverrideNote: "Exchange/Missing extension note",
+      returnsOverrideEnabled: "Exchange/Missing allowed after 7 days",
+      returnsOverrideNote: "Exchange/Missing exception note",
     });
     if (changes.length > 0) {
       const statusChanged = body.status !== undefined && before.status !== body.status;

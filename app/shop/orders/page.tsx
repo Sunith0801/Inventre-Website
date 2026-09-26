@@ -248,7 +248,9 @@ export default function OrdersPage() {
                               >
                                 {o.returnsWindow.expired
                                   ? `Exchange / missing closed on ${formatWindowDate(windowLastDay(o.returnsWindow.expiresAt))}`
-                                  : `Exchange / missing until ${formatWindowDate(windowLastDay(o.returnsWindow.expiresAt))}${o.returnsWindow.extended ? " (extended)" : ""}`}
+                                  : o.returnsWindow.extended
+                                    ? "Exchange / missing open for this order"
+                                    : `Exchange / missing until ${formatWindowDate(windowLastDay(o.returnsWindow.expiresAt))}`}
                               </p>
                             )}
                             {(() => {

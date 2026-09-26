@@ -1147,10 +1147,10 @@ export const orders = pgTable(
     displayStatus: text("display_status"), // admin-overridable status text
     deliveryDate: date("delivery_date"), // target ship-by date
     // ─── Exchange / Missing window override (migration 0082) ──────
-    /** Admin-granted extension of the 7-day post-delivery request window.
-     *  Exclusive cut-off instant (IST midnight after the chosen last day);
-     *  NULL = the standard rule applies. See computeReturnsWindow. */
-    returnsOverrideUntil: timestamp("returns_override_until", { withTimezone: true }),
+    /** Admin checkbox: allow Exchange / Missing requests for this order even
+     *  after the 7-day window has closed (school-recommended exception).
+     *  The 7-day rule itself is unchanged. See applyReturnsOverride. */
+    returnsOverrideEnabled: boolean("returns_override_enabled").notNull().default(false),
     returnsOverrideNote: text("returns_override_note"),
     returnsOverrideBy: text("returns_override_by"),
     returnsOverrideAt: timestamp("returns_override_at", { withTimezone: true }),

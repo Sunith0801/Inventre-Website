@@ -481,7 +481,7 @@ export default async function AdminOrderDetailPage({
             orderId={order.id}
             standard={returnsStandard}
             override={{
-              until: order.returnsOverrideUntil?.toISOString() ?? null,
+              enabled: order.returnsOverrideEnabled,
               note: order.returnsOverrideNote ?? null,
               by: order.returnsOverrideBy ?? null,
               at: order.returnsOverrideAt?.toISOString() ?? null,

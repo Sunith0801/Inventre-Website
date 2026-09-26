@@ -36,7 +36,7 @@ export async function GET() {
         orderNumber: orders.orderNumber,
         status: orders.status,
         deliveredAt: orders.deliveredAt,
-        returnsOverrideUntil: orders.returnsOverrideUntil,
+        returnsOverrideEnabled: orders.returnsOverrideEnabled,
       })
       .from(orders)
       .where(inArray(orders.orderNumber, deliveredNos));
@@ -51,7 +51,7 @@ export async function GET() {
           );
           const w = applyReturnsOverride(
             computeReturnsWindow(cls),
-            o.returnsOverrideUntil ?? null,
+            o.returnsOverrideEnabled,
           );
           if (w.expiresAt) {
             windowByOrderNo.set(o.orderNumber, {
