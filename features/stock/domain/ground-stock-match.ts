@@ -340,15 +340,86 @@ function foldSharedMerchandise(rows: KeeperStockRow[]): KeeperStockRow[] {
   return [...out, ...shared.values()];
 }
 
+/**
+ * School garments that are one pile for several schools (user's rule,
+ * 2026-09-28): regular socks are the same sock for St. Andrews, St. Michaels
+ * and Winmore Jakkur, kept as combined stock. The audit still splits the
+ * keeper SKU into one row per school, and books nearly the whole count on
+ * the St. Andrews row — SMS 2XL read Stock 40 / Packed 40 = 0 while SASAND
+ * read 2,304 / 138 — so two of the three schools showed sold out beside a
+ * full shelf. Only the schools listed share the pile: Winmore Whitefield's
+ * PP socks sit on the same keeper SKU and keep their own row's figure.
+ * Sports socks (red, blue, green, yellow) are combined the same way.
+ */
+const SOCKS_SCHOOLS = ["SASAND", "SMSAW", "WMAJK"];
+export const SHARED_SCHOOL_PILES: { keeperSkuPrefix: string; schoolCodes: string[] }[] = [
+  { keeperSkuPrefix: "RUPPRPRSCHSRGSOCKS-", schoolCodes: SOCKS_SCHOOLS },
+  { keeperSkuPrefix: "SUPRSCRDSOCKS-", schoolCodes: SOCKS_SCHOOLS },
+  { keeperSkuPrefix: "SUPRSCBLUSOCKS-", schoolCodes: SOCKS_SCHOOLS },
+  { keeperSkuPrefix: "SUPRSCGNSOCKS-", schoolCodes: SOCKS_SCHOOLS },
+  { keeperSkuPrefix: "SUPRSCYWSOCKS-", schoolCodes: SOCKS_SCHOOLS },
+];
+
+const SHARED_PILE_NAME = "Shared · SAS, SMS, WM JK";
+
+type FoldedRow = KeeperStockRow & { shared_codes?: string[] };
+
+/**
+ * Fold the member schools' rows of a shared pile into one row: stock and
+ * packed are SUMMED (each school's row books its own packing against the
+ * one pile), and every member school's codes take the combined figure.
+ */
+function foldSharedSchoolPiles(
+  rows: KeeperStockRow[],
+  keeperMap: Map<string, { code: string; schoolCode: string | null }[]> | undefined
+): FoldedRow[] {
+  const out: FoldedRow[] = [];
+  const shared = new Map<string, FoldedRow>();
+  for (const r of rows) {
+    const sku = (r.keeper_sku ?? "").trim();
+    const pile = SHARED_SCHOOL_PILES.find(
+      (p) => sku.startsWith(p.keeperSkuPrefix) && !!r.school_code && p.schoolCodes.includes(r.school_code)
+    );
+    if (!pile) {
+      out.push(r);
+      continue;
+    }
+    const codes = [...codesForRow(r, keeperMap)];
+    const cur = shared.get(sku);
+    if (!cur) {
+      shared.set(sku, {
+        ...r,
+        school_code: null,
+        school_name: SHARED_PILE_NAME,
+        gs_linked: !!r.gs_linked,
+        gs_stock: r.gs_linked ? num(r.gs_stock) : 0,
+        gs_packed: r.gs_linked ? num(r.gs_packed) : 0,
+        gs_available: r.gs_linked ? num(r.gs_available) : 0,
+        shared_codes: codes,
+      });
+      continue;
+    }
+    cur.shared_codes = [...(cur.shared_codes ?? []), ...codes];
+    if (!r.gs_linked) continue;
+    cur.gs_linked = true;
+    cur.gs_stock = num(cur.gs_stock) + num(r.gs_stock);
+    cur.gs_packed = num(cur.gs_packed) + num(r.gs_packed);
+    cur.gs_available = num(cur.gs_available) + num(r.gs_available);
+    const snap = r.gs_snapshot_at ?? null;
+    if (snap && (!cur.gs_snapshot_at || snap > cur.gs_snapshot_at)) cur.gs_snapshot_at = snap;
+  }
+  return [...out, ...shared.values()];
+}
+
 export function keeperRowsToFigures(
   rows: KeeperStockRow[],
   keeperMap?: Map<string, { code: string; schoolCode: string | null }[]>
 ): Map<string, KeeperFigure> {
   const out = new Map<string, KeeperFigure>();
-  for (const r of foldSharedMerchandise(rows)) {
+  for (const r of foldSharedSchoolPiles(foldSharedMerchandise(rows), keeperMap)) {
     if (!r.gs_linked) continue;
     const avail = num(r.gs_available);
-    const codes = codesForRow(r, keeperMap);
+    const codes = r.shared_codes ? new Set(r.shared_codes) : codesForRow(r, keeperMap);
     for (const code of codes) {
       const cur = out.get(code);
       if (cur && cur.rawAvailable >= avail) continue;

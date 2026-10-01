@@ -176,6 +176,35 @@ describe("keeperRowsToFigures — shared General Merchandise via the keeper map"
     }
   });
 
+  it("regular socks are combined stock for SAS, SMS and WM JK; Whitefield keeps its own row", () => {
+    const sku = "RUPPRPRSCHSRGSOCKS-2XL";
+    const m = keeperRowsToFigures([
+      { keeper_sku: sku, school_code: "SASAND", school_name: "SASAND", gs_linked: true, gs_stock: 2304, gs_packed: 138, gs_available: 2166, old_skus: ["SAS BP Regular SocksJ2XL$", "SAS KS Regular SocksJ2XL$"] },
+      { keeper_sku: sku, school_code: "SMSAW", school_name: "SMSAW", gs_linked: true, gs_stock: 40, gs_packed: 40, gs_available: 0, old_skus: ["SMS Regular SocksJ2XL$"] },
+      { keeper_sku: sku, school_code: "WMAJK", school_name: "WMAJK", gs_linked: true, gs_stock: 6, gs_packed: 8, gs_available: -2, old_skus: ["WM JK Regular SocksJ2XL$"] },
+      { keeper_sku: sku, school_code: "WMAWF", school_name: "WMAWF", gs_linked: true, gs_stock: 3, gs_packed: 3, gs_available: 0, old_skus: ["WM WF PP SocksJ2XL$"] },
+    ]);
+    for (const code of ["SAS BP Regular SocksJ2XL$", "SAS KS Regular SocksJ2XL$", "SMS Regular SocksJ2XL$", "WM JK Regular SocksJ2XL$"]) {
+      expect(m.get(code)!.available).toBe(2164);
+      expect(m.get(code)!.counted).toBe(2350);
+      expect(m.get(code)!.packedOut).toBe(186);
+    }
+    expect(m.get("WM WF PP SocksJ2XL$")!.available).toBe(0);
+    expect(m.get("WM WF PP SocksJ2XL$")!.schoolCode).toBe("WMAWF");
+  });
+
+  it("sports socks are combined too, and an unlinked school row still takes the shared figure", () => {
+    const sku = "SUPRSCBLUSOCKS-S";
+    const m = keeperRowsToFigures([
+      { keeper_sku: sku, school_code: "SASAND", gs_linked: true, gs_stock: 235, gs_packed: 4, gs_available: 231, old_skus: ["SAS BP Sports SocksBS$$$"] },
+      { keeper_sku: sku, school_code: "SMSAW", gs_linked: false, gs_available: null, old_skus: ["SMS Sports SocksBS$$$"] },
+      { keeper_sku: sku, school_code: "WMAJK", gs_linked: true, gs_stock: 1, gs_packed: 1, gs_available: 0, old_skus: ["WM JK Sports SocksBS$$$"] },
+    ]);
+    for (const code of ["SAS BP Sports SocksBS$$$", "SMS Sports SocksBS$$$", "WM JK Sports SocksBS$$$"]) {
+      expect(m.get(code)!.available).toBe(231);
+    }
+  });
+
   it("works without a map (old_skus only) and ignores blank map entries", () => {
     expect(keeperMap.has("X")).toBe(false);
     const m = keeperRowsToFigures([{ keeper_sku: "BLSHOE-10S", all_schools: true, gs_linked: true, gs_available: 5, old_skus: [] }]);
